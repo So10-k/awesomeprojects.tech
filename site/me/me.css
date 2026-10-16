@@ -1,0 +1,23 @@
+.mine { width: var(--wrap); margin: 2rem auto 4rem; }
+.mine-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.mine-head h1 { font: 800 clamp(1.8rem, 4vw, 2.6rem)/1.1 var(--display); letter-spacing: -0.02em; margin: 0; }
+.names { display: grid; gap: 1rem; margin-top: 1.4rem; }
+.name-card { border: 1px solid var(--line); border-radius: 18px; background: rgb(11 16 32 / 0.6); padding: 1.2rem 1.3rem; display: grid; gap: 0.7rem; }
+.nc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.nc-name { font: 800 clamp(1.15rem, 2.6vw, 1.6rem) var(--mono); letter-spacing: -0.02em; text-decoration: none; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; word-break: break-all; }
+.nc-host { font: 600 0.75rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.nc-record { margin: 0; padding: 0.6rem 0.8rem; border-radius: 10px; border: 1px dashed rgb(124 247 212 / 0.3); color: var(--mint); font-size: 0.88rem; white-space: pre-wrap; word-break: break-all; }
+.nc-desc { margin: 0; color: var(--muted); }
+.nc-desc:empty, .nc-under:empty { display: none; }
+.nc-under { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.nc-under li { font: 400 0.78rem var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.6rem; color: var(--muted); }
+.nc-form { display: grid; gap: 0.7rem; border-top: 1px solid var(--line); padding-top: 0.9rem; max-width: 620px; }
+.nc-form label { display: grid; gap: 0.3rem; font-weight: 600; font-size: 0.88rem; }
+.nc-form input, .nc-form select { font: 400 0.95rem var(--mono); color: var(--text); background: rgb(11 16 32 / 0.75); border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 0.75rem; }
+.nc-form p { margin: 0; }
+.nc-result { border-radius: 12px; padding: 0.8rem 1rem; border: 1px solid var(--line); background: rgb(22 18 58 / 0.6); }
+.nc-result.ok { border-color: rgb(124 247 212 / 0.45); }
+.nc-result.err { border-color: rgb(255 122 217 / 0.45); }
+.nc-result.busy { border-style: dashed; color: var(--muted); }
+.empty-state { border: 1px dashed var(--line); border-radius: 18px; padding: 2rem; text-align: center; color: var(--muted); }
+.empty-state .btn { margin-top: 0.8rem; }

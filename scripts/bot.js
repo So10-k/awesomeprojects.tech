@@ -6,6 +6,7 @@
 //   pull_request_target the PR way: review, label, set the "subdomain-review" status, comment
 //   issue_comment       slash commands (scripts/commands.js has the full list)
 //   discussion_comment  read-only commands in Discussions (/help /available /whois /mine /verify /stats)
+//   repository_dispatch actions from the panel (api.awesomeprojects.tech): same commands, no public comment
 //   schedule            weekly health check for names that point at nothing
 //
 // Every change it makes is logged in the "📜 Bot activity log" discussion.
@@ -687,6 +688,94 @@ async function health() {
   return dead.length;
 }
 
+// ── Panel actions (repository_dispatch from api.awesomeprojects.tech) ──
+/** Tell the panel how it went. */
+async function reportResult(id, { ok, message, link }) {
+  console.log(`panel result ${id}: ${ok ? 'ok' : 'error'}: ${String(message).split('\n')[0]}`);
+  const api = process.env.PANEL_API;
+  const secret = process.env.PANEL_BOT_SECRET;
+  if (!api || !secret || dryRun) return;
+  await fetch(`${api}/bot/result`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ok, message, link }),
+  }).catch((e) => console.warn(`couldn't report to the panel: ${e.message}`));
+}
+
+/** Change where one of your names points, from the "My domains" panel. Same checks as a request. */
+async function selfUpdate(u, actor) {
+  const built = P.buildRequest({
+    Subdomain: u.name, 'Where should it point?': u.provider, 'GitHub repository': u.repo || '', Target: u.target || '', Description: u.description || '',
+  }, actor);
+  if (built.problems.length) return { ok: false, message: built.problems.join(' ') };
+  const { entries } = mainTree();
+  const name = built.name;
+  const current = entries[name];
+  if (!current) return { ok: false, message: `\`${name}\` isn't registered. Request it on the website first.` };
+  if (R.ownerOf(current) !== lc(actor) && !isMaintainer(actor)) return { ok: false, message: `Only @${R.ownerOf(current)} can change \`${name}\`.` };
+  const entry = { ...built.entry, owner: current.owner, ...(built.entry.description ? {} : current.description ? { description: current.description } : {}) };
+  const file = `domains/${name}.json`;
+  const profile = await gh.get(`/users/${actor}`).catch(() => null);
+  const rc = await repoChecks(entry, actor);
+  const dns = await checkTargets([entry]);
+  const result = review({
+    author: actor, profile, changes: [{ status: 'M', file }], base: entries, head: { ...entries, [name]: entry }, dns,
+    reserved, config, maintainers, extra: rc.findings, pagesOwners: rc.pagesOwners,
+  });
+  if (result.verdict !== 'ready') {
+    const issues = result.findings.filter((f) => ['error', 'reject', 'hold'].includes(f.level)).map((f) => `- ${f.text}`).join('\n');
+    const link = `${repoUrl}/issues/new?template=request.yml&title=${encodeURIComponent(`Request: ${name}`)}&subdomain=${encodeURIComponent(name)}`;
+    return {
+      ok: false,
+      message: result.verdict === 'on-hold'
+        ? `This change needs a maintainer's look:\n${issues}\n\n[Open it as a request](${link}) and they'll review it.`
+        : `Can't apply that:\n${issues}`,
+    };
+  }
+  const { pr, merged } = await botChange({
+    title: `Update ${name}`, body: `Updated by @${actor} from the panel.`,
+    changes: [{ file, content: JSON.stringify(entry, null, 2) + '\n' }], tag: `update-${name}-${Date.now().toString(36)}`,
+  });
+  if (!merged) return { ok: false, message: `I opened #${pr.number} but couldn't merge it. A maintainer will.`, link: pr.html_url };
+  await activityLog(`✏️ **Updated** \`${name}\` → ${C.fmtRecords(entry.records)} · by @${actor} (panel) → #${pr.number}`);
+  const guide = P.setupGuide({ provider: built.provider, name, repo: entry.site && entry.site.repo, branch: rc.branch, sourceRepo: repo });
+  return { ok: true, message: `✅ \`${name}.${R.DOMAIN}\` now points at ${C.fmtRecords(entry.records)}. DNS updates in a minute.\n\n${guide}`, link: pr.html_url };
+}
+
+async function onPanel(p) {
+  const id = String(p.id || '');
+  const actor = String(p.actor || '');
+  const admin = isMaintainer(actor);
+  const finish = (r) => reportResult(id, r);
+  try {
+    if (!id || !actor) return console.warn('panel: missing id/actor');
+    if (p.update) return finish(await selfUpdate(p.update, actor));
+    const parsed = C.parseCommand(p.command);
+    if (!parsed) return finish({ ok: false, message: 'Unknown action.' });
+    // The Worker checked roles; check again here, from main's config.
+    if (C.ADMIN_ONLY.has(parsed.cmd) && !admin) return finish({ ok: false, message: 'That needs a maintainer.' });
+    if (C.OWNER_ONLY.has(parsed.cmd) && lc(actor) !== lc(owner)) return finish({ ok: false, message: 'That needs the owner.' });
+    const as = { id: 0, user: { login: actor, type: 'User' }, author_association: lc(actor) === lc(owner) ? 'OWNER' : 'NONE', body: p.command };
+    if (p.target) {
+      const issue = await gh.get(`${R_}/issues/${Number(p.target)}`);
+      if (issue.state !== 'open') return finish({ ok: false, message: `#${issue.number} is already closed.`, link: issue.html_url });
+      await runIssueCommand(issue, as, parsed);
+      const after = await gh.get(`${R_}/issues/${issue.number}`);
+      const labels = after.labels.map((l) => l.name);
+      return finish({
+        ok: true,
+        message: `\`${parsed.cmd}\` on #${issue.number}: now **${after.state === 'closed' ? (labels.includes('live') ? 'live 🎉' : 'closed') : labels.find((l) => STATE_LABELS.includes(l)) || 'updated'}**`,
+        link: after.html_url,
+      });
+    }
+    const text = await anywhereCommand({ ...parsed, by: actor, admin, kind: 'panel' });
+    return finish(text === undefined ? { ok: false, message: `\`${parsed.cmd}\` needs a request or report.` } : { ok: !/^(Usage|Only|Can't|I opened)/.test(text) && !/isn't (registered|banned|reserved|a maintainer)/.test(text), message: text });
+  } catch (e) {
+    console.error(e);
+    return finish({ ok: false, message: `Something broke: ${String(e.message).split('\n')[0].slice(0, 300)}`, link: runUrl });
+  }
+}
+
 // ── Router ──────────────────────────────────────────────────────
 async function onIssue(issue) {
   const labels = issue.labels.map((l) => l.name);
@@ -711,6 +800,7 @@ async function main() {
     return onIssueComment(payload.issue, payload.comment);
   }
   if (event === 'discussion_comment') return onDiscussionComment(payload);
+  if (event === 'repository_dispatch' && payload.action === 'panel') return onPanel(payload.client_payload || {});
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

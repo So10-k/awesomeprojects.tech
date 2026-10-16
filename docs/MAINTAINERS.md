@@ -37,7 +37,12 @@ Everything is a comment, so it all works from the GitHub mobile app.
 | **Owner** *(owner only)* | Promote / demote maintainers, links to the settings the console can't change |
 | **Activity** | The bot activity log |
 
-**How it works.** There's no server: you sign in with a **fine-grained token** (the page links to GitHub with the permissions pre-filled: this repo only, *Issues* and *Pull requests* read & write, *Discussions* read). It stays in your browser. Every button shows the exact command first (`➜ /ban @x phishing · on #31 as @you`) and posts it **as you** when you press *Post*: on the request itself, or on the pinned **🛠️ Admin console** issue for global actions. The bot does the work, replies, and logs it; the console shows the reply.
+**Two ways to sign in:**
+
+- **Sign in with GitHub** (*private mode*, the default): actions go privately to the bot through the [panel server](PANEL.md). There are no comments and no slash commands, and every action is in the private audit log (*Activity* tab) under your name. Setup: [docs/PANEL.md](PANEL.md).
+- **A token** (*comment mode*, the fallback when the server is down): the page posts the slash command as a comment from your account, as described below.
+
+**Comment mode.** You sign in with a **fine-grained token** (the page links to GitHub with the permissions pre-filled: this repo only, *Issues* and *Pull requests* read & write, *Discussions* read). It stays in your browser. Every button shows the exact command first (`➜ /ban @x phishing · on #31 as @you`) and posts it **as you** when you press *Post*: on the request itself, or on the pinned **🛠️ Admin console** issue for global actions. The bot does the work, replies, and logs it; the console shows the reply.
 
 **Security.** The page only hides what you can't use; the bot enforces it. Maintainer commands from non-maintainers are ignored, and `/promote` and `/demote` only work for the owner. Treat the token like a password: give it a short expiry, and revoke it in GitHub → Settings → Developer settings if it's ever exposed.
 
