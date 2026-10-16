@@ -1,5 +1,9 @@
 {
-  "owner": { "github": "happyshot10" },
+  "owner": {
+    "github": "so10-k"
+  },
   "description": "My portfolio",
-  "records": { "CNAME": "happyshot101.github.io" }
+  "records": {
+    "CNAME": "happyshot101.github.io"
+  }
 }
