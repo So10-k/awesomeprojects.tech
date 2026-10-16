@@ -43,7 +43,7 @@
   "locked": false,
   "announcement": "",
   "maxSeats": 50,
-  "hostedPerOwner": 1,
+  "hostedPerOwner": 2,
   "hostedMinAccountAgeDays": 30,
   "maxRepoSizeMB": 500,
   "maxFileSizeMB": 25,
