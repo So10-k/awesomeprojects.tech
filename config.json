@@ -1,0 +1,25 @@
+{
+  "$comment": "Knobs for the review bot. Changes here go through a PR like everything else.",
+
+  "maintainers": [],
+  "bannedUsers": [],
+
+  "maxPerOwner": 3,
+  "maxFilesPerRequest": 10,
+
+  "rejectAccountsYoungerThanDays": 7,
+  "holdAccountsYoungerThanDays": 30,
+  "holdBotScoreAtLeast": 3,
+
+  "holdNamesContaining": [
+    "login", "signin", "verify", "verification", "secure", "account", "wallet", "crypto", "airdrop",
+    "bank", "paypal", "apple", "google", "microsoft", "github", "discord", "steam", "roblox", "netflix",
+    "support", "official", "update", "recovery", "password", "gift"
+  ],
+
+  "autoMerge": false,
+  "autoMergeMinAccountAgeDays": 180,
+
+  "closeNeedsChangesAfterDays": 14,
+  "consentTimeoutDays": 30
+}

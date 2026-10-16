@@ -1,0 +1,52 @@
+name: Subdomain bot
+
+# Reviews requests, runs /commands, handles transfer + takedown issues, weekly health check.
+#
+# Safety: this runs main's code with a write token, so it must NEVER check out or run a PR's code.
+# scripts/bot.js only reads PR files as git objects + JSON.parse. Never interpolate PR/issue text
+# into `run:` lines here.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  issue_comment:
+    types: [created]
+  issues:
+    types: [opened, edited]
+  schedule:
+    - cron: "17 9 * * 1" # Mondays
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to run: pr <number> | issue <number> | health"
+        required: true
+        default: health
+
+permissions:
+  contents: write # bot-made transfer/takedown branches
+  pull-requests: write
+  issues: write
+  statuses: write
+  actions: write # start a deploy after merging
+
+concurrency:
+  group: bot-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  bot:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (startsWith(github.event.comment.body, '/') && github.event.comment.user.type != 'Bot')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/bot.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ inputs.target }}

@@ -1,90 +1,182 @@
-# awesomeprojects.tech
+<p align="center">
+  <img src="assets/banner.svg" alt="awesomeprojects.tech: free subdomains for the things you build" width="100%">
+</p>
 
-Free subdomains for your projects: `yourname.awesomeprojects.tech`.
+<p align="center">
+  <a href="https://github.com/So10-k/awesomeprojects.tech/actions/workflows/deploy.yml"><img alt="DNS deploy" src="https://img.shields.io/github/actions/workflow/status/So10-k/awesomeprojects.tech/deploy.yml?branch=main&label=DNS&style=for-the-badge&logo=cloudflare&logoColor=white&color=7aa8ff"></a>
+  <a href="domains/"><img alt="Subdomains" src="https://img.shields.io/github/directory-file-count/So10-k/awesomeprojects.tech/domains?type=file&extension=json&label=subdomains&style=for-the-badge&color=7cf7d4"></a>
+  <a href="https://github.com/So10-k/awesomeprojects.tech/pulls"><img alt="Open requests" src="https://img.shields.io/github/issues-pr/So10-k/awesomeprojects.tech?label=open%20requests&style=for-the-badge&color=ff7ad9"></a>
+</p>
 
-Open a pull request with one small JSON file. When it's merged, the DNS record goes live automatically, usually within a few minutes.
+<p align="center">
+  <b>Got a project? Give it a name.</b><br>
+  Open one pull request and get <code>yourname.awesomeprojects.tech</code>. A bot checks your request in seconds, and it goes live minutes after it's approved.
+</p>
 
-## Get a subdomain
-
-1. Fork this repo.
-2. Create `domains/<name>.json` (copy [`example.json`](example.json)):
-
-   ```json
-   {
-     "owner": { "github": "your-github-username" },
-     "description": "My portfolio site",
-     "records": { "CNAME": "your-github-username.github.io" }
-   }
-   ```
-
-3. Open a pull request. A check validates your file and tells you what to fix.
-4. When a maintainer merges it, DNS updates automatically.
-
-**Changing or removing it:** edit or delete your file in a new PR. Only the GitHub account in `owner.github` can do that.
-
-### Records you can use
-
-| Type    | Format                                                  | Example |
-|---------|---------------------------------------------------------|---------|
-| `CNAME` | a hostname (can't be combined with other records)       | `"CNAME": "you.github.io"` |
-| `A`     | list of public IPv4 addresses                           | `"A": ["76.76.21.21"]` |
-| `AAAA`  | list of public IPv6 addresses                           | `"AAAA": ["2606:4700::1"]` |
-| `TXT`   | a string or a list of strings                           | `"TXT": "google-site-verification=…"` |
-| `MX`    | list of hostnames, or `{ "host", "priority" }` objects  | `"MX": [{ "host": "mx1.example.com", "priority": 10 }]` |
-
-`NS` records (handing the name to another DNS server) and wildcards aren't offered.
-
-### Verification records (Vercel, GitHub Pages, email)
-
-Records *under* your name go in their own files and must have the same owner, for example:
-
-- `domains/_vercel.alice.json` → `_vercel.alice.awesomeprojects.tech`
-- `domains/_github-pages-challenge-alice.alice.json`
-- `domains/s1._domainkey.alice.json` (DKIM)
-
-They don't count toward your limit.
-
-### Hosting quick reference
-
-- **GitHub Pages:** `"CNAME": "<user>.github.io"`, then set the custom domain in your repo's Pages settings.
-- **Vercel:** `"CNAME": "cname.vercel-dns.com"`, then add the domain in your Vercel project.
-- **Netlify:** `"CNAME": "<site>.netlify.app"`.
-
-## Rules
-
-- At most **3** subdomains per GitHub account.
-- Names: lowercase `a-z`, `0-9` and `-`, 1–63 characters. Some names are [reserved](reserved.json).
-- It has to be a real project. No phishing, malware, spam, adult content, impersonation or anything illegal.
-- Don't leave it dangling: if the site behind your record goes away, delete your file. Dangling records can be taken over by someone else.
-- We can remove any subdomain at any time, without notice, for any reason.
-
-**Report abuse:** open an issue, or for anything sensitive email `abuse@awesomeprojects.tech` *(set this up before launch)*.
+<p align="center">
+  <a href="#-get-your-subdomain"><b>Get one</b></a> ·
+  <a href="#-how-a-request-flows"><b>How it works</b></a> ·
+  <a href="#-change-transfer-or-remove-yours"><b>Transfer / remove</b></a> ·
+  <a href="#-rules"><b>Rules</b></a> ·
+  <a href="#-faq"><b>FAQ</b></a>
+</p>
 
 ---
 
-## For maintainers
+## 🚀 Get your subdomain
 
-### How it works
+**1. Set up your site first.** GitHub Pages, Vercel, Netlify, your own server: anything works.
 
-- `domains/*.json` is the source of truth. [`dnsconfig.js`](dnsconfig.js) turns it into records for [DNSControl](https://docs.dnscontrol.org).
-- **Pull requests** ([`validate.yml`](.github/workflows/validate.yml)) run **main's** copy of [`scripts/validate.js`](scripts/validate.js) against the PR's files, so a PR can't weaken the rules it's checked against. It runs on `pull_request` (never `pull_request_target`), so forks get no secrets. It checks names, record values (public IPs only, no CNAMEs back into the zone), ownership (`owner.github` must be the PR author, and edits or deletes must come from the existing owner), the per-account limit, and that only `domains/` changed.
-- **Merges to main** ([`deploy.yml`](.github/workflows/deploy.yml)) run `dnscontrol preview` and then `push`. The deploy refuses to delete more than 10 records at once unless you run it by hand with `allow_mass_delete`.
-- The root (`@`) and every name in `reserved.json` are **ignored** by DNSControl. Manage those (your own site, `www`, mail) by hand in the Cloudflare dashboard; automation never touches them. **Anything else** in the zone that isn't in `domains/` is deleted on the next deploy.
-- Maintainers (the repo owner, via `MAINTAINERS`) skip the ownership and limit checks, so they can remove abusive entries.
+**2. Add a file.** [Create `domains/<name>.json`](../../new/main/domains?filename=yourname.json) right in your browser. GitHub forks the repo for you.
 
-### One-time setup
-
-1. **Cloudflare DNS.** Add `awesomeprojects.tech` to Cloudflare and switch the registrar's nameservers to Cloudflare's. Before the first deploy, look at the records Cloudflare imported: any that aren't on the root or a reserved name would be deleted, so add them to `reserved.json` (or `domains/`) first.
-2. **API token.** Cloudflare → My Profile → API Tokens → Create Token → *Edit zone DNS* template, with **Zone Resources** set to **only** `awesomeprojects.tech`.
-3. **Repo secret.** Settings → Secrets and variables → Actions → `CLOUDFLARE_API_TOKEN`.
-4. **Protect `main`.** Settings → Rules: require a pull request, require the *Validate request* check, require Code Owners review, and block force pushes. Turn on "Require approval for all outside collaborators" for Actions (Settings → Actions → General).
-5. **First deploy.** Run *Deploy DNS* by hand (Actions → Deploy DNS → Run workflow) and read the preview.
-6. **Later: the Public Suffix List.** Once the project is established, apply to the [PSL](https://github.com/publicsuffix/list) so browsers isolate cookies between subdomains. Until then, don't put anything with logins on the root domain.
-
-### Local checks
-
-```bash
-npm test                 # validator unit tests
-node scripts/validate.js # validate domains/
-dnscontrol check         # validate dnsconfig.js (brew install dnscontrol)
+```json
+{
+  "owner": { "github": "your-github-username" },
+  "description": "My portfolio",
+  "records": { "CNAME": "your-github-username.github.io" }
+}
 ```
+
+**3. Open the pull request.** Within seconds the bot replies with something like this:
+
+> ## ✅ Ready to go live
+> | | Check | Result |
+> |:-:|---|---|
+> | ✅ | **Format & records** | Valid |
+> | ✅ | **Ownership** | Yours |
+> | ✅ | **Account age** | 4 years old |
+> | ✅ | **Bot check** | Looks like a real person |
+> | ✅ | **Subdomains you own** | 1 of 3 |
+> | ✅ | **Name check** | OK |
+> | ✅ | **Target is live** | `you.github.io` resolves |
+> | ✅ | **Consent** | Nothing needed |
+
+**4. That's it.** A maintainer gives it a final look, and DNS updates about a minute after it's merged.
+
+<details>
+<summary><b>🧩 Every record type, with examples</b></summary>
+
+| Type | What it's for | Example |
+|---|---|---|
+| `CNAME` | Point at another hostname (can't be mixed with other types) | `"CNAME": "you.github.io"` |
+| `A` | Point at IPv4 addresses | `"A": ["76.76.21.21"]` |
+| `AAAA` | Point at IPv6 addresses | `"AAAA": ["2606:4700::6810:84e5"]` |
+| `TXT` | Verification strings | `"TXT": ["google-site-verification=abc123"]` |
+| `MX` | Receive email | `"MX": [{ "host": "mx1.improvmx.com", "priority": 10 }]` |
+
+Only public IPs. No `NS` records (handing the name to another DNS server) and no wildcards.
+
+</details>
+
+<details>
+<summary><b>⚡ Setup for popular hosts</b></summary>
+
+| Host | Record | Then… |
+|---|---|---|
+| **GitHub Pages** | `"CNAME": "<you>.github.io"` | Repo → Settings → Pages → Custom domain → `<name>.awesomeprojects.tech` |
+| **Vercel** | `"CNAME": "cname.vercel-dns.com"` | Project → Settings → Domains → add it. If Vercel asks for a TXT, add `_vercel.<name>.json` |
+| **Netlify** | `"CNAME": "<site>.netlify.app"` | Site → Domain management → add it |
+| **Cloudflare Pages** | `"CNAME": "<project>.pages.dev"` | Project → Custom domains → add it |
+| **Render / Railway / Fly** | `"CNAME": "<app>.onrender.com"` etc. | Add the custom domain in the dashboard |
+| **Your own server** | `"A": ["<your IPv4>"]` | Point your web server at the name, then get a certificate (e.g. Caddy or certbot) |
+
+</details>
+
+<details>
+<summary><b>🔐 Verification records & names under yours</b></summary>
+
+Anything **under** your name gets its own file:
+
+```text
+domains/alice.json                                  alice.awesomeprojects.tech
+domains/_vercel.alice.json                          _vercel.alice.awesomeprojects.tech       (TXT)
+domains/_github-pages-challenge-alice.alice.json    GitHub Pages domain verification
+domains/s1._domainkey.alice.json                    email DKIM
+domains/blog.alice.json                             blog.alice.awesomeprojects.tech
+```
+
+Names under yours don't count toward your limit. If **someone else** wants a name under yours (say `docs.alice`), their request waits until you comment `/approve` on it.
+
+</details>
+
+---
+
+## 🧭 How a request flows
+
+```mermaid
+flowchart LR
+    PR([Pull request]) --> BOT{{🤖 Bot checks it<br/>in seconds}}
+    BOT -->|all good| READY[✅ ready]
+    BOT -->|fixable problem| FIX[✏️ needs changes]
+    BOT -->|waiting on someone| HOLD[⏸️ on hold]
+    BOT -->|can't be accepted| NO[⛔ rejected & closed]
+    FIX -->|push a fix| BOT
+    HOLD -->|owner says /approve<br/>new owner says /accept<br/>maintainer reviews| BOT
+    READY -->|maintainer says /approve<br/>or auto-merge| LIVE([🚀 merged → DNS live])
+    FIX -.->|14 days of silence| CLOSED([closed])
+```
+
+**What the bot checks**
+
+| Check | ✅ Passes when | ⏸️ Holds when | ✏️ / ⛔ Fails when |
+|---|---|---|---|
+| **Format & records** | the JSON and records are valid | | ✏️ invalid JSON, private IPs, bad names, files outside `domains/` |
+| **Ownership** | `owner.github` is you | | ✏️ it's someone else · ⛔ you edit a name you don't own |
+| **Account age** | older than 30 days | 7–30 days old | ⛔ under 7 days (it tells you when to come back) |
+| **Bot check** | it looks like a real person | it looks like a throwaway account | ⛔ bot accounts |
+| **Subdomains you own** | within the limit (3) | | ✏️ over the limit |
+| **Name check** | | the name looks like phishing (`login`, `paypal`…) | ✏️ reserved names |
+| **Target is live** | the CNAME/MX target resolves | GitHub Pages target isn't yours | ✏️ the target doesn't exist |
+| **Consent** | nothing needed, or given | under someone else's name, or a hand-over | |
+
+---
+
+## 🔁 Change, transfer or remove yours
+
+| I want to… | Do this |
+|---|---|
+| **Point it somewhere else** | Edit your file in a PR. Same checks, usually instant. |
+| **Give it to someone** | [Open a transfer](../../issues/new?template=transfer.yml) with their username. They reply `/accept`, and it moves automatically. |
+| **Get a name someone else has** | [Open a transfer](../../issues/new?template=transfer.yml) and leave the new owner blank. The owner gets pinged and replies `/approve`. If they've vanished, a maintainer can step in after 30 days. |
+| **Remove mine** | [Open a takedown](../../issues/new?template=takedown.yml) → "I own it and want it removed". Removed automatically, right away. |
+| **Report abuse** | [Open a takedown](../../issues/new?template=takedown.yml) with the reason. For something sensitive, [report it privately](../../security/advisories/new). |
+
+---
+
+## 📜 Rules
+
+1. **Real projects only.** No phishing, scams, malware, spam, adult content, impersonation, or anything illegal.
+2. **Three names per person.** Names under yours (`blog.you`, `_vercel.you`) don't count.
+3. **Don't leave it dangling.** If your site goes away, remove your name. A weekly health check flags names that point at nothing, because those can be hijacked.
+4. **Accounts must be at least a week old.** Accounts under a month old, and ones that look automated, get a human review.
+5. **We can remove anything, any time.** It's a free service run by volunteers.
+
+---
+
+## ❓ FAQ
+
+<details><summary><b>How long does it take?</b></summary>
+The bot answers in seconds. A maintainer usually reviews within a day. After merge, DNS updates within a minute or two (your host may take a few more minutes to issue HTTPS).
+</details>
+
+<details><summary><b>The bot says my target doesn't exist</b></summary>
+Set up the site first, so the name never points at nothing. Then push any change, or comment <code>/recheck</code>.
+</details>
+
+<details><summary><b>Can I use Cloudflare's proxy / orange cloud?</b></summary>
+No. Records are DNS-only, so your host handles HTTPS.
+</details>
+
+<details><summary><b>Can I get a wildcard or NS records?</b></summary>
+No. Those would hand control of a whole branch of the domain to one server, so they aren't offered.
+</details>
+
+<details><summary><b>Why did my request get held?</b></summary>
+Nothing's wrong. A person needs to look at it: either the owner of the name above yours, the new owner in a hand-over, or a maintainer (for new accounts, names that look like phishing, or GitHub Pages targets that aren't yours).
+</details>
+
+---
+
+<p align="center">
+  <sub>Run by volunteers · <a href="docs/MAINTAINERS.md">Maintainer guide</a> · DNS by Cloudflare, managed with <a href="https://dnscontrol.org">DNSControl</a></sub>
+</p>
