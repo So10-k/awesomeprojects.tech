@@ -6,7 +6,7 @@
   "limits": {},
   "maxPerOwner": 3,
   "maxFilesPerRequest": 10,
-  "rejectAccountsYoungerThanDays": 7,
+  "rejectAccountsYoungerThanDays": 0,
   "holdAccountsYoungerThanDays": 30,
   "holdBotScoreAtLeast": 3,
   "holdNamesContaining": [
