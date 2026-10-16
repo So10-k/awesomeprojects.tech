@@ -1,0 +1,13 @@
+{
+  "owner": {
+    "github": "So10-k"
+  },
+  "description": "its pretty cool ig",
+  "records": {
+    "CNAME": "so10-k.github.io"
+  },
+  "site": {
+    "provider": "github-pages",
+    "repo": "so10-k/csp-studio"
+  }
+}
