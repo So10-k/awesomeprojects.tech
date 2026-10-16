@@ -689,17 +689,28 @@ async function health() {
 }
 
 // ── Panel actions (repository_dispatch from api.awesomeprojects.tech) ──
-/** Tell the panel how it went. */
-async function reportResult(id, { ok, message, link }) {
-  console.log(`panel result ${id}: ${ok ? 'ok' : 'error'}: ${String(message).split('\n')[0]}`);
+/** Tell the panel how it went. `job` is the dispatch payload (id, actor, at, summary). */
+async function reportResult(job, { ok, message, link }) {
+  console.log(`panel result ${job.id}: ${ok ? 'ok' : 'error'}: ${String(message).split('\n')[0]}`);
   const api = process.env.PANEL_API;
-  const secret = process.env.PANEL_BOT_SECRET;
+  const secret = String(process.env.PANEL_BOT_SECRET || '').trim();
   if (!api || !secret || dryRun) return;
-  await fetch(`${api}/bot/result`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, ok, message, link }),
-  }).catch((e) => console.warn(`couldn't report to the panel: ${e.message}`));
+  const body = JSON.stringify({ id: job.id, actor: job.actor, at: job.at, summary: job.summary, ok, message, link });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${api}/bot/result`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', 'User-Agent': 'awesomeprojects-bot' },
+        body,
+      });
+      console.log(`panel: reported (${res.status})`);
+      if (res.ok) return;
+      if (res.status === 401) return console.warn('panel: the Worker rejected the bot secret (PANEL_BOT_SECRET differs from the Worker\'s BOT_SECRET?)');
+    } catch (e) {
+      console.warn(`panel: couldn't report (${e.message})`);
+    }
+    await new Promise((r) => setTimeout(r, 2000 * attempt));
+  }
 }
 
 /** Change where one of your names points, from the "My domains" panel. Same checks as a request. */
@@ -746,7 +757,7 @@ async function onPanel(p) {
   const id = String(p.id || '');
   const actor = String(p.actor || '');
   const admin = isMaintainer(actor);
-  const finish = (r) => reportResult(id, r);
+  const finish = (r) => reportResult(p, r);
   try {
     if (!id || !actor) return console.warn('panel: missing id/actor');
     if (p.update) return finish(await selfUpdate(p.update, actor));
