@@ -39,5 +39,5 @@
   "autoMergeMinAccountAgeDays": 180,
   "closeNeedsChangesAfterDays": 14,
   "consentTimeoutDays": 30,
-  "locked": "all requests are currently PAUSED."
+  "locked": false
 }
