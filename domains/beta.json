@@ -1,0 +1,14 @@
+{
+  "owner": {
+    "github": "So10-k"
+  },
+  "records": {
+    "CNAME": "awesomeprojects-sites.github.io"
+  },
+  "site": {
+    "provider": "hosted",
+    "repo": "awesomeprojects-sites/beta",
+    "status": "active",
+    "template": "astro"
+  }
+}
