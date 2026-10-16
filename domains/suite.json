@@ -1,5 +1,9 @@
 {
-  "owner": { "github": "So10-k" },
+  "owner": {
+    "github": "happyshot10"
+  },
   "description": "Existing record (Vercel), kept from before the repo",
-  "records": { "CNAME": "158f32eddb1cc0b5.vercel-dns-017.com" }
+  "records": {
+    "CNAME": "158f32eddb1cc0b5.vercel-dns-017.com"
+  }
 }
