@@ -1,9 +1,0 @@
-{
-  "owner": {
-    "github": "so10-k"
-  },
-  "description": "Verification record",
-  "records": {
-    "TXT": "vc-domain-verify=aptest.awesomeprojects.tech,e2e"
-  }
-}
