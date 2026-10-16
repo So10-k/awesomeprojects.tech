@@ -152,7 +152,10 @@ const ORG_SETTINGS = {
   members_can_create_private_repositories: false,
   members_can_create_internal_repositories: false,
   members_can_fork_private_repositories: false,
-  members_can_create_pages: false,
+  // Pages must stay on (it also gates the bot); only repo admins can change Pages, and owners get write.
+  members_can_create_pages: true,
+  members_can_create_public_pages: true,
+  members_can_create_private_pages: false,
   web_commit_signoff_required: false,
 };
 
