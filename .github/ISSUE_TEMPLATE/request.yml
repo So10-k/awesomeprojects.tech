@@ -1,0 +1,62 @@
+name: 🌱 Request a subdomain
+description: The easy way. No fork, no JSON. Fill this in and the bot does the rest.
+title: "Request: "
+labels: [request]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **How it works:** the bot checks your request in a few seconds and comments below. Once a maintainer approves it,
+        the bot adds your name and DNS goes live within minutes. Want to change something later? Edit this issue, or open a new request with the same name.
+        Tip: the [website](https://awesomeprojects.tech) checks availability and fills this in for you.
+  - type: input
+    id: subdomain
+    attributes:
+      label: Subdomain
+      description: Lowercase letters, numbers and dashes.
+      placeholder: yourname
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Where should it point?
+      options:
+        - My GitHub repo (free hosting on GitHub Pages)
+        - Vercel
+        - Netlify
+        - Cloudflare Pages
+        - Render
+        - Railway
+        - Fly.io
+        - Another hostname (CNAME)
+        - My own server (IP address)
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: GitHub repository
+      description: "Only for GitHub Pages: owner/repo. The bot detects Next.js, Vite, Astro, plain HTML and more, and gives you a one-click deploy workflow."
+      placeholder: yourname/my-site
+  - type: input
+    id: target
+    attributes:
+      label: Target
+      description: "For Netlify/Cloudflare Pages/Render/Fly: your app name. For a CNAME: the hostname. For your own server: its IP address(es). Vercel needs nothing here."
+      placeholder: my-site
+  - type: input
+    id: description
+    attributes:
+      label: Description
+      description: One line about your project (shown on the website).
+      placeholder: My portfolio and blog
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: The rules
+      options:
+        - label: "It's a real project of mine: no phishing, malware, spam, adult content or impersonation"
+          required: true
+        - label: I'll remove it (comment /remove <name>) when I stop using it
+          required: true

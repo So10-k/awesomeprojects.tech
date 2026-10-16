@@ -3,16 +3,27 @@
 //
 // DNSControl makes Cloudflare match this file exactly. Anything it doesn't know
 // about gets DELETED, except the names IGNOREd below. Those are yours to manage
-// by hand in the Cloudflare dashboard (root site, www, mail, etc.).
+// by hand in the Cloudflare dashboard (mail, reserved names, etc.).
 
 var DOMAIN = "awesomeprojects.tech";
 var reserved = require("./reserved.json");
 
+// The website (this repo's GitHub Pages) lives at the root, and www redirects to it.
+var GITHUB_PAGES_A = ["185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153"];
+var GITHUB_PAGES_AAAA = ["2606:50c0:8000::153", "2606:50c0:8001::153", "2606:50c0:8002::153", "2606:50c0:8003::153"];
+var MANAGED_RESERVED = { www: true };
+
 var records = [
-  // Hands off the root domain and every reserved name.
-  IGNORE("@"),
+  // Root: only the website's A/AAAA are managed here; mail, TXT etc. on the root stay hand-managed.
+  IGNORE("@", "MX,TXT,CAA,SRV,NS"),
+  CNAME("www", "so10-k.github.io.", CF_PROXY_OFF),
 ];
+for (var g = 0; g < GITHUB_PAGES_A.length; g++) records.push(A("@", GITHUB_PAGES_A[g], CF_PROXY_OFF));
+for (var h = 0; h < GITHUB_PAGES_AAAA.length; h++) records.push(AAAA("@", GITHUB_PAGES_AAAA[h], CF_PROXY_OFF));
+
+// Hands off every other reserved name.
 for (var i = 0; i < reserved.length; i++) {
+  if (MANAGED_RESERVED[reserved[i]]) continue;
   records.push(IGNORE(reserved[i]));
   records.push(IGNORE("*." + reserved[i]));
 }

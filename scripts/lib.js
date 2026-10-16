@@ -8,8 +8,8 @@ const R = require('./rules');
 // ── GitHub ──────────────────────────────────────────────────────
 /** DRY_RUN=1: reads go to GitHub, writes are only printed. */
 function github(token, { dryRun = false } = {}) {
-  async function req(method, path, body) {
-    if (dryRun && method !== 'GET') {
+  async function req(method, path, body, { force = false } = {}) {
+    if (dryRun && method !== 'GET' && !force) {
       console.log(`[dry-run] ${method} ${path}${body ? ' ' + JSON.stringify(body).slice(0, 300) : ''}`);
       return method === 'POST' && /\/pulls$/.test(path) ? { number: 0, head: { sha: 'dry' } } : {};
     }
@@ -41,8 +41,17 @@ function github(token, { dryRun = false } = {}) {
       if (d.length < 100) return out;
     }
   }
+  async function graphql(query, variables = {}) {
+    if (dryRun && /^\s*mutation/.test(query)) {
+      console.log(`[dry-run] graphql ${query.trim().split('\n')[0]} ${JSON.stringify(variables).slice(0, 200)}`);
+      return {};
+    }
+    const d = await req('POST', '/graphql', { query, variables }, { force: true });
+    if (d.errors && d.errors.length) throw new Error(`graphql: ${d.errors.map((e) => e.message).join('; ')}`);
+    return d.data;
+  }
   return {
-    req, all,
+    req, all, graphql,
     get: (p) => req('GET', p),
     post: (p, b) => req('POST', p, b),
     patch: (p, b) => req('PATCH', p, b),
@@ -111,4 +120,33 @@ async function checkTargets(datas) {
   return out;
 }
 
-module.exports = { github, git, readTree, diff, resolves, checkTargets };
+/** What a visitor would see at https://host: DNS answers, HTTP status, page title, and a hint. */
+async function verifySite(host) {
+  const out = { host, dns: [], status: null, title: null, error: null, hint: null, ms: null };
+  for (const m of ['resolveCname', 'resolve4', 'resolve6']) {
+    try { out.dns.push(...(await resolver[m](host)).map((v) => `${m === 'resolveCname' ? 'CNAME' : m === 'resolve4' ? 'A' : 'AAAA'} ${v}`)); } catch { /* none */ }
+  }
+  if (!out.dns.length) { out.hint = 'DNS has no answer yet. A new name can take a few minutes.'; return out; }
+  const t = Date.now();
+  try {
+    const res = await fetch(`https://${host}/`, { redirect: 'follow', signal: AbortSignal.timeout(10000), headers: { 'user-agent': 'awesomeprojects-verify' } });
+    out.ms = Date.now() - t;
+    out.status = res.status;
+    const html = (await res.text()).slice(0, 200000);
+    const m = html.match(/<title[^>]*>([^<]{0,120})/i);
+    out.title = m ? m[1].trim() : null;
+    if (res.status === 404 && /github pages/i.test(html)) out.hint = 'GitHub Pages answers but has no site for this name: set the custom domain in the repo\'s Settings → Pages, and check the deploy workflow ran.';
+    else if (/DEPLOYMENT_NOT_FOUND|The deployment could not be found on Vercel/i.test(html)) out.hint = 'Vercel answers but the domain isn\'t added to a project yet: Project → Settings → Domains.';
+    else if (res.status >= 400) out.hint = 'The host answers with an error. Check your host\'s dashboard for this domain.';
+  } catch (e) {
+    out.ms = Date.now() - t;
+    const code = (e.cause && (e.cause.code || e.cause.message)) || e.name || e.message;
+    out.error = String(code);
+    if (/CERT|SSL|TLS|ALTNAME/i.test(out.error)) out.hint = 'DNS works but HTTPS doesn\'t yet: your host hasn\'t issued a certificate for this name. That usually takes a few minutes after you add the domain there.';
+    else if (/Timeout|ETIMEDOUT/i.test(out.error)) out.hint = 'Nothing answered within 10 seconds.';
+    else out.hint = 'Couldn\'t connect over HTTPS.';
+  }
+  return out;
+}
+
+module.exports = { github, git, readTree, diff, resolves, checkTargets, verifySite };

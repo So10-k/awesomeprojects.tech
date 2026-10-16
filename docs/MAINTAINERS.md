@@ -4,6 +4,10 @@ The bot does the checking. You make the calls it can't: approve, hold, reject, t
 Everything is a comment, so it all works from the GitHub mobile app.
 
 - [Your daily routine](#your-daily-routine)
+- [Command reference](#command-reference)
+- [Request issues](#request-issues)
+- [The activity log & Discussions](#the-activity-log--discussions)
+- [The website](#the-website)
 - [Approving](#approving)
 - [Verifying a request](#verifying-a-request)
 - [Holds](#holds)
@@ -21,16 +25,69 @@ Everything is a comment, so it all works from the GitHub mobile app.
 ## Your daily routine
 
 1. **Takedown reports first**, especially ones labelled `abuse`: [open reports](../../../issues?q=is%3Aopen+label%3Atakedown).
-2. **Requests that are ready**: [`label:ready`](../../../pulls?q=is%3Aopen+label%3Aready). Glance at each, comment `/approve`.
-3. **Holds waiting on you**: [`label:on-hold`](../../../pulls?q=is%3Aopen+label%3Aon-hold). The bot's comment says who it's waiting for. Ignore the ones waiting for an owner.
+2. **Requests that are ready**: [issues](../../../issues?q=is%3Aopen+label%3Arequest+label%3Aready) and [PRs](../../../pulls?q=is%3Aopen+label%3Aready) labelled `ready`. Glance at each, comment `/approve`.
+3. **Holds waiting on you**: [`label:on-hold`](../../../issues?q=is%3Aopen+label%3Aon-hold). The bot's comment says who it's waiting for. Ignore the ones waiting for an owner.
 
 You never need to look at `needs-changes`: that's the requester's move, and the tidy-up job closes them after 14 quiet days.
 
 ---
 
+## Command reference
+
+Commands go at the **start** of a comment. A maintainer command from anyone else gets a 😕 reaction and a short note. Everything the bot changes is committed through a PR it opens and merges itself, so `git log` and the [activity log](#the-activity-log--discussions) both show who asked for what.
+
+| Command | Where | What it does |
+|---|---|---|
+| `/approve` | request issue, PR | Re-checks, clears holds, writes the record, merges, deploys, posts next steps |
+| `/reject <reason>` | request issue, PR | Closes it with your reason quoted |
+| `/hold <reason>` · `/unhold` | request issue, PR | Pause / resume (label `manual-hold`) |
+| `/takedown <name> <note>` | any issue | Removes a name and everything under it, right now. On a report, the name is optional. |
+| `/dismiss <reason>` | report | Closes a report without changes |
+| `/ban @user <reason>` · `/unban @user` | any issue | Edits `config.json → bannedUsers`: their requests are rejected automatically |
+| `/limit @user <n>` | any issue | Per-person limit (`config.json → limits`); `n` = the default removes the override |
+| `/reserve <name>` · `/unreserve <name>` | any issue | Edits `reserved.json`. Reserving doesn't remove an existing name: `/takedown` does. |
+| `/lock <reason>` · `/unlock` | any issue | Pauses new requests (requesters see your reason; nothing is lost, they're re-checked after `/unlock` + `/recheck`) |
+| `/deploy` | anywhere | Re-runs the DNS deploy and rebuilds the website |
+| `/health` | anywhere | Runs the dangling-name check now |
+| `/help` | anywhere | Everything, including the user commands |
+
+**A good place to run admin commands:** open one issue titled "Admin console", pin it, and run `/ban`, `/reserve`, `/lock`… there. Its history is your audit trail.
+
+---
+
+## Request issues
+
+The main way people ask now: the [website](https://awesomeprojects.tech) or the [request form](../../../issues/new?template=request.yml) opens an issue labelled `request`. The bot:
+
+1. Turns the form into a `domains/<name>.json` entry (`scripts/providers.js`): GitHub repo → `CNAME <owner>.github.io` + `site.repo`; Vercel → `cname.vercel-dns.com`; Netlify/Cloudflare Pages/Render/Railway/Fly → their hostnames; own server → A/AAAA.
+2. For GitHub repos, checks that the repo exists, is public and not archived, and belongs to the requester (or an org where their membership is public; otherwise ⏸️ for you), then reads its files and shows the **build plan** (`scripts/frameworks.js`).
+3. Runs the same review as PRs, and posts it with a preview of the exact file.
+4. On `/approve` (or auto-merge), opens + merges a PR with the file, deploys, comments **🎉 live + next steps**, labels it `live`, and closes the issue.
+
+**Edits re-trigger the review**, so requesters fix typos by editing the issue. A request for a name they already own is an **update**. A name someone else owns comes back as ✏️ "taken" with a transfer link.
+
+---
+
+## The activity log & Discussions
+
+- **📜 Bot activity log**, a discussion in *Announcements* that the bot creates on first use: one line per change (approved, rejected, removed, transferred, TXT added, banned, reserved, locked, deployed), with who did it and the PR. Subscribe to it to get everything in one feed.
+- **Q&A / Show and tell**: people help each other and show off their sites. `/help`, `/available`, `/whois`, `/mine`, `/verify` and `/stats` work in discussion comments; the bot replies in the thread.
+
+---
+
+## The website
+
+`site/` (plain HTML/CSS/JS) is built by `scripts/build-site.js` into `_site/` with a `data.json` generated from the repo (names, reserved words, providers, frameworks, commands), so it can't drift from the bot. `.github/workflows/site.yml` publishes it to GitHub Pages at the root domain on every change; the bot also rebuilds it after each merge.
+
+Preview locally: `node scripts/build-site.js && npx http-server _site`.
+
+The root's `A`/`AAAA` and `www` are managed in `dnsconfig.js` (GitHub Pages). Other record types on the root (MX, TXT…) are still ignored, so set up email by hand in Cloudflare.
+
+---
+
 ## Approving
 
-Comment **`/approve`** on the PR. The bot:
+Comment **`/approve`** on the request issue or PR. The bot:
 
 1. Re-runs every check against the latest `main`.
 2. If nothing is ✏️ or ⛔, it squash-merges (holds don't block a maintainer's `/approve`).
@@ -176,11 +233,19 @@ scripts/rules.js          what makes a file and the whole tree valid (pure, test
 scripts/review.js         the review engine: verdict + checks for a PR (pure, tested)
 scripts/requests.js       transfer & takedown logic (pure, tested)
 scripts/comment.js        the bot's comments
-scripts/bot.js            event router: GitHub API, git, DNS
-scripts/lib.js            GitHub client, reading domains/ from git, DNS lookups
+scripts/providers.js      request form → records, per-host setup steps (pure, tested)
+scripts/frameworks.js     how to build a repo for GitHub Pages (pure, tested)
+scripts/commands.js       the command catalog, /available /whois /mine /stats, admin config edits (pure, tested)
+scripts/bot.js            event router: GitHub API, git, DNS, activity log
+scripts/lib.js            GitHub REST + GraphQL client, reading domains/ from git, DNS lookups, /verify
+scripts/site-build.js     runs in people's repos: plan → prepare (Next.js export) → finish
+scripts/build-site.js     builds the website into _site/
+site/                     the website
 dnsconfig.js              DNSControl: domains/ → Cloudflare records
 .github/workflows/
-  bot.yml                 pull_request_target / comments / issues / weekly → scripts/bot.js
+  bot.yml                 issues / pull_request_target / comments / discussions / weekly → scripts/bot.js
+  pages-site.yml          REUSABLE: people's repos call it to build + publish their site
+  site.yml                the website → GitHub Pages
   deploy.yml              push to main (or the bot) → dnscontrol preview + push
   checks.yml              unit tests on PRs (read-only)
   stale.yml               closes needs-changes after 14 quiet days
@@ -210,5 +275,6 @@ Already done for this repo; here for reference.
 1. **Cloudflare:** the zone on Cloudflare's nameservers; an API token from the *Edit zone DNS* template, scoped to this zone only, saved as the `CLOUDFLARE_API_TOKEN` Actions secret.
 2. **Ruleset `protect-main`:** PRs only, required status `subdomain-review`, no force pushes or deletion. Bypass: repo admins, PR only (to merge changes to the bot itself, which it can't review before they exist).
 3. **Actions:** require approval for workflows from outside contributors (this covers `checks.yml`; the bot always runs); default token read-only (each workflow asks for what it needs).
-4. **Labels:** `ready`, `needs-changes`, `on-hold`, `rejected`, `nested`, `transfer`, `new-account`, `maybe-bot`, `sensitive-name`, `pages-mismatch`, `manual-hold`, `takedown`, `abuse`, `dangling`, `health`, `stale`.
-5. **Later: the [Public Suffix List](https://github.com/publicsuffix/list).** Once established, apply so browsers isolate cookies between subdomains. Until then, nothing with logins should live on the root domain.
+4. **Labels:** `request`, `live`, `ready`, `needs-changes`, `on-hold`, `rejected`, `nested`, `transfer`, `new-account`, `maybe-bot`, `sensitive-name`, `pages-mismatch`, `manual-hold`, `takedown`, `abuse`, `dangling`, `health`, `stale`.
+5. **Discussions** on, and **Pages** for this repo: *Source* = GitHub Actions, custom domain `awesomeprojects.tech`.
+6. **Later: the [Public Suffix List](https://github.com/publicsuffix/list).** Once established, apply so browsers isolate cookies between subdomains. Until then, nothing with logins should live on the root domain.

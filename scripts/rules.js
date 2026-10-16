@@ -7,7 +7,9 @@ const DOMAIN = 'awesomeprojects.tech';
 const MAX_PER_OWNER = 3; // top-level names per GitHub account (maintainers exempt)
 const MAX_DEPTH = 4; // labels in a name, e.g. selector._domainkey.alice = 3
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'MX'];
-const TOP_KEYS = ['$schema', 'owner', 'description', 'repo', 'records'];
+const TOP_KEYS = ['$schema', 'owner', 'description', 'repo', 'records', 'site'];
+const PROVIDERS = ['github-pages', 'vercel', 'netlify', 'cloudflare-pages', 'render', 'railway', 'fly', 'cname', 'server'];
+const REPO = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\/[\w.-]{1,100}$/i;
 const OWNER_KEYS = ['github', 'email', 'discord'];
 
 const BASE_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -179,7 +181,24 @@ function checkEntry(name, data) {
   if (data.repo !== undefined && (typeof data.repo !== 'string' || !/^https:\/\//.test(data.repo))) {
     errors.push('"repo" must be an https:// URL');
   }
+  if (data.site !== undefined) errors.push(...checkSite(data.site, data.records));
   errors.push(...checkRecords(data.records, name));
+  return errors;
+}
+
+/** Optional "where is it hosted" metadata. Doesn't change DNS; the bot and the portal use it. */
+function checkSite(site, records) {
+  if (!site || typeof site !== 'object' || Array.isArray(site)) return ['"site" must be an object'];
+  const errors = [];
+  for (const k of Object.keys(site)) if (!['provider', 'repo'].includes(k)) errors.push(`unknown site field "${k}"`);
+  if (!PROVIDERS.includes(site.provider)) errors.push(`"site.provider" must be one of: ${PROVIDERS.join(', ')}`);
+  if (site.repo !== undefined && (typeof site.repo !== 'string' || !REPO.test(site.repo))) errors.push('"site.repo" must look like owner/repo');
+  if (site.provider === 'github-pages') {
+    if (!site.repo) errors.push('"site.repo" is required for github-pages');
+    else if (records && typeof records.CNAME === 'string' && lc(records.CNAME).replace(/\.$/, '') !== `${lc(site.repo.split('/')[0])}.github.io`) {
+      errors.push(`a github-pages site must have "CNAME": "${lc(site.repo.split('/')[0])}.github.io"`);
+    }
+  }
   return errors;
 }
 
@@ -190,7 +209,7 @@ const ownerOf = (data) => (data && data.owner && typeof data.owner.github === 's
  * entries: { [name]: data }. Returns { [name]: string[] } with only the names that have errors.
  * Names under someone else's subdomain are fine here: consent is checked when they're requested.
  */
-function checkTree(entries, { reserved = [], maintainers = [], maxPerOwner = MAX_PER_OWNER } = {}) {
+function checkTree(entries, { reserved = [], maintainers = [], maxPerOwner = MAX_PER_OWNER, limits = {} } = {}) {
   const out = {};
   const add = (n, errs) => { if (errs.length) out[n] = (out[n] || []).concat(errs); };
   const admins = maintainers.map(lc);
@@ -207,11 +226,18 @@ function checkTree(entries, { reserved = [], maintainers = [], maxPerOwner = MAX
     }
   }
   for (const [owner, names] of Object.entries(perOwner)) {
-    if (names.length > maxPerOwner && !admins.includes(owner)) {
-      for (const n of names) add(n, [`@${owner} would own ${names.length} subdomains; the limit is ${maxPerOwner}`]);
+    const max = limitFor(owner, { maxPerOwner, limits });
+    if (names.length > max && !admins.includes(owner)) {
+      for (const n of names) add(n, [`@${owner} would own ${names.length} subdomains; the limit is ${max}`]);
     }
   }
   return out;
+}
+
+/** An owner's limit: a per-user override from config.limits, or the default. */
+function limitFor(owner, { maxPerOwner = MAX_PER_OWNER, limits = {} } = {}) {
+  const hit = Object.entries(limits || {}).find(([u]) => lc(u) === lc(owner));
+  return hit ? Number(hit[1]) : maxPerOwner;
 }
 
 /** Every top-level name an owner has, sorted. */
@@ -226,8 +252,8 @@ function family(entries, name) {
 }
 
 module.exports = {
-  DOMAIN, MAX_PER_OWNER, RECORD_TYPES,
-  nameFromFile, baseOf, ownerOf, namesOwnedBy, family,
-  checkName, checkEntry, checkRecords, checkTarget, checkTree,
+  DOMAIN, MAX_PER_OWNER, RECORD_TYPES, PROVIDERS, REPO,
+  nameFromFile, baseOf, ownerOf, namesOwnedBy, family, limitFor,
+  checkName, checkEntry, checkRecords, checkTarget, checkTree, checkSite,
   isPublicIPv4, isPublicIPv6,
 };

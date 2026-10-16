@@ -3,19 +3,22 @@
 </p>
 
 <p align="center">
+  <a href="https://awesomeprojects.tech"><img alt="Website" src="https://img.shields.io/badge/awesomeprojects.tech-open-7cf7d4?style=for-the-badge"></a>
   <a href="https://github.com/So10-k/awesomeprojects.tech/actions/workflows/deploy.yml"><img alt="DNS deploy" src="https://img.shields.io/github/actions/workflow/status/So10-k/awesomeprojects.tech/deploy.yml?branch=main&label=DNS&style=for-the-badge&logo=cloudflare&logoColor=white&color=7aa8ff"></a>
-  <a href="domains/"><img alt="Subdomains" src="https://img.shields.io/github/directory-file-count/So10-k/awesomeprojects.tech/domains?type=file&extension=json&label=subdomains&style=for-the-badge&color=7cf7d4"></a>
-  <a href="https://github.com/So10-k/awesomeprojects.tech/pulls"><img alt="Open requests" src="https://img.shields.io/github/issues-pr/So10-k/awesomeprojects.tech?label=open%20requests&style=for-the-badge&color=ff7ad9"></a>
+  <a href="domains/"><img alt="Subdomains" src="https://img.shields.io/github/directory-file-count/So10-k/awesomeprojects.tech/domains?type=file&extension=json&label=subdomains&style=for-the-badge&color=7aa8ff"></a>
+  <a href="https://github.com/So10-k/awesomeprojects.tech/issues?q=is%3Aopen+label%3Arequest"><img alt="Open requests" src="https://img.shields.io/github/issues/So10-k/awesomeprojects.tech/request?label=open%20requests&style=for-the-badge&color=ff7ad9"></a>
 </p>
 
 <p align="center">
   <b>Got a project? Give it a name.</b><br>
-  Open one pull request and get <code>yourname.awesomeprojects.tech</code>. A bot checks your request in seconds, and it goes live minutes after it's approved.
+  Get <code>yourname.awesomeprojects.tech</code> in about a minute: no fork, no JSON, no DNS knowledge.<br>
+  Point it at GitHub Pages, Vercel, Netlify, Cloudflare Pages, Render, Railway, Fly or your own server.
 </p>
 
 <p align="center">
-  <a href="#-get-your-subdomain"><b>Get one</b></a> ·
-  <a href="#-how-a-request-flows"><b>How it works</b></a> ·
+  <a href="https://awesomeprojects.tech"><b>🌐 Claim a name</b></a> ·
+  <a href="#-host-your-repo"><b>Host your repo</b></a> ·
+  <a href="#-talk-to-the-bot"><b>Commands</b></a> ·
   <a href="#-change-transfer-or-remove-yours"><b>Transfer / remove</b></a> ·
   <a href="#-rules"><b>Rules</b></a> ·
   <a href="#-faq"><b>FAQ</b></a>
@@ -25,79 +28,82 @@
 
 ## 🚀 Get your subdomain
 
-**1. Set up your site first.** GitHub Pages, Vercel, Netlify, your own server: anything works.
+### The easy way (recommended)
 
-**2. Add a file.** [Create `domains/<name>.json`](../../new/main/domains?filename=yourname.json) right in your browser. GitHub forks the repo for you.
+1. Go to **[awesomeprojects.tech](https://awesomeprojects.tech)**, type a name, and see instantly whether it's free.
+2. Pick where your project lives. For a **GitHub repo**, it shows the repo and how it'll be built.
+3. Press **Open my request on GitHub**, then **Create**. That's an issue, already filled in.
+
+No website? Use the **[request form](../../issues/new?template=request.yml)** directly. It's the same thing.
+
+Within seconds the bot replies on your issue with every check, a preview of your record and, for repos, the build plan:
+
+> ## ✅ Ready to go live: `alice.awesomeprojects.tech`
+> | | Check | Result |
+> |:-:|---|---|
+> | ✅ | **Format & records** | Valid |
+> | ✅ | **Account age** | 4 years old |
+> | ✅ | **Subdomains you own** | 1 of 3 |
+> | ✅ | **Repository** | alice/portfolio is yours |
+> | ℹ️ | **Repository** | Builds as **Next.js** |
+> | ✅ | **Target is live** | `alice.github.io` resolves |
+
+Once a maintainer approves it, the bot writes your record, DNS goes live in about a minute, and the issue closes with your **next steps** (for repos: a one-click deploy workflow). Made a typo? Just **edit the issue**, and the bot re-checks.
+
+<details>
+<summary><b>The pull request way (for people who like JSON)</b></summary>
+
+[Create `domains/<name>.json`](../../new/main/domains?filename=yourname.json) in your browser (GitHub forks for you):
 
 ```json
 {
   "owner": { "github": "your-github-username" },
   "description": "My portfolio",
-  "records": { "CNAME": "your-github-username.github.io" }
+  "records": { "CNAME": "your-github-username.github.io" },
+  "site": { "provider": "github-pages", "repo": "your-github-username/portfolio" }
 }
 ```
 
-**3. Open the pull request.** Within seconds the bot replies with something like this:
-
-> ## ✅ Ready to go live
-> | | Check | Result |
-> |:-:|---|---|
-> | ✅ | **Format & records** | Valid |
-> | ✅ | **Ownership** | Yours |
-> | ✅ | **Account age** | 4 years old |
-> | ✅ | **Bot check** | Looks like a real person |
-> | ✅ | **Subdomains you own** | 1 of 3 |
-> | ✅ | **Name check** | OK |
-> | ✅ | **Target is live** | `you.github.io` resolves |
-> | ✅ | **Consent** | Nothing needed |
-
-**4. That's it.** A maintainer gives it a final look, and DNS updates about a minute after it's merged.
-
-<details>
-<summary><b>🧩 Every record type, with examples</b></summary>
-
-| Type | What it's for | Example |
-|---|---|---|
-| `CNAME` | Point at another hostname (can't be mixed with other types) | `"CNAME": "you.github.io"` |
-| `A` | Point at IPv4 addresses | `"A": ["76.76.21.21"]` |
-| `AAAA` | Point at IPv6 addresses | `"AAAA": ["2606:4700::6810:84e5"]` |
-| `TXT` | Verification strings | `"TXT": ["google-site-verification=abc123"]` |
-| `MX` | Receive email | `"MX": [{ "host": "mx1.improvmx.com", "priority": 10 }]` |
-
-Only public IPs. No `NS` records (handing the name to another DNS server) and no wildcards.
+`site` is optional (it's what the website and `/whois` show). Record types: `CNAME` (alone), `A`, `AAAA`, `TXT`, `MX`; public IPs only, no `NS`, no wildcards. The bot reviews PRs exactly like requests.
 
 </details>
 
-<details>
-<summary><b>⚡ Setup for popular hosts</b></summary>
+---
 
-| Host | Record | Then… |
-|---|---|---|
-| **GitHub Pages** | `"CNAME": "<you>.github.io"` | Repo → Settings → Pages → Custom domain → `<name>.awesomeprojects.tech` |
-| **Vercel** | `"CNAME": "cname.vercel-dns.com"` | Project → Settings → Domains → add it. If Vercel asks for a TXT, add `_vercel.<name>.json` |
-| **Netlify** | `"CNAME": "<site>.netlify.app"` | Site → Domain management → add it |
-| **Cloudflare Pages** | `"CNAME": "<project>.pages.dev"` | Project → Custom domains → add it |
-| **Render / Railway / Fly** | `"CNAME": "<app>.onrender.com"` etc. | Add the custom domain in the dashboard |
-| **Your own server** | `"A": ["<your IPv4>"]` | Point your web server at the name, then get a certificate (e.g. Caddy or certbot) |
+## 🛠️ Host your repo
 
-</details>
+Pick **"My GitHub repo"** and your repo is built and hosted on GitHub Pages for free, on every push:
 
-<details>
-<summary><b>🔐 Verification records & names under yours</b></summary>
+| | |
+|---|---|
+| **Next.js** | built as a static export (API routes/SSR? pick **Vercel**) |
+| **Vite · Astro · SvelteKit · Nuxt · Gatsby** | detected and built |
+| **Docusaurus · VitePress · Eleventy · CRA** | detected and built |
+| **Plain HTML** | served as-is |
+| **Monorepos, custom commands** | an `awesomeprojects.json` in your repo |
 
-Anything **under** your name gets its own file:
+The bot gives you a one-click link that adds a 15-line workflow to your repo. Everything else is in **[docs/HOSTING.md](docs/HOSTING.md)**.
 
-```text
-domains/alice.json                                  alice.awesomeprojects.tech
-domains/_vercel.alice.json                          _vercel.alice.awesomeprojects.tech       (TXT)
-domains/_github-pages-challenge-alice.alice.json    GitHub Pages domain verification
-domains/s1._domainkey.alice.json                    email DKIM
-domains/blog.alice.json                             blog.alice.awesomeprojects.tech
-```
+---
 
-Names under yours don't count toward your limit. If **someone else** wants a name under yours (say `docs.alice`), their request waits until you comment `/approve` on it.
+## 🤖 Talk to the bot
 
-</details>
+Start a comment with a command, in any issue or pull request here. The read-only ones also work in [Discussions](../../discussions).
+
+| Command | What it does |
+|---|---|
+| `/available <name>` | Is a name free? (with a link to request it) |
+| `/whois <name>` | Who owns a name, where it points, what's under it |
+| `/mine` | Your names |
+| `/verify <name>` | Check DNS and HTTPS right now, with a hint if something's off |
+| `/txt <name> <label> <value>` | Add a verification TXT under your name, e.g. `/txt alice _vercel vc-domain-verify=…`. Live in a minute. |
+| `/remove <name>` | Remove one of your names |
+| `/transfer <name> @user` | Start handing a name to someone |
+| `/recheck` · `/cancel` | Re-run the checks · close your own request |
+| `/approve` · `/accept` | Allow a name under yours · accept a name handed to you |
+| `/stats` · `/help` | Numbers · the full list, including maintainer commands |
+
+Every change the bot makes is posted to the **[📜 Bot activity log](../../discussions/categories/announcements)**.
 
 ---
 
@@ -105,29 +111,30 @@ Names under yours don't count toward your limit. If **someone else** wants a nam
 
 ```mermaid
 flowchart LR
-    PR([Pull request]) --> BOT{{🤖 Bot checks it<br/>in seconds}}
+    W([🌐 website]) --> REQ
+    F([📝 request form]) --> REQ
+    PR([🔀 pull request]) --> BOT
+    REQ([issue]) --> BOT{{🤖 bot checks it<br/>in seconds}}
     BOT -->|all good| READY[✅ ready]
-    BOT -->|fixable problem| FIX[✏️ needs changes]
-    BOT -->|waiting on someone| HOLD[⏸️ on hold]
-    BOT -->|can't be accepted| NO[⛔ rejected & closed]
-    FIX -->|push a fix| BOT
-    HOLD -->|owner says /approve<br/>new owner says /accept<br/>maintainer reviews| BOT
-    READY -->|maintainer says /approve<br/>or auto-merge| LIVE([🚀 merged → DNS live])
-    FIX -.->|14 days of silence| CLOSED([closed])
+    BOT -->|fixable| FIX[✏️ needs changes]
+    BOT -->|waiting on a person| HOLD[⏸️ on hold]
+    BOT -->|can't be accepted| NO[⛔ closed]
+    FIX -->|edit the issue / push| BOT
+    HOLD -->|/approve · /accept · review| BOT
+    READY -->|maintainer /approve| LIVE([🚀 live + next steps])
 ```
-
-**What the bot checks**
 
 | Check | ✅ Passes when | ⏸️ Holds when | ✏️ / ⛔ Fails when |
 |---|---|---|---|
-| **Format & records** | the JSON and records are valid | | ✏️ invalid JSON, private IPs, bad names, files outside `domains/` |
-| **Ownership** | `owner.github` is you | | ✏️ it's someone else · ⛔ you edit a name you don't own |
-| **Account age** | older than 30 days | 7–30 days old | ⛔ under 7 days (it tells you when to come back) |
-| **Bot check** | it looks like a real person | it looks like a throwaway account | ⛔ bot accounts |
-| **Subdomains you own** | within the limit (3) | | ✏️ over the limit |
-| **Name check** | | the name looks like phishing (`login`, `paypal`…) | ✏️ reserved names |
-| **Target is live** | the CNAME/MX target resolves | GitHub Pages target isn't yours | ✏️ the target doesn't exist |
-| **Consent** | nothing needed, or given | under someone else's name, or a hand-over | |
+| **Format & records** | valid | | ✏️ bad records, private IPs, reserved names |
+| **Ownership** | it's yours | | ⛔ editing someone else's name |
+| **Account age** | over 30 days | 7–30 days | ⛔ under 7 days (it tells you when to come back) |
+| **Bot check** | looks like a person | looks like a throwaway | ⛔ bot accounts |
+| **Subdomains you own** | within your limit | | ✏️ over it |
+| **Name check** | | sounds like phishing (`login`, `paypal`…) | |
+| **Repository** | public, yours (or your org's) | org membership isn't public | ✏️ missing, archived, someone else's |
+| **Target is live** | resolves | a github.io that isn't yours | ✏️ doesn't exist |
+| **Consent** | none needed / given | under someone else's name · a hand-over | |
 
 ---
 
@@ -135,11 +142,12 @@ flowchart LR
 
 | I want to… | Do this |
 |---|---|
-| **Point it somewhere else** | Edit your file in a PR. Same checks, usually instant. |
-| **Give it to someone** | [Open a transfer](../../issues/new?template=transfer.yml) with their username. They reply `/accept`, and it moves automatically. |
-| **Get a name someone else has** | [Open a transfer](../../issues/new?template=transfer.yml) and leave the new owner blank. The owner gets pinged and replies `/approve`. If they've vanished, a maintainer can step in after 30 days. |
-| **Remove mine** | [Open a takedown](../../issues/new?template=takedown.yml) → "I own it and want it removed". Removed automatically, right away. |
-| **Report abuse** | [Open a takedown](../../issues/new?template=takedown.yml) with the reason. For something sensitive, [report it privately](../../security/advisories/new). |
+| **Point it somewhere else** | [Request it again](../../issues/new?template=request.yml) with the same name: the bot sees it's yours and updates it. |
+| **Add a verification record** | `/txt <name> <label> <value>` on any issue |
+| **Give it to someone** | `/transfer <name> @them`, or [open a transfer](../../issues/new?template=transfer.yml). They reply `/accept`. |
+| **Get a name someone else has** | [Open a transfer](../../issues/new?template=transfer.yml). The owner replies `/approve` (a maintainer can step in after 30 days of silence). |
+| **Remove mine** | `/remove <name>`, instantly |
+| **Report abuse** | [Open a report](../../issues/new?template=takedown.yml), or [privately](../../security/advisories/new) |
 
 ---
 
@@ -147,8 +155,8 @@ flowchart LR
 
 1. **Real projects only.** No phishing, scams, malware, spam, adult content, impersonation, or anything illegal.
 2. **Three names per person.** Names under yours (`blog.you`, `_vercel.you`) don't count.
-3. **Don't leave it dangling.** If your site goes away, remove your name. A weekly health check flags names that point at nothing, because those can be hijacked.
-4. **Accounts must be at least a week old.** Accounts under a month old, and ones that look automated, get a human review.
+3. **Don't leave it dangling.** A weekly health check flags names that point at nothing; remove yours when you're done.
+4. **Accounts must be at least a week old.** New or automated-looking accounts get a human review.
 5. **We can remove anything, any time.** It's a free service run by volunteers.
 
 ---
@@ -156,27 +164,27 @@ flowchart LR
 ## ❓ FAQ
 
 <details><summary><b>How long does it take?</b></summary>
-The bot answers in seconds. A maintainer usually reviews within a day. After merge, DNS updates within a minute or two (your host may take a few more minutes to issue HTTPS).
+The bot answers in seconds; a maintainer usually approves within a day; DNS updates about a minute after. Your host may take a few more minutes to issue HTTPS: check with <code>/verify &lt;name&gt;</code>.
 </details>
 
-<details><summary><b>The bot says my target doesn't exist</b></summary>
-Set up the site first, so the name never points at nothing. Then push any change, or comment <code>/recheck</code>.
+<details><summary><b>Can I run a full Next.js app (API routes, SSR)?</b></summary>
+Not on GitHub Pages: it only serves files. Pick <b>Vercel</b> when you request (free for hobby projects); everything works there.
 </details>
 
-<details><summary><b>Can I use Cloudflare's proxy / orange cloud?</b></summary>
-No. Records are DNS-only, so your host handles HTTPS.
-</details>
-
-<details><summary><b>Can I get a wildcard or NS records?</b></summary>
-No. Those would hand control of a whole branch of the domain to one server, so they aren't offered.
+<details><summary><b>Vercel / GitHub asks me to verify the domain with a TXT record</b></summary>
+Comment <code>/txt &lt;name&gt; &lt;label&gt; &lt;value&gt;</code>, e.g. <code>/txt alice _vercel vc-domain-verify=alice.awesomeprojects.tech,abc</code>. It's live in a minute.
 </details>
 
 <details><summary><b>Why did my request get held?</b></summary>
-Nothing's wrong. A person needs to look at it: either the owner of the name above yours, the new owner in a hand-over, or a maintainer (for new accounts, names that look like phishing, or GitHub Pages targets that aren't yours).
+Nothing's wrong; a person needs to look. The bot's comment says who it's waiting for and why.
+</details>
+
+<details><summary><b>Wildcards, NS records, Cloudflare proxy?</b></summary>
+No: they'd hand a whole branch of the domain to one server. Records are DNS-only; your host handles HTTPS.
 </details>
 
 ---
 
 <p align="center">
-  <sub>Run by volunteers · <a href="docs/MAINTAINERS.md">Maintainer guide</a> · DNS by Cloudflare, managed with <a href="https://dnscontrol.org">DNSControl</a></sub>
+  <sub>Run by volunteers · <a href="docs/MAINTAINERS.md">Maintainer guide</a> · <a href="docs/HOSTING.md">Hosting guide</a> · <a href="../../discussions">Discussions</a> · DNS by Cloudflare, managed with <a href="https://dnscontrol.org">DNSControl</a></sub>
 </p>
