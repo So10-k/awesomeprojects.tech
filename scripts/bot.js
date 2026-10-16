@@ -75,7 +75,10 @@ function mainTree() {
   fetchRefs('+refs/heads/main:refs/bot/main');
   return readTree('refs/bot/main');
 }
-const mainFile = (f) => git(['show', `refs/bot/main:${f}`]);
+const mainFile = (f) => {
+  fetchRefs('+refs/heads/main:refs/bot/main');
+  return git(['show', `refs/bot/main:${f}`]);
+};
 
 // ── Activity log (a Discussion) ─────────────────────────────────
 const LOG_TITLE = '📜 Bot activity log';
@@ -613,6 +616,18 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
 async function onIssueComment(issue, comment) {
   const parsed = C.parseCommand(comment.body);
   if (!parsed) return;
+  try {
+    return await runIssueCommand(issue, comment, parsed);
+  } catch (e) {
+    // Never fail silently: say what broke, where it can be seen.
+    console.error(e);
+    await react(comment.id, 'confused');
+    await reply(issue.number, `⚠️ @${comment.user.login}, \`${parsed.cmd}\` failed: ${String(e.message).split('\n')[0].slice(0, 300)}${runUrl ? ` ([log](${runUrl}))` : ''}. Nothing was changed; try again, or tell a maintainer.`).catch(() => {});
+    throw e;
+  }
+}
+
+async function runIssueCommand(issue, comment, parsed) {
   const { cmd, args, rest } = parsed;
   const by = comment.user.login;
   const admin = isAdmin(by, comment.author_association);
