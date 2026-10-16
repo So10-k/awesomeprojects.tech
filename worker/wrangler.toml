@@ -6,6 +6,9 @@ account_id = "2f8365ea25e7fd8c95ba7da82046b81c"
 workers_dev = false
 routes = [{ pattern = "api.awesomeprojects.tech", custom_domain = true }]
 
+[triggers]
+crons = ["17 * * * *"] # hourly: close stale private requests
+
 [vars]
 REPO = "So10-k/awesomeprojects.tech"
 SITE_ORIGIN = "https://awesomeprojects.tech"

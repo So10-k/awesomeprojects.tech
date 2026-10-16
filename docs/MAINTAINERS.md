@@ -64,6 +64,21 @@ Everything is a comment, so it all works from the GitHub mobile app.
   | `archived` | removed | DNS off, repo archived | done with it |
 
   Change it from the console's **Sites** tab or with `/site`. Only the owner can bring back an archived site.
+- **Templates:** Plain HTML, Next.js, Vite + React, Astro or Docs (VitePress), from `templates/`, created in one commit. Each one is test-built through the real deploy pipeline.
+- **Custom properties** on every site repo (`ap_status`, `ap_owner`, `ap_name`, `ap_template`), and org rulesets that target them:
+  - **frozen sites:** `ap_status` locked or suspended means GitHub refuses every push, branch creation and deletion
+  - **managed workflows:** no edits to `.github/workflows/**`, a maximum file size (`maxFileSizeMB`), and blocked file types (`blockedExtensions`)
+  - **protect main:** no force pushes or deletion
+- **Custom roles** (Enterprise): `ap-site-owner` (write + read security alerts), `ap-site-collaborator` (write), `ap-site-locked` (triage: they can answer our issues but not push), and an `ap-maintainer` org role (audit log, Actions usage, read-only) for the maintainers team. Only the permissions GitHub offers are used; `/org-setup` reads the live list.
+- **Security:** Dependabot alerts and secret scanning (push protection) are switched on per repo where the plan allows.
+- **Cost guards:** `maxSeats` (outside collaborators = enterprise seats; new hosted approvals hold at the cap), `hostedPerOwner`, `hostedMinAccountAgeDays`, `maxRepoSizeMB` and `maxCollaboratorsPerSite`. All are in the console's *Settings* tab.
+- **Daily ops** (06:41 UTC, or `/ops` / *Run checks now*):
+  - turns on HTTPS when the certificate is ready
+  - opens a "deploy failed" issue in the site repo, assigned to the owner, and closes it once a deploy succeeds
+  - locks repos over the size limit
+  - warns, then optionally locks, sites with no recent push (`inactivityWarnDays` / `inactivityLockDays`)
+  - counts seats, sends the console a snapshot, and posts a digest to the activity log (and Discord, if set)
+- **Owners manage their own site** in My domains: Redeploy, and collaborators (`/site-collab`), capped per site.
 - **Locked down:** org rulesets block every change to `.github/workflows/**` except by org admins (the bot), and the Actions allow-list only permits GitHub's own actions and our build workflow. Site owners edit content; they can't run arbitrary Actions on the org's minutes. To give a site a different build, edit its workflow as an admin, or `/site-sync` to reset it.
 - **Removing** a hosted name (takedown or `/remove`) archives the repo and removes the owner; nothing is deleted.
 - **The bot token** is a classic PAT on `@appdev7710-netizen` with `repo`, `workflow` and `admin:org`. `/bot-check` shows what it has. Keep it out of every other org.
@@ -102,6 +117,10 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 | `/site-sync <name>` | any issue | Re-apply a hosted repo's standard setup (settings, workflow, Pages, team, owner access) |
 | `/repo-access <name> @user <read\|write\|maintain\|none>` | any issue | Give someone access to a hosted repo (each outside person uses an enterprise seat) |
 | `/config <setting> <value>` | any issue | **Owner only.** Change a bot setting (also in the console's *Settings* tab) |
+| `/suspend-user @user <reason>` | any issue | Ban an account and suspend every site it hosts |
+| `/announce <text\|off>` | any issue | A banner on the website, My domains and the console |
+| `/ops` · `/seats` | anywhere | Run the daily site checks now · show enterprise seat use |
+| `/redeploy <name>` · `/site-collab <name> @user <add\|remove>` | any issue | Owners (and maintainers): redeploy a hosted site · manage its collaborators |
 | `/org-setup` · `/bot-check` | any issue | **Owner only.** Re-apply the sites org's defaults · check the bot token and its org role |
 | `/help` | anywhere | Everything, including the user commands |
 
@@ -330,5 +349,6 @@ Already done for this repo; here for reference.
 2. **Ruleset `protect-main`:** PRs only, required status `subdomain-review`, no force pushes or deletion. Bypass: repo admins, PR only (to merge changes to the bot itself, which it can't review before they exist).
 3. **Actions:** require approval for workflows from outside contributors (this covers `checks.yml`; the bot always runs); default token read-only (each workflow asks for what it needs).
 4. **Labels:** `request`, `live`, `ready`, `needs-changes`, `on-hold`, `rejected`, `nested`, `transfer`, `new-account`, `maybe-bot`, `sensitive-name`, `pages-mismatch`, `manual-hold`, `takedown`, `abuse`, `dangling`, `health`, `stale`.
-5. **Discussions** on, and **Pages** for this repo: *Source* = GitHub Actions, custom domain `awesomeprojects.tech`.
-6. **Later: the [Public Suffix List](https://github.com/publicsuffix/list).** Once established, apply so browsers isolate cookies between subdomains. Until then, nothing with logins should live on the root domain.
+5. **Optional Discord:** `gh secret set DISCORD_WEBHOOK -R So10-k/awesomeprojects.tech` (a channel webhook URL) gets new requests, reports and ops problems.
+6. **Discussions** on, and **Pages** for this repo: *Source* = GitHub Actions, custom domain `awesomeprojects.tech`.
+7. **Later: the [Public Suffix List](https://github.com/publicsuffix/list).** Once established, apply so browsers isolate cookies between subdomains. Until then, nothing with logins should live on the root domain.

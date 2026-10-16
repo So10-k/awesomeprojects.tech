@@ -153,6 +153,19 @@ export const ACTIONS = {
       return { command: `/repo-access ${name(a.name)} @${user(a.user)} ${lvl}` };
     },
   },
+  redeploy: { role: 'user', build: (a) => ({ command: `/redeploy ${name(a.name)}` }) },
+  'site-collab': {
+    role: 'user',
+    build: (a) => {
+      const op = clean(a.op, 10).toLowerCase() || 'add';
+      if (!['add', 'remove'].includes(op)) throw new Error('Add or remove.');
+      return { command: `/site-collab ${name(a.name)} @${user(a.user)} ${op}` };
+    },
+  },
+  'suspend-user': { role: 'maintainer', build: (a) => ({ command: `/suspend-user @${user(a.user)}${opt(a.reason)}` }) },
+  announce: { role: 'maintainer', build: (a) => ({ command: `/announce ${clean(a.text, 280) || 'off'}` }) },
+  ops: { role: 'maintainer', build: () => ({ command: '/ops' }) },
+  seats: { role: 'maintainer', build: () => ({ command: '/seats' }) },
   // Owner
   config: {
     role: 'owner',
@@ -215,6 +228,7 @@ async function config(env, now = Date.now()) {
   return configCache.value;
 }
 /** Tests only: forget cached config. */
+export { sweep };
 export function resetCaches() { configCache = { at: 0, value: null }; queueCache = { at: 0, value: null }; }
 
 export async function roleOf(login, env) {
@@ -368,7 +382,7 @@ const MAX_OPEN_PER_PERSON = 5;
 function cleanForm(a) {
   const n = name(a.name);
   if (n.includes('.')) throw new Error('Request a top-level name; add records under it from My domains afterwards.');
-  return { name: n, provider: clean(a.provider, 80), repo: clean(a.repo, 140), target: clean(a.target, 300), description: clean(a.description, 200) };
+  return { name: n, provider: clean(a.provider, 80), template: clean(a.template, 40), repo: clean(a.repo, 140), target: clean(a.target, 300), description: clean(a.description, 200) };
 }
 const rowOut = (r, { full }) => ({
   id: r.id, name: r.name, requester: r.requester, state: r.state, manualHold: !!r.manual_hold, form: JSON.parse(r.form),
@@ -498,6 +512,38 @@ async function requests(req, env, s, url, parts) {
   return fail(req, env, 404, 'Not found.');
 }
 
+/** The bot's daily (or on-demand) snapshot of every hosted site. */
+async function botSites(req, env) {
+  const h = req.headers.get('Authorization') || '';
+  const secret = String(env.BOT_SECRET || '').trim();
+  if (!secret || !safeEqual(h.trim(), `Bearer ${secret}`)) return new Response('no', { status: 401 });
+  const snap = await req.json();
+  await env.PANEL.put('sites:snapshot', JSON.stringify(snap));
+  return new Response('ok');
+}
+/** Maintainers see every site; everyone else sees their own. */
+async function sitesView(req, env, s) {
+  const snap = JSON.parse((await env.PANEL.get('sites:snapshot')) || '{"sites":[]}');
+  if (RANK[await roleOf(s.login, env)] >= RANK.maintainer) return json(req, env, snap);
+  const me = s.login.toLowerCase();
+  return json(req, env, { at: snap.at, sites: (snap.sites || []).filter((x) => String(x.owner).toLowerCase() === me || (x.collaborators || []).map((c) => c.toLowerCase()).includes(me)) });
+}
+
+/** Hourly: close private requests that have needed changes for too long. */
+async function sweep(env) {
+  if (!env.DB) return;
+  const cfg = await config(env).catch(() => ({}));
+  const days = cfg.staleRequestDays || 14;
+  const cutoff = Date.now() - days * 86400e3;
+  const stale = (await env.DB.prepare(`SELECT id, name FROM requests WHERE state = 'needs-changes' AND updated_at < ?1 LIMIT 100`).bind(cutoff).all()).results || [];
+  for (const r of stale) {
+    await env.DB.prepare(`UPDATE requests SET state = 'cancelled', updated_at = ?2 WHERE id = ?1`).bind(r.id, Date.now()).run();
+    await env.DB.prepare(`INSERT INTO notes (request_id, author, body, internal, created_at) VALUES (?1, 'bot', ?2, 0, ?3)`)
+      .bind(r.id, `Closed after ${days} days without changes. Start a new request any time.`, Date.now()).run();
+    await auditWrite(env, { id: newId(), at: Date.now(), actor: 'bot', role: 'owner', summary: `auto-close stale request ${r.name}`, state: 'done', request: r.id });
+  }
+}
+
 /** The bot reports a review (kind "review") or the outcome of an approval (kind "live" / "failed"). */
 async function botRequest(req, env) {
   const h = req.headers.get('Authorization') || '';
@@ -555,6 +601,9 @@ async function queue(req, env, s) {
 }
 
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(sweep(env));
+  },
   async fetch(req, env) {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });
@@ -564,6 +613,7 @@ export default {
       if (url.pathname === '/auth/callback' && req.method === 'GET') return callback(req, env, url);
       if (url.pathname === '/bot/result' && req.method === 'POST') return botResult(req, env);
       if (url.pathname === '/bot/request' && req.method === 'POST') return botRequest(req, env);
+      if (url.pathname === '/bot/sites' && req.method === 'POST') return botSites(req, env);
       if (url.pathname.startsWith('/api/')) {
         // State-changing calls must come from the site itself.
         if (req.method === 'POST' && !origins(env).includes(req.headers.get('Origin'))) return fail(req, env, 403, 'Wrong origin.');
@@ -575,6 +625,7 @@ export default {
         if (url.pathname === '/api/queue' && req.method === 'GET') return queue(req, env, s);
         if (url.pathname === '/api/audit' && req.method === 'GET') return audit(req, env, s, url);
         if (url.pathname === '/api/stats' && req.method === 'GET') return stats(req, env, s);
+        if (url.pathname === '/api/sites' && req.method === 'GET') return sitesView(req, env, s);
         if (url.pathname === '/api/requests' || url.pathname.startsWith('/api/requests/')) return requests(req, env, s, url, url.pathname.split('/'));
       }
       return fail(req, env, 404, 'Not found.');

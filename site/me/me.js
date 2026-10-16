@@ -13,6 +13,7 @@ const BASE_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
 
 let D = null; // ../data.json
+let snapshot = { sites: [] }; // the bot's latest look at hosted sites
 let me = null;
 let requests = [];
 let pick = { kind: 'name', id: null }; // name | req | new
@@ -223,15 +224,52 @@ function renderName(n) {
     h('section', { className: 'card-box' },
       h('header', {}, h('h2', { textContent: 'DNS records' }), add),
       table, form),
-    hosted ? h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Your repo' })),
-      h('div', { className: 'body' },
-        h('p', {}, 'Push to ', h('code', { textContent: 'main' }), ' and it\'s live a minute later. Workflows are managed for you.'),
-        h('div', { className: 'danger-row' },
-          h('a', { className: 'btn', href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: 'Open the repo' }),
-          h('a', { className: 'btn', href: `https://github.com/${n.repo}/invitations`, target: '_blank', rel: 'noopener', textContent: 'Accept the invite' }),
-          h('a', { className: 'btn', href: `https://github.com/${n.repo}/actions`, target: '_blank', rel: 'noopener', textContent: 'Deploys' })))) : null,
+    hosted ? hostedBox(n, result) : null,
     h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Name' })),
       h('div', { className: 'body' }, h('div', { className: 'danger-row' }, transfer, remove))));
+}
+
+// ── A hosted site: deploys and collaborators ───────────────────
+const ago = (iso) => {
+  if (!iso) return 'never';
+  const d = (Date.now() - Date.parse(iso)) / 1000;
+  return d < 3600 ? `${Math.max(1, Math.round(d / 60))} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} days ago`;
+};
+function hostedBox(n, result) {
+  const snap = (snapshot.sites || []).find((x) => x.name === n.name) || {};
+  const dep = snap.deploy || {};
+  const depText = dep.conclusion === 'success' ? '✅ deployed' : dep.conclusion === 'failure' ? '❌ last deploy failed' : dep.conclusion ? `⏳ ${dep.conclusion}` : 'no deploys yet';
+  const facts = h('div', { className: 'facts' },
+    h('span', { className: 'fact' }, dep.url ? h('a', { href: dep.url, target: '_blank', rel: 'noopener', textContent: depText }) : depText, dep.at ? ` · ${ago(dep.at)}` : ''),
+    h('span', { className: 'fact', textContent: snap.https ? '🔒 HTTPS' : '🔓 HTTPS pending' }),
+    snap.sizeMB !== undefined ? h('span', { className: 'fact', textContent: `${snap.sizeMB} MB` }) : null,
+    h('span', { className: 'fact', textContent: `last push ${ago(snap.pushedAt)}` }));
+  const redeploy = h('button', { className: 'btn primary', type: 'button', textContent: 'Redeploy', disabled: n.status && n.status !== 'active' });
+  redeploy.addEventListener('click', () => run(result, 'redeploy', { name: n.name }, 'Starting a deploy…'));
+  // Collaborators
+  const list = h('ul', { className: 'chips' });
+  const people = [...new Set([...(snap.collaborators || []), ...(snap.pendingInvites || []).map((p) => `${p} (invited)`)])].filter((p) => lc(p) !== lc(n.owner));
+  for (const p of people) {
+    const login = p.replace(/ \(invited\)$/, '');
+    const x = h('button', { type: 'button', textContent: '×', ariaLabel: `Remove ${login}` });
+    x.addEventListener('click', () => { if (confirm(`Remove @${login} from ${n.name}?`)) run(result, 'site-collab', { name: n.name, user: login, op: 'remove' }, 'Removing…'); });
+    list.append(h('li', {}, `@${p}`, x));
+  }
+  if (!people.length) list.append(h('li', { className: 'empty', textContent: 'Just you.' }));
+  const who = h('input', { placeholder: '@friend', spellcheck: false, autocomplete: 'off' });
+  const add = h('form', { className: 'inline' }, who, h('button', { className: 'btn', type: 'submit', textContent: 'Invite' }));
+  add.addEventListener('submit', (e) => { e.preventDefault(); if (who.value.trim()) run(result, 'site-collab', { name: n.name, user: who.value.trim(), op: 'add' }, `Inviting ${who.value.trim()}…`); });
+  return h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Your site' }), redeploy),
+    h('div', { className: 'body' },
+      facts,
+      h('p', {}, 'Push to ', h('code', { textContent: 'main' }), ' and it\'s live a minute later. Workflows are managed for you.'),
+      h('div', { className: 'danger-row' },
+        h('a', { className: 'btn', href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: 'Open the repo' }),
+        h('a', { className: 'btn', href: `https://github.com/${n.repo}/invitations`, target: '_blank', rel: 'noopener', textContent: 'Accept your invite' }),
+        h('a', { className: 'btn', href: `https://github.com/${n.repo}/actions`, target: '_blank', rel: 'noopener', textContent: 'Deploy logs' })),
+      h('h3', { className: 'sub-h', textContent: `Collaborators (up to ${D.settings && D.settings.maxCollaboratorsPerSite ? D.settings.maxCollaboratorsPerSite.value : 2})` }),
+      list, add,
+      snapshot.at ? h('p', { className: 'help', textContent: `Status checked ${ago(new Date(snapshot.at).toISOString())}.` }) : null));
 }
 
 // ── A request ──────────────────────────────────────────────────
@@ -318,11 +356,15 @@ function renderNew({ editing } = {}) {
   const repo = h('input', { name: 'repo', placeholder: 'you/your-site', value: f.repo || '', spellcheck: false });
   const target = h('input', { name: 'target', value: f.target || '', spellcheck: false });
   const desc = h('input', { name: 'description', maxLength: 200, value: f.description || '', placeholder: 'My portfolio' });
+  const tpl = h('select', { name: 'template' }, ...(D.templates || []).map((t) => new Option(`${t.label} · ${t.blurb}`, t.id)));
+  tpl.value = f.template || 'html';
+  const tplL = h('label', {}, 'Start from', tpl);
   const repoL = h('label', {}, 'GitHub repository', repo);
   const targetL = h('label', {}, 'Target', target);
   const sync = () => {
     const p = D.providers.find((x) => x.label === prov.value);
     repoL.hidden = p.input !== 'repo';
+    tplL.hidden = p.id !== 'hosted';
     targetL.hidden = !(p.input === 'target' || p.input === 'ips');
     target.placeholder = p.input === 'ips' ? '203.0.113.7' : p.suffix ? `my-site${p.suffix}` : 'host.example.com';
   };
@@ -339,14 +381,14 @@ function renderNew({ editing } = {}) {
   const result = h('div', { className: 'result', hidden: true });
   const form = h('form', { className: 'form-grid' },
     h('label', {}, 'Name', h('div', { className: 'suffix-wrap' }, name, h('span', { textContent: `.${D.domain}` })), avail),
-    h('label', {}, 'Where should it point?', prov), repoL, targetL,
+    h('label', {}, 'Where should it point?', prov), tplL, repoL, targetL,
     h('label', {}, 'One line about it', desc),
     h('div', { className: 'row' }, h('button', { className: 'btn primary', type: 'submit', textContent: editing ? 'Save changes' : 'Send request' })),
     h('p', { className: 'help', textContent: 'Only you and the maintainers can see your request.' }));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const p = D.providers.find((x) => x.label === prov.value);
-    const body = { name: lc(name.value.trim()), provider: prov.value, repo: p.input === 'repo' ? repo.value : '', target: p.input === 'target' || p.input === 'ips' ? target.value : '', description: desc.value };
+    const body = { name: lc(name.value.trim()), provider: prov.value, template: p.id === 'hosted' ? tpl.value : '', repo: p.input === 'repo' ? repo.value : '', target: p.input === 'target' || p.input === 'ips' ? target.value : '', description: desc.value };
     result.hidden = false;
     result.className = 'result busy';
     result.textContent = 'Sending…';
@@ -373,6 +415,7 @@ function renderNew({ editing } = {}) {
     if (q.get('repo')) repo.value = q.get('repo');
     if (q.get('target')) target.value = q.get('target');
     if (q.get('description')) desc.value = q.get('description');
+    if (q.get('template')) tpl.value = q.get('template');
     sync();
     check();
     name.focus();
@@ -423,6 +466,8 @@ fetch('../data.json', { cache: 'no-cache' }).then((r) => r.json()).then(async (d
       $('#whoName').textContent = `@${me.login}`;
       if (me.avatar) $('#whoAvatar').src = `${me.avatar}${me.avatar.includes('?') ? '&' : '?'}s=56`;
       await loadRequests();
+      snapshot = await Panel.sites().catch(() => ({ sites: [] }));
+      if (D.announcement) document.body.prepend(h('div', { className: 'announce', role: 'status' }, '📣 ', D.announcement));
       if (new URLSearchParams(location.search).get('new') !== null || new URLSearchParams(location.search).get('name')) pick = { kind: 'new' };
       return render();
     } catch { Panel.logout(); }

@@ -43,6 +43,7 @@ function cleanHost(s) {
  * returns { name, provider, entry, problems }
  */
 function buildRequest(form, author, { sitesOrg } = {}) {
+  // form['Template']: a template id or label for hosted sites (default: plain HTML)
   const { cleanName } = require('./requests');
   const problems = [];
   const name = cleanName(form['Subdomain'] || '');
@@ -62,7 +63,10 @@ function buildRequest(form, author, { sitesOrg } = {}) {
     else if (name.includes('.')) problems.push('Hosted sites need a top-level name.');
     else {
       records = { CNAME: `${lc(sitesOrg)}.github.io` };
-      site = { provider: 'hosted', repo: `${sitesOrg}/${name}`, status: 'active' };
+      const { TEMPLATES } = require('./sites');
+      const raw = lc(form['Template'] || '');
+      const tpl = TEMPLATES.find((t) => t.id === raw || lc(t.label) === raw) || TEMPLATES[0];
+      site = { provider: 'hosted', repo: `${sitesOrg}/${name}`, status: 'active', template: tpl.id };
     }
   } else if (provider.id === 'vercel') {
     records = { CNAME: 'cname.vercel-dns.com' };

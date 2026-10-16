@@ -97,10 +97,19 @@
 
       <div class="panel" data-panel="sites" role="tabpanel" hidden>
         <p class="help" id="sitesHelp"></p>
-        <table class="grid" id="sitesTable">
-          <thead><tr><th>Site</th><th>Owner</th><th>Status</th><th>Repo</th><th></th></tr></thead>
+        <div class="toolbar inline sites-bar">
+          <input id="siteFilter" placeholder="filter sites, owners…" spellcheck="false" aria-label="Filter sites">
+          <span class="muted" id="sitesSel">0 selected</span>
+          <select id="bulkStatus" class="status-select" aria-label="Status for selected"><option value="">Set status…</option><option>active</option><option>locked</option><option>suspended</option><option>archived</option></select>
+          <button class="btn" id="bulkApply" type="button">Apply to selected…</button>
+          <button class="btn" data-action="ops" type="button">Run checks now…</button>
+          <button class="btn" data-action="seats" type="button">Seats…</button>
+        </div>
+        <table class="grid sites-grid" id="sitesTable">
+          <thead><tr><th><input type="checkbox" id="selAll" aria-label="Select all"></th><th>Site</th><th>Owner</th><th>Status</th><th>Deploy</th><th>HTTPS</th><th>Size</th><th>Last push</th><th>People</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
+        <p class="help" id="snapAt"></p>
       </div>
 
       <div class="panel" data-panel="settings" role="tabpanel" hidden>
@@ -117,6 +126,11 @@
       </div>
 
       <div class="panel" data-panel="people" role="tabpanel" hidden>
+        <form class="toolbar inline" id="lookup">
+          <input name="user" placeholder="@someone: see everything about them" spellcheck="false" aria-label="GitHub username">
+          <button class="btn primary" type="submit">Look up</button>
+        </form>
+        <div id="profile"></div>
         <div class="split">
           <form class="box" data-cmd="ban">
             <h2>Ban</h2>
@@ -153,6 +167,12 @@
             <button class="btn" data-action="deploy" type="button">Deploy…</button>
             <button class="btn" data-action="health" type="button">Health check…</button>
           </div>
+          <form class="box" data-cmd="announce">
+            <h2>Announcement</h2>
+            <p class="help" id="announceNow">A banner on the website, My domains and here.</p>
+            <label>Text <input name="text" maxlength="280" placeholder="Maintenance tonight at 9pm UTC"></label>
+            <div class="row"><button class="btn" type="submit">Show it…</button><button class="btn" type="button" data-action="announce-off">Clear…</button></div>
+          </form>
           <form class="box" data-cmd="reserve">
             <h2>Reserved names</h2>
             <p class="help">Off-limits for everyone. Doesn't remove a name that already exists.</p>

@@ -34,6 +34,17 @@ body:
         - My own server (IP address)
     validations:
       required: true
+  - type: dropdown
+    id: starter
+    attributes:
+      label: Template
+      description: "Only for \"Host it for me\": what your new repo starts as."
+      options:
+        - Plain HTML
+        - Next.js
+        - Vite + React
+        - Astro
+        - Docs (VitePress)
   - type: input
     id: repo
     attributes:

@@ -18,11 +18,12 @@ on:
   repository_dispatch:
     types: [panel] # actions from the panel (api.awesomeprojects.tech)
   schedule:
-    - cron: "17 9 * * 1" # Mondays
+    - cron: "17 9 * * 1" # Mondays: dangling-name health check
+    - cron: "41 6 * * *" # daily: hosted-site ops
   workflow_dispatch:
     inputs:
       target:
-        description: "What to run: pr <number> | issue <number> | health | bot-check"
+        description: "What to run: pr <number> | issue <number> | health | bot-check | ops"
         required: true
         default: health
 
@@ -59,3 +60,4 @@ jobs:
           PANEL_API: https://api.awesomeprojects.tech
           PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
           BOT_PAT: ${{ secrets.BOT_PAT }} # the bot account: only used for the sites org
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }} # optional notifications

@@ -53,6 +53,8 @@ const data = {
   frameworks: F.FRAMEWORKS.map(({ id, label, dep }) => ({ id, label, dep })),
   commands: C.CATALOG,
   sitesOrg: config.sitesOrg || '',
+  announcement: config.announcement || '',
+  templates: require('./sites').TEMPLATES,
   settings: Object.fromEntries(Object.entries(C.SETTINGS).map(([k, v]) => [k, { ...v, value: config[k] }])),
 };
 

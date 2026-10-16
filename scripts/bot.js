@@ -339,6 +339,7 @@ async function onRequest(issue, { comment, cmd } = {}) {
   }
   const { file, exists, rc, result } = ev;
   console.log(`request #${issue.number} ${name} by ${author}: ${result.verdict}`);
+  if (!comment && ['ready', 'on-hold'].includes(result.verdict)) await notify(`🌱 Request **${name}** by @${author}: ${result.verdict} · ${issue.html_url}`);
   for (const f of result.findings) console.log(`  ${f.level.padEnd(6)} ${f.check}: ${f.text}`);
   await setLabels(issue.number, labels, result.labels);
 
@@ -383,7 +384,11 @@ async function evaluateRequest({ built, author, comments = [], labels = [], over
   const dns = await checkTargets([built.entry]);
   // A hosted site points at our own org's github.io on purpose.
   const pagesOwners = [...rc.pagesOwners, ...(S.isHosted(built.entry) && ORG ? [lc(ORG)] : [])];
-  if (S.isHosted(built.entry)) rc.findings.push({ check: 'repo', level: 'info', text: `We'll create a private repo, [${built.entry.site.repo}](https://github.com/${built.entry.site.repo}), with a starter site, and invite you` });
+  if (S.isHosted(built.entry) && !exists) {
+    const tpl = (S.TEMPLATES.find((t) => t.id === built.entry.site.template) || S.TEMPLATES[0]).label;
+    rc.findings.push({ check: 'repo', level: 'info', text: `We'll create a private repo, [${built.entry.site.repo}](https://github.com/${built.entry.site.repo}), from the **${tpl}** template, and invite you` });
+    rc.findings.push(...(await hostingGuards(author, entries, profile)));
+  }
   const result = review({
     author, profile, changes: [{ status: exists ? 'M' : 'A', file }], base: entries, head, comments, labels, dns,
     reserved, config, maintainers, overrideHolds, extra: rc.findings, pagesOwners,
@@ -518,6 +523,7 @@ async function onTakedown(issue, comment, cmd, rest) {
     `@${plan.owner}, someone reported your subdomain. If you'd like to respond, comment here.\n\n` +
     `**Maintainers:** \`/takedown <note>\` removes it (and anything under it) right away; \`/dismiss <reason>\` closes this report.`));
   await activityLog(`🚩 **Report** #${issue.number} about \`${plan.name}\` (${Q.TAKEDOWN_REASONS[plan.reason]})`);
+  await notify(`🚩 Report about **${plan.name}** (${Q.TAKEDOWN_REASONS[plan.reason]}) · ${issue.html_url}`);
 }
 
 // ── Commands that work anywhere ─────────────────────────────────
@@ -604,7 +610,7 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
       const { pr, merged } = await removeName({ name, entries, why: `taken down by a maintainer${note ? `: ${note}` : ''}`, issue: number, by });
       return merged ? `🧹 Took down \`${name}.${R.DOMAIN}\` (#${pr.number}).` : `I opened #${pr.number} but couldn't merge it.`;
     }
-    case '/ban': case '/unban': case '/limit': case '/reserve': case '/unreserve': case '/lock': case '/unlock': case '/promote': case '/demote': case '/config': {
+    case '/ban': case '/unban': case '/limit': case '/reserve': case '/unreserve': case '/lock': case '/unlock': case '/promote': case '/demote': case '/config': case '/announce': {
       if (kind === 'discussion') return undefined;
       const current = { config: JSON.parse(mainFile('config.json')), reserved: JSON.parse(mainFile('reserved.json')) };
       const edit = C.adminEdit(cmd, args, { ...current, entries: mainTree().entries, owner });
@@ -644,6 +650,76 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
       const u = String(args[1] || '').replace(/^@/, '');
       if (!name || !u || !args[2]) return 'Usage: `/repo-access <name> @user <read|write|maintain|none>`';
       return repoAccessCmd(name, u, lc(args[2]), by);
+    }
+    case '/redeploy': {
+      if (kind === 'discussion') return undefined;
+      needOrg();
+      const name = Q.cleanName(args[0] || '');
+      const d = mainTree().entries[name];
+      if (!d || !S.isHosted(d)) return `\`${name}\` isn't a hosted site.`;
+      if (R.ownerOf(d) !== lc(by) && !admin) return `Only @${R.ownerOf(d)} can redeploy \`${name}\`.`;
+      if (S.statusOf(d) !== 'active') return `\`${name}\` is ${S.statusOf(d)}, so it can't be redeployed.`;
+      await ghBot.post(`/repos/${d.site.repo}/actions/workflows/deploy.yml/dispatches`, { ref: 'main' });
+      await activityLog(`🚀 **Redeploy** \`${name}\` · by @${by}`);
+      return `🚀 Redeploying \`${name}.${R.DOMAIN}\`: [watch it](https://github.com/${d.site.repo}/actions). Live in about a minute.`;
+    }
+    case '/site-collab': {
+      if (kind === 'discussion') return undefined;
+      needOrg();
+      const name = Q.cleanName(args[0] || '');
+      const u = lc(String(args[1] || '').replace(/^@/, ''));
+      const op = lc(args[2] || 'add');
+      const d = mainTree().entries[name];
+      if (!d || !S.isHosted(d)) return `\`${name}\` isn't a hosted site.`;
+      const siteOwner = R.ownerOf(d);
+      if (siteOwner !== lc(by) && !admin) return `Only @${siteOwner} can change who works on \`${name}\`.`;
+      if (!/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/.test(u) || u === siteOwner) return 'Usage: `/site-collab <name> @user <add|remove>`';
+      const full = d.site.repo;
+      if (op === 'remove') {
+        await applyAccess(full, u, 'archived');
+        await activityLog(`👥 **Collaborator removed** @${u} from [${full}](https://github.com/${full}) · by @${by}`);
+        return `👥 @${u} no longer has access to \`${name}\`.`;
+      }
+      if (S.statusOf(d) !== 'active') return `\`${name}\` is ${S.statusOf(d)}, so nobody new can be added.`;
+      if ((config.bannedUsers || []).map(lc).includes(u)) return `@${u} isn't allowed here.`;
+      const current = (await ghBot.all(`/repos/${full}/collaborators?affiliation=outside`).catch(() => [])).map((c) => lc(c.login)).filter((x) => x !== siteOwner);
+      const pending = (await ghBot.all(`/repos/${full}/invitations`).catch(() => [])).map((i) => lc(i.invitee && i.invitee.login)).filter((x) => x && x !== siteOwner);
+      const max = config.maxCollaboratorsPerSite ?? 2;
+      if (!admin && new Set([...current, ...pending]).size >= max) return `\`${name}\` already has ${max} collaborator${max === 1 ? '' : 's'} (the limit). Remove one first.`;
+      const seats = await seatUsage();
+      if (!admin && seats.max && !seats.people.includes(u) && seats.used >= seats.max) return `Hosting is full right now (${seats.used}/${seats.max} seats), so new collaborators need a maintainer.`;
+      await ghBot.put(`/repos/${full}/collaborators/${u}`, { permission: S.collaboratorRole(await haveRoles()) });
+      await activityLog(`👥 **Collaborator added** @${u} to [${full}](https://github.com/${full}) · by @${by}`);
+      return `👥 Invited @${u} to [${full}](https://github.com/${full}) with write access. They need to accept the invite.`;
+    }
+    case '/suspend-user': {
+      if (kind === 'discussion') return undefined;
+      const u = lc(String(args[0] || '').replace(/^@/, ''));
+      if (!u) return 'Usage: `/suspend-user @user <reason>`';
+      if (isMaintainer(u)) return 'Demote them first.';
+      const lines = [];
+      const current = { config: JSON.parse(mainFile('config.json')), reserved: JSON.parse(mainFile('reserved.json')) };
+      const ban = C.adminEdit('/ban', args, current);
+      if (!ban.error) {
+        const { merged, pr } = await botChange({ title: `/ban @${u}`, body: `\`/suspend-user\` by @${by}.`, changes: [{ file: 'config.json', content: JSON.stringify(ban.config, null, 2) + '\n' }], tag: `suspend-${u}-${Date.now().toString(36)}` });
+        lines.push(merged ? `🔨 banned (#${pr.number})` : `⚠️ couldn't merge the ban (#${pr.number})`);
+      } else lines.push(`ℹ️ ${ban.error}`);
+      const { entries } = mainTree();
+      for (const [name, d] of Object.entries(entries)) {
+        if (!S.isHosted(d) || R.ownerOf(d) !== u || ['suspended', 'archived'].includes(S.statusOf(d))) continue;
+        lines.push(await setSiteStatus(name, 'suspended', by).then((m) => `⏸️ \`${name}\`: ${m.split('\n')[0]}`, (e) => `⚠️ \`${name}\`: ${e.message}`));
+      }
+      await activityLog(`🚫 **Suspended user** @${u} · by @${by}${args.length > 1 ? `: ${args.slice(1).join(' ')}` : ''}`);
+      await notify(`🚫 Suspended @${u} (by @${by})`);
+      return `### 🚫 @${u} suspended\n\n${lines.map((l) => `- ${l}`).join('\n') || '- nothing else to do'}`;
+    }
+    case '/ops':
+      if (kind === 'discussion') return undefined;
+      return ops({ by: `@${by}` });
+    case '/seats': {
+      if (kind === 'discussion') return undefined;
+      const st = await seatUsage();
+      return `### 💺 Seats in ${ORG || '(no sites org)'}\n\n**${st.used}**${st.max ? ` of ${st.max}` : ''} outside collaborators on hosted sites${st.people.length ? `: ${st.people.map((p) => `@${p}`).join(', ')}` : ''}.`;
     }
     case '/org-setup': {
       if (kind === 'discussion') return undefined;
@@ -741,6 +817,14 @@ async function health() {
   return dead.length;
 }
 
+// ── Notifications (optional Discord webhook) ───────────────────
+async function notify(text) {
+  const hook = String(process.env.DISCORD_WEBHOOK || '').trim();
+  if (!hook || dryRun) return;
+  await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: String(text).slice(0, 1900), allowed_mentions: { parse: [] } }) })
+    .catch((e) => console.warn(`discord: ${e.message}`));
+}
+
 // ── Hosted sites: repos in the sites org ───────────────────────
 function needOrg() {
   if (!ORG) throw new Error('`sitesOrg` isn\'t set in config.json.');
@@ -750,6 +834,31 @@ const ok = (t) => `✅ ${t}`;
 const warn = (t) => `⚠️ ${t}`;
 async function step(lines, label, fn) {
   try { const r = await fn(); lines.push(ok(r || label)); } catch (e) { lines.push(warn(`${label}: ${String(e.message).slice(0, 200)}`)); }
+}
+
+/** Seats used by hosted sites = outside collaborators in the sites org (each is an enterprise seat). */
+async function seatUsage() {
+  if (!ORG || !ghBot) return { used: 0, max: config.maxSeats || 0, people: [] };
+  const people = (await ghBot.all(`/orgs/${ORG}/outside_collaborators`).catch(() => [])).map((u) => lc(u.login));
+  return { used: people.length, max: config.maxSeats || 0, people };
+}
+
+/** Cost and safety guards before we create a hosted site for someone. */
+async function hostingGuards(author, entries, profile) {
+  if (isMaintainer(author)) return [];
+  const out = [];
+  const mine = Object.values(entries).filter((d) => S.isHosted(d) && R.ownerOf(d) === lc(author) && S.statusOf(d) !== 'archived').length;
+  const per = config.hostedPerOwner ?? 1;
+  if (mine >= per) out.push({ check: 'repo', level: 'error', text: `You already have ${mine} hosted site${mine === 1 ? '' : 's'} (the limit is ${per}). Point this name somewhere else, or archive one first.` });
+  const minAge = config.hostedMinAccountAgeDays ?? 30;
+  if (profile && (Date.now() - Date.parse(profile.created_at)) / 86400e3 < minAge) {
+    out.push({ check: 'repo', level: 'hold', text: `Hosting needs a GitHub account at least ${minAge} days old, so a maintainer will take a look.`, waitingFor: 'maintainer', label: 'new-account' });
+  }
+  const seats = await seatUsage();
+  if (seats.max && !seats.people.includes(lc(author)) && seats.used >= seats.max) {
+    out.push({ check: 'repo', level: 'hold', text: `Hosting is full right now (${seats.used}/${seats.max} seats). A maintainer will decide.`, waitingFor: 'maintainer', label: 'seats' });
+  }
+  return out;
 }
 
 /** Is the bot's token what we think? (owner command) */
@@ -800,7 +909,8 @@ async function orgSetup() {
     await ghBot.put(`/orgs/${ORG}/actions/permissions`, pol.permissions);
     await ghBot.put(`/orgs/${ORG}/actions/permissions/selected-actions`, pol.selected);
   });
-  for (const rs of [S.workflowRuleset(), S.branchRuleset()]) {
+  await step(lines, 'custom properties (ap_status, ap_owner, ap_name, ap_template)', async () => { await ghBot.patch(`/orgs/${ORG}/properties/schema`, { properties: S.PROPERTIES }); });
+  for (const rs of [S.workflowRuleset(config), S.branchRuleset(), S.frozenRuleset()]) {
     await step(lines, `ruleset “${rs.name}”`, async () => {
       const existing = (await ghBot.get(`/orgs/${ORG}/rulesets`)).find((x) => x.name === rs.name);
       if (existing) await ghBot.put(`/orgs/${ORG}/rulesets/${existing.id}`, rs);
@@ -808,17 +918,103 @@ async function orgSetup() {
     });
   }
   await step(lines, 'maintainers team', () => syncTeam(config.maintainers));
+  await step(lines, 'custom repository roles', async () => {
+    const avail = await ghBot.get(`/orgs/${ORG}/repository-fine-grained-permissions`).then((l) => l.map((x) => x.name), () => []);
+    const existing = (await ghBot.get(`/orgs/${ORG}/custom-repository-roles`).catch(() => ({ custom_roles: [] }))).custom_roles || [];
+    const made = [];
+    for (const role of S.repoRoles(avail)) {
+      const cur = existing.find((r) => r.name === role.name);
+      if (cur) await ghBot.patch(`/orgs/${ORG}/custom-repository-roles/${cur.id}`, role);
+      else await ghBot.post(`/orgs/${ORG}/custom-repository-roles`, role);
+      made.push(`${role.name} (${role.base_role}${role.permissions.length ? ` + ${role.permissions.length}` : ''})`);
+    }
+    roleCache = null;
+    return `repository roles: ${made.join(', ')}`;
+  });
+  await step(lines, 'maintainers org role', async () => {
+    const avail = await ghBot.get(`/orgs/${ORG}/organization-fine-grained-permissions`).then((l) => l.map((x) => x.name), () => []);
+    const role = S.orgRole(avail);
+    if (!role.permissions.length) return 'maintainers org role: no permissions available on this plan, skipped';
+    const list = (await ghBot.get(`/orgs/${ORG}/organization-roles`).catch(() => ({ roles: [] }))).roles || [];
+    let cur = list.find((r) => r.name === role.name);
+    if (cur) await ghBot.patch(`/orgs/${ORG}/organization-roles/${cur.id}`, role);
+    else cur = await ghBot.post(`/orgs/${ORG}/organization-roles`, role);
+    await ghBot.put(`/orgs/${ORG}/organization-roles/teams/${S.TEAM.slug}/${cur.id}`);
+    return `org role ${role.name} (${role.permissions.join(', ')}) → ${S.TEAM.slug}`;
+  });
+  await step(lines, 'owner access on existing sites', async () => {
+    const { entries } = mainTree();
+    let n = 0;
+    for (const [, d] of Object.entries(entries)) {
+      if (!S.isHosted(d) || S.statusOf(d) === 'archived') continue;
+      await applyAccess(d.site.repo, d.owner.github, S.statusOf(d)).then(() => n++, () => {});
+    }
+    return `custom roles applied on ${n} site${n === 1 ? '' : 's'}`;
+  });
+  await step(lines, 'properties on existing sites', async () => {
+    const { entries } = mainTree();
+    let n = 0;
+    for (const [name, d] of Object.entries(entries)) {
+      if (!S.isHosted(d)) continue;
+      await setProperties(name, d).then(() => n++, () => {});
+    }
+    return `properties set on ${n} site repo${n === 1 ? '' : 's'}`;
+  });
   return `### 🏗️ ${ORG} setup\n\n${lines.join('\n')}`;
 }
 
-/** Owner access for a status (write, read, or none). */
+/** Our custom repository roles that exist in the org (cached per run). */
+let roleCache = null;
+async function haveRoles() {
+  if (!roleCache) roleCache = ((await ghBot.get(`/orgs/${ORG}/custom-repository-roles`).catch(() => ({ custom_roles: [] }))).custom_roles || []).map((r) => r.name);
+  return roleCache;
+}
+
+/** Owner access for a status: the custom role (or built-in fallback), or none. */
 async function applyAccess(full, user, status) {
-  const perm = S.OWNER_PERMISSION[status];
+  const perm = S.ownerRole(status, await haveRoles());
   if (perm) return ghBot.put(`/repos/${full}/collaborators/${user}`, { permission: perm });
   await ghBot.del(`/repos/${full}/collaborators/${user}`).catch(() => {});
   for (const inv of await ghBot.all(`/repos/${full}/invitations`).catch(() => [])) {
     if (lc(inv.invitee && inv.invitee.login) === lc(user)) await ghBot.del(`/repos/${full}/invitations/${inv.id}`).catch(() => {});
   }
+}
+
+/** Custom properties drive org rulesets (e.g. locked/suspended sites are frozen by GitHub itself). */
+async function setProperties(name, entry) {
+  const repoName = entry.site.repo.split('/')[1];
+  await ghBot.patch(`/orgs/${ORG}/properties/values`, {
+    repository_names: [repoName],
+    properties: S.propertyValues({ status: S.statusOf(entry), owner: entry.owner.github, name, template: entry.site.template }),
+  });
+}
+
+/** Template files for a new site, filled in, plus the managed workflow and build config. */
+function siteFiles({ name, owner, template }) {
+  const dir = path.join(root, 'templates', template || 'html');
+  const vars = { name, host: `${name}.${R.DOMAIN}`, owner, year: String(new Date().getFullYear()) };
+  const files = [];
+  const walk = (d) => {
+    for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, f.name);
+      if (f.isDirectory()) walk(full);
+      else files.push({ path: path.relative(dir, full).split(path.sep).join('/'), content: S.fillTemplate(fs.readFileSync(full, 'utf8'), vars) });
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir);
+  else files.push(...S.starterFiles({ name, owner, sourceRepo: repo }).filter((f) => !f.path.startsWith('.github/')));
+  files.push({ path: '.github/workflows/deploy.yml', content: S.deployWorkflow(repo) });
+  if (!files.some((f) => f.path === 'awesomeprojects.json')) files.push({ path: 'awesomeprojects.json', content: JSON.stringify({ framework: 'auto' }, null, 2) + '\n' });
+  return files;
+}
+
+/** Replace a repo's content with `files` in ONE commit (git data API). */
+async function commitFiles(full, files, message) {
+  const ref = await ghBot.get(`/repos/${full}/git/ref/heads/main`);
+  const tree = await ghBot.post(`/repos/${full}/git/trees`, { tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) });
+  const commit = await ghBot.post(`/repos/${full}/git/commits`, { message, tree: tree.sha, parents: [ref.object.sha] });
+  await ghBot.patch(`/repos/${full}/git/refs/heads/main`, { sha: commit.sha });
+  return commit.sha;
 }
 
 /** Create (or bring back to standard) a hosted site's repo. Idempotent. */
@@ -840,15 +1036,25 @@ async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
     await step(lines, 'repo settings', async () => { await ghBot.patch(`/repos/${full}`, S.repoSettings({ name, owner })); });
   }
   await step(lines, 'topic', async () => { await ghBot.put(`/repos/${full}/topics`, { names: [S.TOPIC] }); });
-  // Starter files only on a new repo; the workflow also when re-syncing.
-  for (const f of S.starterFiles({ name, owner, sourceRepo: repo })) {
-    const isWorkflow = f.path.startsWith('.github/workflows/');
-    if (!created && !(isWorkflow && rewriteWorkflow)) continue;
+  await step(lines, 'properties', () => setProperties(name, entry));
+  await step(lines, 'Dependabot alerts', async () => { await ghBot.put(`/repos/${full}/vulnerability-alerts`); });
+  await step(lines, 'secret scanning', async () => {
+    await ghBot.patch(`/repos/${full}`, { security_and_analysis: { secret_scanning: { status: 'enabled' }, secret_scanning_push_protection: { status: 'enabled' } } });
+  });
+  if (created) {
+    const files = siteFiles({ name, owner, template: entry.site.template });
+    await step(lines, `${entry.site.template || 'html'} template (${files.length} files, one commit)`, async () => {
+      await new Promise((r) => setTimeout(r, 1500)); // let auto_init land
+      await commitFiles(full, files, `Start ${name}.${R.DOMAIN} from the ${entry.site.template || 'html'} template`);
+    });
+  }
+  // On re-sync, put the managed workflow back.
+  for (const f of rewriteWorkflow ? [{ path: '.github/workflows/deploy.yml', content: S.deployWorkflow(repo) }] : []) {
     await step(lines, f.path, async () => {
       const cur = await ghBot.get(`/repos/${full}/contents/${f.path}`).catch(() => null);
       if (cur && Buffer.from(cur.content || '', 'base64').toString('utf8') === f.content) return `${f.path} already up to date`;
       await ghBot.put(`/repos/${full}/contents/${f.path}`, {
-        message: created ? 'Start your site' : `Update ${f.path} (managed by awesomeprojects.tech)`,
+        message: `Update ${f.path} (managed by awesomeprojects.tech)`,
         content: Buffer.from(f.content).toString('base64'),
         ...(cur ? { sha: cur.sha } : {}),
       });
@@ -868,7 +1074,7 @@ async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
     });
   }
   await step(lines, 'maintainers team access', async () => { await ghBot.put(`/orgs/${ORG}/teams/${S.TEAM.slug}/repos/${full}`, { permission: S.TEAM.permission }); });
-  await step(lines, `@${owner}: ${S.OWNER_PERMISSION[status] || 'no'} access (${status})`, async () => { await applyAccess(full, owner, status); });
+  await step(lines, `@${owner}: ${S.ownerRole(status, await haveRoles()) || 'no'} access (${status})`, async () => { await applyAccess(full, owner, status); });
   if (status === 'archived') await step(lines, 'archived', async () => { await ghBot.patch(`/repos/${full}`, { archived: true }); });
   return { created, full, lines };
 }
@@ -933,6 +1139,96 @@ async function repoAccessCmd(name, user, level, by) {
   return `🔑 @${user} now has **${level}** access to [${full}](https://github.com/${full})${S.ACCESS[level] ? ' (an invite if they aren\'t in yet; this uses a seat)' : ''}.`;
 }
 
+// ── Daily ops ──────────────────────────────────────────────────
+/** Open (or keep) one issue with `label` in a site repo, assigned to its owner. */
+async function siteIssue(full, owner, label, title, body) {
+  const open = await ghBot.get(`/repos/${full}/issues?state=open&labels=${encodeURIComponent(label)}`).catch(() => []);
+  if (open.length) return open[0];
+  return ghBot.post(`/repos/${full}/issues`, { title, body, labels: [label], assignees: [owner] }).catch(() => ghBot.post(`/repos/${full}/issues`, { title, body, labels: [label] }));
+}
+async function closeSiteIssues(full, label, note) {
+  for (const i of await ghBot.get(`/repos/${full}/issues?state=open&labels=${encodeURIComponent(label)}`).catch(() => [])) {
+    await ghBot.post(`/repos/${full}/issues/${i.number}/comments`, { body: note }).catch(() => {});
+    await ghBot.patch(`/repos/${full}/issues/${i.number}`, { state: 'closed', state_reason: 'completed' }).catch(() => {});
+  }
+}
+
+/**
+ * The daily run over every hosted site: enforce HTTPS when the certificate is ready, tell owners when a
+ * deploy fails (and close that when it's fixed), lock oversized or long-abandoned sites, count seats,
+ * then send the console a snapshot and post a digest.
+ */
+async function ops({ by = 'schedule' } = {}) {
+  needOrg();
+  const { entries } = mainTree();
+  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d));
+  const acts = [];
+  const sites = [];
+  for (const [name, d] of hosted) {
+    const full = d.site.repo;
+    const owner = d.owner.github;
+    const status = S.statusOf(d);
+    const site = { name, owner, status, repo: full };
+    try {
+      const r = await ghBot.get(`/repos/${full}`);
+      site.sizeMB = Math.round((r.size || 0) / 102.4) / 10;
+      site.pushedAt = r.pushed_at;
+      if (status === 'archived') { sites.push(site); continue; }
+      const pages = await ghBot.get(`/repos/${full}/pages`).catch(() => null);
+      site.https = !!(pages && pages.https_enforced);
+      if (S.httpsReady(pages)) {
+        await ghBot.put(`/repos/${full}/pages`, { build_type: 'workflow', cname: pages.cname || `${name}.${R.DOMAIN}`, public: true, https_enforced: true }).then(() => { site.https = true; acts.push(`🔒 HTTPS on for \`${name}\``); }, () => {});
+      }
+      const runs = await ghBot.get(`/repos/${full}/actions/runs?per_page=1&exclude_pull_requests=true`).catch(() => null);
+      const run = runs && runs.workflow_runs && runs.workflow_runs[0];
+      if (run) {
+        site.deploy = { conclusion: run.conclusion || run.status, url: run.html_url, at: run.created_at };
+        if (run.conclusion === 'failure') {
+          const i = await siteIssue(full, owner, 'deploy-failed', '⚠️ Your last deploy failed',
+            `@${owner}, the last deploy of **https://${name}.${R.DOMAIN}** failed: [see the log](${run.html_url}).\n\nFix it and push again; this issue closes itself once a deploy succeeds. Build options: \`awesomeprojects.json\` ([docs](https://github.com/${repo}/blob/main/docs/HOSTING.md#awesomeprojectsjson)).`);
+          if (i && i.created_at && Date.now() - Date.parse(i.created_at) < 86400e3) acts.push(`⚠️ deploy failing on \`${name}\``);
+        } else if (run.conclusion === 'success') {
+          await closeSiteIssues(full, 'deploy-failed', '✅ The latest deploy worked, so I\'m closing this.');
+        }
+      }
+      const collabs = await ghBot.all(`/repos/${full}/collaborators?affiliation=outside`).catch(() => []);
+      site.collaborators = collabs.map((c) => c.login);
+      const invites = await ghBot.all(`/repos/${full}/invitations`).catch(() => []);
+      site.pendingInvites = invites.map((i) => (i.invitee ? i.invitee.login : '?'));
+      // Size
+      const maxMB = config.maxRepoSizeMB || 0;
+      if (maxMB && site.sizeMB > maxMB && status === 'active') {
+        await setSiteStatus(name, 'locked', 'ops-bot');
+        await siteIssue(full, owner, 'too-big', '🔒 This site was locked: the repo is too big', `@${owner}, this repo is ${site.sizeMB} MB; the limit is ${maxMB} MB, so it's read-only for now. Ask a maintainer to unlock it once you have a plan to shrink it (big media usually belongs on a CDN).`);
+        site.status = 'locked';
+        acts.push(`🔒 locked \`${name}\` (${site.sizeMB} MB)`);
+      }
+      // Inactivity
+      const warned = (await ghBot.get(`/repos/${full}/issues?state=open&labels=inactive`).catch(() => []))[0];
+      const what = S.inactivity({ pushedAt: r.pushed_at, status: site.status, warnDays: config.inactivityWarnDays || 0, lockDays: config.inactivityLockDays || 0, warnedAt: warned ? warned.created_at : null });
+      if (what === 'warn') {
+        await siteIssue(full, owner, 'inactive', '👋 Still using this site?', `@${owner}, nobody has pushed to this site in a while. If you're done with it, remove the name at [My domains](https://awesomeprojects.tech/me/). Otherwise, just close this issue.${config.inactivityLockDays ? ` Sites without a push for ${config.inactivityLockDays} days get locked.` : ''}`);
+        acts.push(`👋 asked @${owner} about \`${name}\``);
+      } else if (what === 'lock') {
+        await setSiteStatus(name, 'locked', 'ops-bot');
+        site.status = 'locked';
+        acts.push(`💤 locked \`${name}\` (inactive)`);
+      }
+    } catch (e) {
+      site.error = String(e.message).slice(0, 200);
+    }
+    sites.push(site);
+  }
+  const seats = await seatUsage();
+  const failing = sites.filter((x) => x.deploy && x.deploy.conclusion === 'failure').length;
+  const snapshot = { at: Date.now(), org: ORG, seats: { used: seats.used, max: seats.max }, sites };
+  await panelPost('/bot/sites', snapshot);
+  const digest = `📋 **Daily ops** (${by}) · ${sites.length} hosted site${sites.length === 1 ? '' : 's'} · ${failing} failing · seats ${seats.used}${seats.max ? `/${seats.max}` : ''}${acts.length ? `\n${acts.map((a) => `- ${a}`).join('\n')}` : ''}`;
+  if (acts.length || by !== 'schedule' || new Date().getUTCDay() === 1) await activityLog(digest);
+  if (acts.length || (seats.max && seats.used >= seats.max * 0.9)) await notify(digest.replace(/\*\*/g, '**'));
+  return digest;
+}
+
 // ── Panel actions (repository_dispatch from api.awesomeprojects.tech) ──
 /** Tell the panel how it went. `job` is the dispatch payload (id, actor, at, summary). */
 async function reportResult(job, { ok, message, link }) {
@@ -995,7 +1291,7 @@ async function panelPost(pathname, body) {
   }
 }
 
-const panelForm = (f = {}) => ({ Subdomain: f.name, 'Where should it point?': f.provider, 'GitHub repository': f.repo || '', Target: f.target || '', Description: f.description || '' });
+const panelForm = (f = {}) => ({ Subdomain: f.name, 'Where should it point?': f.provider, Template: f.template || '', 'GitHub repository': f.repo || '', Target: f.target || '', Description: f.description || '' });
 const reviewSummary = (ev) => (ev.problems.length
   ? { verdict: 'needs-changes', findings: ev.problems.map((t) => ({ check: 'format', level: 'error', text: t })) }
   : { verdict: ev.result.verdict, findings: ev.result.findings, plan: ev.rc.plan || null });
@@ -1007,7 +1303,10 @@ async function onPanelRequest(p) {
   const ev = await evaluateRequest({ built, author, labels: p.manualHold ? ['manual-hold'] : [], overrideHolds: p.kind === 'approve' });
   const rev = { ...reviewSummary(ev), entry: built.entry || null };
   console.log(`panel request ${p.request} (${p.kind}) ${built.name}: ${rev.verdict}`);
-  if (p.kind === 'review') return panelPost('/bot/request', { request: p.request, kind: 'review', verdict: rev.verdict, review: rev });
+  if (p.kind === 'review') {
+    if (['ready', 'on-hold'].includes(rev.verdict)) await notify(`🌱 Private request **${built.name}** by @${author}: ${rev.verdict} · https://awesomeprojects.tech/admin/`);
+    return panelPost('/bot/request', { request: p.request, kind: 'review', verdict: rev.verdict, review: rev });
+  }
 
   // Approve
   if (rev.verdict !== 'ready') {
@@ -1119,12 +1418,13 @@ async function main() {
   if (mode === 'pr') return reviewPR(Number(num));
   if (mode === 'health') return health();
   if (mode === 'bot-check') return console.log(await botCheck());
+  if (mode === 'ops') return console.log(await ops({ by: 'manual' }));
   if (mode === 'issue') return onIssue(await gh.get(`${R_}/issues/${num}`));
 
   const event = process.env.GITHUB_EVENT_NAME;
   const payload = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   if (event === 'pull_request_target') return reviewPR(payload.pull_request.number);
-  if (event === 'schedule') return health();
+  if (event === 'schedule') return payload.schedule === '17 9 * * 1' ? health() : ops();
   if (event === 'issues') return onIssue(payload.issue);
   if (event === 'issue_comment') {
     if (payload.comment.user.type === 'Bot') return;

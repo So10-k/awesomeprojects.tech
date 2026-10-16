@@ -191,7 +191,8 @@ function checkEntry(name, data) {
 function checkSite(site, records) {
   if (!site || typeof site !== 'object' || Array.isArray(site)) return ['"site" must be an object'];
   const errors = [];
-  for (const k of Object.keys(site)) if (!['provider', 'repo', 'status'].includes(k)) errors.push(`unknown site field "${k}"`);
+  for (const k of Object.keys(site)) if (!['provider', 'repo', 'status', 'template'].includes(k)) errors.push(`unknown site field "${k}"`);
+  if (site.template !== undefined && (site.provider !== 'hosted' || !/^[a-z0-9-]{1,30}$/.test(String(site.template)))) errors.push('"site.template" is only for hosted sites');
   if (!PROVIDERS.includes(site.provider)) errors.push(`"site.provider" must be one of: ${PROVIDERS.join(', ')}`);
   if (site.repo !== undefined && (typeof site.repo !== 'string' || !REPO.test(site.repo))) errors.push('"site.repo" must look like owner/repo');
   if (site.status !== undefined && (site.provider !== 'hosted' || !SITE_STATUSES.includes(site.status))) {

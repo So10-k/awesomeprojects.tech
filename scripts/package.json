@@ -1,0 +1,4 @@
+{
+  "$comment": "Keeps these scripts CommonJS even when they run inside a project with \"type\": \"module\" (the site build checks them out into people's repos).",
+  "type": "commonjs"
+}

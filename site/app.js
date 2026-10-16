@@ -41,6 +41,8 @@ function init() {
   const people = new Set(top.map((n) => n.owner)).size;
   $('#stat').textContent = `${top.length} name${top.length === 1 ? '' : 's'} · ${people} builder${people === 1 ? '' : 's'} · ${D.maxPerOwner} each`;
   renderHosts();
+  renderTemplates();
+  renderAnnouncement();
   renderZone('');
   renderCommands();
   const fromHash = new URLSearchParams(location.hash.slice(1)).get('name');
@@ -108,6 +110,12 @@ function claim() {
 }
 
 // ── Wizard ──────────────────────────────────────────────────────
+function renderTemplates() {
+  const sel = $('#tpl');
+  for (const t of D.templates || []) sel.append(new Option(`${t.label} · ${t.blurb}`, t.id));
+  sel.addEventListener('change', updateRecord);
+}
+
 function renderHosts() {
   const box = $('#hosts');
   for (const p of D.providers) {
@@ -123,6 +131,7 @@ function pick(p) {
   picked = p;
   $('#details').hidden = false;
   $('#repoField').hidden = p.input !== 'repo';
+  $('#tplField').hidden = p.id !== 'hosted';
   $('#targetField').hidden = !(p.input === 'target' || p.input === 'ips');
   if (p.input === 'ips') {
     $('#targetLabel').textContent = 'IP address(es)';
@@ -147,7 +156,7 @@ function compute() {
   }
   if (p.id === 'hosted') {
     if (!D.sitesOrg) return { ok: false, note: 'hosting isn\'t switched on yet' };
-    return { ok: true, type: 'CNAME', value: `${D.sitesOrg.toLowerCase()}.github.io.`, form: {} };
+    return { ok: true, type: 'CNAME', value: `${D.sitesOrg.toLowerCase()}.github.io.`, form: { template: $('#tpl').value } };
   }
   if (p.id === 'vercel') return { ok: true, type: 'CNAME', value: 'cname.vercel-dns.com.', form: {} };
   const raw = $('#target').value.trim().toLowerCase();
@@ -183,14 +192,17 @@ function updateRecord() {
   for (const b of [send, sendGh]) b.setAttribute('aria-disabled', String(!ready));
   if (ready) {
     const desc = $('#desc').value.trim();
+    const { template: _starter, ...formRest } = r.form;
     const q = new URLSearchParams({
-      template: 'request.yml',
       title: `Request: ${current}`,
       subdomain: current,
       provider: picked.label,
-      ...r.form,
+      ...formRest,
       ...(desc ? { description: desc } : {}),
     });
+    // GitHub uses ?template= for the form file, so the form's template field is called "starter".
+    q.set('template', 'request.yml');
+    if (r.form.template) q.set('starter', (D.templates.find((t) => t.id === r.form.template) || {}).label || '');
     sendGh.href = `https://github.com/${D.repo}/issues/new?${q}`;
     send.href = `me/?${new URLSearchParams({ new: '', name: current, provider: picked.label, ...r.form, ...(desc ? { description: desc } : {}) })}`;
   } else { send.removeAttribute('href'); sendGh.removeAttribute('href'); }
@@ -266,4 +278,11 @@ function renderCommands() {
     seen.add(key);
     $(c.admin ? '#cmdAdmin' : '#cmdUser').append(el('dt', { textContent: c.usage }), el('dd', { textContent: c.does.replace(/`/g, '') }));
   }
+}
+
+// ── Announcement banner ────────────────────────────────────────
+function renderAnnouncement() {
+  if (!D.announcement) return;
+  const b = el('div', { className: 'announce', role: 'status' }, [el('span', { textContent: '📣' }), el('span', { textContent: D.announcement })]);
+  document.body.prepend(b);
 }

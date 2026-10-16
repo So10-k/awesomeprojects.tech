@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import worker, { sign, resetCaches } from '../worker/src/index.js';
+import worker, { sign, resetCaches, sweep } from '../worker/src/index.js';
 
 const SITE = 'https://awesomeprojects.tech';
 
@@ -61,7 +61,7 @@ test('a request from start to live, privately', async () => {
   assert.equal(made.status, 200);
   const id = made.data.request.id;
   assert.equal(made.data.request.state, 'checking');
-  assert.deepEqual(dispatched[0], { kind: 'review', request: id, actor: 'alice', form: { name: 'neon', provider: 'Vercel', repo: '', target: '', description: 'Neon garden' }, manualHold: false });
+  assert.deepEqual(dispatched[0], { kind: 'review', request: id, actor: 'alice', form: { name: 'neon', provider: 'Vercel', template: '', repo: '', target: '', description: 'Neon garden' }, manualHold: false });
 
   // The bot reviews it.
   assert.equal((await call(e, '/bot/request', { method: 'POST', body: { request: id, kind: 'review', verdict: 'ready', review: { verdict: 'ready', findings: [] } } })).status, 401, 'needs the bot secret');
@@ -140,4 +140,26 @@ test('edits, holds, cancel, limits', async () => {
   assert.equal((await call(e, '/api/requests', { method: 'POST', as: 'mia', body: { name: 'x', provider: 'Vercel' } })).status, 200, 'maintainers can still request');
   cfg = { ...cfg, locked: false };
   resetCaches();
+});
+
+test('sites snapshot: maintainers see all, people see theirs', async () => {
+  const e = env();
+  const snap = { at: 1, seats: { used: 3, max: 50 }, sites: [{ name: 'a', owner: 'Alice', collaborators: [] }, { name: 'b', owner: 'bob', collaborators: ['alice'] }, { name: 'c', owner: 'carol', collaborators: [] }] };
+  assert.equal((await call(e, '/bot/sites', { method: 'POST', body: snap })).status, 401);
+  assert.equal((await call(e, '/bot/sites', { method: 'POST', bot: true, body: snap })).status, 200);
+  assert.deepEqual((await call(e, '/api/sites', { as: 'alice' })).data.sites.map((x) => x.name), ['a', 'b']);
+  assert.equal((await call(e, '/api/sites', { as: 'alice' })).data.seats, undefined, 'seat numbers are maintainers only');
+  assert.equal((await call(e, '/api/sites', { as: 'mia' })).data.sites.length, 3);
+});
+
+test('hourly sweep closes stale requests', async () => {
+  const e = env();
+  resetCaches();
+  const id = (await call(e, '/api/requests', { method: 'POST', as: 'alice', body: { name: 'old', provider: 'Vercel' } })).data.request.id;
+  await call(e, '/bot/request', { method: 'POST', bot: true, body: { request: id, kind: 'review', verdict: 'needs-changes', review: {} } });
+  await e.DB.prepare('UPDATE requests SET updated_at = ?2 WHERE id = ?1').bind(id, Date.now() - 30 * 86400e3).run();
+  await sweep(e);
+  const r = await call(e, `/api/requests/${id}`, { as: 'alice' });
+  assert.equal(r.data.request.state, 'cancelled');
+  assert.match(r.data.notes.at(-1).body, /Closed after 14 days/);
 });
