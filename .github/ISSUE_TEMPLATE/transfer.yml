@@ -1,0 +1,25 @@
+name: 🔁 Transfer a subdomain
+description: Hand a subdomain to someone else, or ask its owner to hand it to you.
+title: "Transfer: "
+labels: [transfer]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Either the **current owner** or the **new owner** can open this. The bot asks the other person to confirm,
+        then moves the name (and anything under it the current owner has) automatically. The DNS records stay the same.
+  - type: input
+    attributes:
+      label: Subdomain
+      placeholder: alice.awesomeprojects.tech
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: New owner
+      description: The GitHub username who should own it. Leave it blank if that's you.
+      placeholder: "@carol"
+  - type: textarea
+    attributes:
+      label: Why
+      description: Optional, but it helps if the current owner doesn't know you.

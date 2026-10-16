@@ -66,40 +66,24 @@ test('entries', () => {
   assert.ok(R.checkEntry('alice', []).length);
 });
 
-test('tree: nested names need a parent with the same owner', () => {
+test('tree: nested names need a parent (any owner; consent is checked at review)', () => {
   assert.deepEqual(tree({ alice: ok({ CNAME: 'alice.github.io' }), '_vercel.alice': ok({ TXT: 'vc-123' }) }), {});
   assert.ok(tree({ '_vercel.alice': ok({ TXT: 'vc-123' }) })['_vercel.alice']);
-  assert.ok(tree({ alice: ok({ CNAME: 'alice.github.io' }), '_vercel.alice': ok({ TXT: 'x' }, 'mallory') })['_vercel.alice']);
+  assert.deepEqual(tree({ alice: ok({ CNAME: 'alice.github.io' }), 'blog.alice': ok({ CNAME: 'bob.github.io' }, 'bob') }), {});
 });
 
 test('tree: per-owner limit', () => {
   const four = { a: ok({ TXT: 'x' }), b: ok({ TXT: 'x' }), c: ok({ TXT: 'x' }), d: ok({ TXT: 'x' }) };
   assert.equal(Object.keys(tree(four)).length, 4);
   assert.deepEqual(tree(four, { maintainers: ['Alice'] }), {});
+  assert.deepEqual(tree(four, { maxPerOwner: 4 }), {});
   const three = { a: ok({ TXT: 'x' }), b: ok({ TXT: 'x' }), c: ok({ TXT: 'x' }), '_x.a': ok({ TXT: 'x' }) };
   assert.deepEqual(tree(three), {}, 'nested names do not count');
 });
 
-test('pull requests: ownership', () => {
-  const files = {
-    base: { 'domains/bob.json': ok({ CNAME: 'bob.github.io' }, 'bob') },
-    head: {
-      'domains/bob.json': ok({ CNAME: 'evil.example.com' }, 'mallory'),
-      'domains/alice.json': ok({ CNAME: 'alice.github.io' }, 'alice'),
-    },
-  };
-  const pr = (changes, author, maintainers) => R.checkPullRequest({
-    changes, author, maintainers, before: (f) => files.base[f], after: (f) => files.head[f],
-  });
-
-  assert.deepEqual(pr([{ status: 'A', file: 'domains/alice.json' }], 'alice'), []);
-  assert.deepEqual(pr([{ status: 'A', file: 'domains/alice.json' }], 'ALICE'), [], 'case-insensitive');
-  assert.ok(pr([{ status: 'A', file: 'domains/alice.json' }], 'mallory').length, 'cannot add for someone else');
-  assert.ok(pr([{ status: 'M', file: 'domains/bob.json' }], 'mallory').length, 'cannot take over');
-  assert.ok(pr([{ status: 'D', file: 'domains/bob.json' }], 'mallory').length, 'cannot delete others');
-  assert.ok(pr([{ status: 'M', file: 'domains/bob.json' }], 'bob').length, 'cannot hand it to someone else');
-  assert.ok(pr([{ status: 'M', file: 'dnsconfig.js' }], 'alice').length, 'config is off limits');
-  assert.ok(pr([{ status: 'A', file: 'domains/sub/x.json' }], 'alice').length);
-  assert.deepEqual(pr([{ status: 'M', file: 'dnsconfig.js' }, { status: 'D', file: 'domains/bob.json' }], 'owner', ['owner']), []);
-  assert.ok(pr([], '').length);
+test('owned names and families', () => {
+  const e = { alice: ok({ TXT: 'x' }), '_v.alice': ok({ TXT: 'x' }), 'blog.alice': ok({ TXT: 'x' }, 'bob'), malice: ok({ TXT: 'x' }), b: ok({ TXT: 'x' }, 'Bob') };
+  assert.deepEqual(R.namesOwnedBy(e, 'ALICE'), ['alice', 'malice']);
+  assert.deepEqual(R.namesOwnedBy(e, 'bob'), ['b']);
+  assert.deepEqual(R.family(e, 'alice'), ['_v.alice', 'alice', 'blog.alice']);
 });

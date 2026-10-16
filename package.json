@@ -3,7 +3,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "validate": "node scripts/validate.js",
     "check": "node scripts/validate.js && dnscontrol check"
   }

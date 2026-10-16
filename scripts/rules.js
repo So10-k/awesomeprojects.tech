@@ -188,8 +188,9 @@ const ownerOf = (data) => (data && data.owner && typeof data.owner.github === 's
 /**
  * Check the whole domains/ folder.
  * entries: { [name]: data }. Returns { [name]: string[] } with only the names that have errors.
+ * Names under someone else's subdomain are fine here: consent is checked when they're requested.
  */
-function checkTree(entries, { reserved = [], maintainers = [] } = {}) {
+function checkTree(entries, { reserved = [], maintainers = [], maxPerOwner = MAX_PER_OWNER } = {}) {
   const out = {};
   const add = (n, errs) => { if (errs.length) out[n] = (out[n] || []).concat(errs); };
   const admins = maintainers.map(lc);
@@ -200,47 +201,33 @@ function checkTree(entries, { reserved = [], maintainers = [] } = {}) {
     add(name, checkEntry(name, data));
     const base = baseOf(name);
     if (base !== name) {
-      if (!entries[base]) add(name, [`"${name}" needs "${base}.json" to exist first`]);
-      else if (ownerOf(entries[base]) !== ownerOf(data)) add(name, [`"${name}" must have the same owner as "${base}"`]);
+      if (!entries[base]) add(name, [`"${name}" needs "${base}.json" to exist`]);
     } else if (ownerOf(data)) {
       (perOwner[ownerOf(data)] ||= []).push(name);
     }
   }
   for (const [owner, names] of Object.entries(perOwner)) {
-    if (names.length > MAX_PER_OWNER && !admins.includes(owner)) {
-      for (const n of names) add(n, [`${owner} has ${names.length} subdomains; the limit is ${MAX_PER_OWNER}`]);
+    if (names.length > maxPerOwner && !admins.includes(owner)) {
+      for (const n of names) add(n, [`@${owner} would own ${names.length} subdomains; the limit is ${maxPerOwner}`]);
     }
   }
   return out;
 }
 
-/**
- * Check a pull request's changes.
- * changes: [{ status: 'A'|'M'|'D', file }]; before/after: (file) => parsed JSON or undefined.
- */
-function checkPullRequest({ changes, author, maintainers = [], before, after }) {
-  const errors = [];
-  const who = lc(author || '');
-  if (!who) return ['PR author is unknown'];
-  if (maintainers.map(lc).includes(who)) return [];
+/** Every top-level name an owner has, sorted. */
+function namesOwnedBy(entries, owner) {
+  const who = lc(owner);
+  return Object.keys(entries).filter((n) => baseOf(n) === n && ownerOf(entries[n]) === who).sort();
+}
 
-  const domainFile = /^domains\/[^/]+\.json$/;
-  if (changes.length > 10) errors.push('please change at most 10 files per pull request');
-  for (const { status, file } of changes) {
-    if (!domainFile.test(file)) {
-      errors.push(`${file}: only files in domains/ can be changed in a request`);
-      continue;
-    }
-    const old = status === 'A' ? undefined : before(file);
-    const now = status === 'D' ? undefined : after(file);
-    if (old !== undefined && ownerOf(old) !== who) errors.push(`${file}: belongs to ${ownerOf(old)}, not ${author}`);
-    if (now !== undefined && ownerOf(now) !== who) errors.push(`${file}: "owner.github" must be ${author} (the PR author)`);
-  }
-  return errors;
+/** A name and everything under it: "alice" → ["alice", "_vercel.alice", "blog.alice"]. */
+function family(entries, name) {
+  return Object.keys(entries).filter((n) => n === name || n.endsWith('.' + name)).sort();
 }
 
 module.exports = {
   DOMAIN, MAX_PER_OWNER, RECORD_TYPES,
-  nameFromFile, baseOf, checkName, checkEntry, checkRecords, checkTarget,
-  checkTree, checkPullRequest, isPublicIPv4, isPublicIPv6,
+  nameFromFile, baseOf, ownerOf, namesOwnedBy, family,
+  checkName, checkEntry, checkRecords, checkTarget, checkTree,
+  isPublicIPv4, isPublicIPv6,
 };

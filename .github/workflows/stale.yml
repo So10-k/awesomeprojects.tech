@@ -1,0 +1,27 @@
+name: Tidy up
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          only-labels: needs-changes
+          days-before-stale: 10
+          days-before-close: 4
+          stale-pr-message: "👋 This request still needs changes. If nothing happens in 4 days I'll close it; you can always reopen it or open a new one."
+          close-pr-message: "Closed because it still needed changes. Reopen it any time after pushing a fix."
+          stale-issue-message: "👋 This request still needs changes. If nothing happens in 4 days I'll close it."
+          close-issue-message: "Closed because it still needed changes."
+          stale-pr-label: stale
+          stale-issue-label: stale
+          exempt-pr-labels: manual-hold

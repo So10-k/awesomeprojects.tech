@@ -1,0 +1,32 @@
+name: 🚩 Take down or report a subdomain
+description: Remove your own subdomain, or report one that's abusive or abandoned.
+title: "Takedown: "
+labels: [takedown]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Your own subdomain?** Pick the first reason and it's removed automatically, right away.
+        **Someone else's?** A maintainer reviews it, usually within a day. Phishing and malware come first.
+  - type: input
+    attributes:
+      label: Subdomain
+      placeholder: something.awesomeprojects.tech
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Reason
+      options:
+        - I own it and want it removed
+        - Phishing or scam
+        - Malware
+        - Impersonation or trademark
+        - Points at nothing (abandoned)
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Details
+      description: Links, screenshots, anything that helps. Please don't visit suspected malware.

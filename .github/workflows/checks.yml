@@ -1,0 +1,25 @@
+name: Checks
+
+# Unit tests and a DNSControl check for the PR's own copy of the code. Runs PR code, so it gets
+# a read-only token and no secrets. (Requests are judged by the bot, not by this.)
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - run: node scripts/validate.js
+      - uses: ./.github/actions/dnscontrol
+      - run: dnscontrol check
