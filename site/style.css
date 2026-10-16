@@ -17,6 +17,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { color-scheme: dark; scroll-behavior: smooth; }
 body {
   margin: 0;

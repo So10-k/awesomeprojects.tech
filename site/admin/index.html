@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Console · awesomeprojects.tech</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0b1020">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body class="console">
+  <header class="top">
+    <a class="brand" href="../" aria-label="awesomeprojects.tech home">awesomeprojects<span>.tech</span> <em>console</em></a>
+    <div class="who" id="who" hidden>
+      <img id="whoAvatar" alt="" width="28" height="28">
+      <span id="whoName"></span>
+      <span class="role" id="whoRole"></span>
+      <button class="link" id="signOut" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Signed out -->
+    <section class="signin" id="signin" aria-labelledby="signin-title">
+      <h1 id="signin-title">Maintainer console</h1>
+      <p class="lede">Review requests, handle reports, ban, reserve and run maintenance, all from one place. Every button posts the real slash command <b>as you</b>, so it's logged on the issue and in the activity log just like typing it yourself.</p>
+      <ol class="token-steps">
+        <li><a id="tokenLink" class="btn" target="_blank" rel="noopener" href="https://github.com/settings/personal-access-tokens/new">Create a token on GitHub</a>
+          <p class="help">Fine-grained · <b>Only select repositories</b> → <code>awesomeprojects.tech</code> · Permissions: <b>Issues</b> read &amp; write, <b>Pull requests</b> read &amp; write, <b>Discussions</b> read. 30 days is plenty.</p></li>
+        <li>
+          <form id="tokenForm" class="token-form">
+            <label for="token">Paste it here</label>
+            <div class="row">
+              <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required>
+              <button class="btn primary" type="submit">Sign in</button>
+            </div>
+            <label class="check"><input type="checkbox" id="remember"> Remember on this device</label>
+            <p class="help">The token stays in this browser and is sent only to <code>api.github.com</code>. Without "remember", it's gone when you close the tab.</p>
+            <p class="error" id="signinError" role="alert"></p>
+          </form>
+        </li>
+      </ol>
+    </section>
+
+    <!-- Signed in -->
+    <section class="app" id="app" hidden>
+      <div class="banner" id="notMaintainer" hidden>
+        You're signed in, but you're not a maintainer here, so the bot will ignore maintainer commands from you. Ask the owner to <code>/promote</code> you.
+      </div>
+      <div class="banner warn" id="lockedBanner" hidden></div>
+
+      <nav class="tabs" role="tablist" aria-label="Console sections">
+        <button role="tab" data-tab="queue" aria-selected="true">Queue <span class="count" id="countQueue"></span></button>
+        <button role="tab" data-tab="reports">Reports <span class="count" id="countReports"></span></button>
+        <button role="tab" data-tab="names">Names</button>
+        <button role="tab" data-tab="people">People</button>
+        <button role="tab" data-tab="maint">Maintenance</button>
+        <button role="tab" data-tab="owner" id="ownerTab" hidden>Owner</button>
+        <button role="tab" data-tab="log">Activity</button>
+      </nav>
+
+      <div class="panel" data-panel="queue" role="tabpanel">
+        <div class="lanes" id="lanes"></div>
+      </div>
+
+      <div class="panel" data-panel="reports" role="tabpanel" hidden>
+        <div class="cards" id="reports"></div>
+      </div>
+
+      <div class="panel" data-panel="names" role="tabpanel" hidden>
+        <div class="toolbar"><input id="nameFilter" placeholder="filter names, owners, targets…" spellcheck="false" aria-label="Filter names"></div>
+        <table class="grid" id="namesTable">
+          <thead><tr><th>Name</th><th>Owner</th><th>Points at</th><th>Host</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel" data-panel="people" role="tabpanel" hidden>
+        <div class="split">
+          <form class="box" data-cmd="ban">
+            <h2>Ban</h2>
+            <p class="help">Their future requests are rejected automatically.</p>
+            <label>User <input name="user" placeholder="@someone" required spellcheck="false"></label>
+            <label>Reason <input name="reason" placeholder="phishing" ></label>
+            <button class="btn danger" type="submit">Ban…</button>
+          </form>
+          <form class="box" data-cmd="limit">
+            <h2>Limit</h2>
+            <p class="help">Give one person more (or fewer) names than the default.</p>
+            <label>User <input name="user" placeholder="@someone" required spellcheck="false"></label>
+            <label>Names <input name="n" type="number" min="0" max="100" required></label>
+            <button class="btn" type="submit">Set limit…</button>
+          </form>
+        </div>
+        <h2 class="sub">Banned</h2>
+        <ul class="chips" id="bannedList"></ul>
+        <h2 class="sub">Custom limits</h2>
+        <ul class="chips" id="limitList"></ul>
+      </div>
+
+      <div class="panel" data-panel="maint" role="tabpanel" hidden>
+        <div class="split">
+          <div class="box">
+            <h2>Requests</h2>
+            <p class="help" id="lockState"></p>
+            <form data-cmd="lock" class="inline"><input name="reason" placeholder="reason shown to requesters"><button class="btn" type="submit">Pause requests…</button></form>
+            <button class="btn" data-action="unlock" type="button">Resume requests…</button>
+          </div>
+          <div class="box">
+            <h2>Run now</h2>
+            <p class="help">Re-run the DNS deploy and website build, or the dangling-name check.</p>
+            <button class="btn" data-action="deploy" type="button">Deploy…</button>
+            <button class="btn" data-action="health" type="button">Health check…</button>
+          </div>
+          <form class="box" data-cmd="reserve">
+            <h2>Reserved names</h2>
+            <p class="help">Off-limits for everyone. Doesn't remove a name that already exists.</p>
+            <label>Name <input name="name" placeholder="shop" required spellcheck="false"></label>
+            <button class="btn" type="submit">Reserve…</button>
+          </form>
+        </div>
+        <h2 class="sub">Reserved <span class="muted" id="reservedCount"></span></h2>
+        <ul class="chips" id="reservedList"></ul>
+      </div>
+
+      <div class="panel" data-panel="owner" role="tabpanel" hidden>
+        <div class="split">
+          <form class="box" data-cmd="promote">
+            <h2>Promote</h2>
+            <p class="help">Maintainers can approve, reject, take down, ban and run maintenance. Only you can promote and demote.</p>
+            <label>User <input name="user" placeholder="@someone" required spellcheck="false"></label>
+            <button class="btn primary" type="submit">Make maintainer…</button>
+          </form>
+          <div class="box">
+            <h2>Maintainers</h2>
+            <ul class="people" id="maintList"></ul>
+          </div>
+        </div>
+        <div class="box danger-zone">
+          <h2>Danger zone</h2>
+          <p class="help">For anything the console can't do: <a id="repoSettings" target="_blank" rel="noopener">repository settings</a>, <a id="cfLink" href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare</a>, and the <a id="ghActions" target="_blank" rel="noopener">workflows</a> (disable <i>Subdomain bot</i> to stop all automation).</p>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="log" role="tabpanel" hidden>
+        <ol class="log" id="log"></ol>
+      </div>
+    </section>
+  </main>
+
+  <!-- The command line: what a button will post, where, as whom. -->
+  <div class="cmdline" id="cmdline" hidden aria-live="polite">
+    <span class="prompt" aria-hidden="true">➜</span>
+    <code id="cmdText"></code>
+    <span class="where" id="cmdWhere"></span>
+    <span class="cmd-actions">
+      <button class="btn primary" id="cmdRun" type="button">Post</button>
+      <button class="btn" id="cmdCancel" type="button">Cancel</button>
+    </span>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <dialog id="reasonDialog">
+    <form method="dialog">
+      <h2 id="reasonTitle">Reason</h2>
+      <label for="reasonInput" id="reasonLabel">Reason (public)</label>
+      <input id="reasonInput" maxlength="300">
+      <div class="row end">
+        <button class="btn" value="cancel">Cancel</button>
+        <button class="btn primary" value="ok">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="admin.js" defer></script>
+</body>
+</html>

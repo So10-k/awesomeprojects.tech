@@ -40,11 +40,14 @@ const CATALOG = [
   { cmd: '/lock', who: 'maintainer', where: 'issues', usage: '/lock <reason>', does: 'Pause all new requests (shown to requesters)', admin: true },
   { cmd: '/unlock', who: 'maintainer', where: 'issues', usage: '/unlock', does: 'Resume requests', admin: true },
   { cmd: '/deploy', who: 'maintainer', where: 'any', usage: '/deploy', does: 'Push DNS and rebuild the website now', admin: true },
+  { cmd: '/promote', who: 'owner', where: 'issues', usage: '/promote @user', does: 'Make someone a maintainer (owner only)', admin: true, owner: true },
+  { cmd: '/demote', who: 'owner', where: 'issues', usage: '/demote @user', does: 'Remove a maintainer (owner only)', admin: true, owner: true },
   { cmd: '/health', who: 'maintainer', where: 'any', usage: '/health', does: 'Run the dangling-name check now', admin: true },
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote']);
+const OWNER_ONLY = new Set(['/promote', '/demote']);
 const READ_ONLY = new Set(['/help', '/available', '/whois', '/mine', '/verify', '/stats']);
 
 /** First line of a comment → { cmd, args, rest } or null. Quotes group words: /txt a _x "b c". */
@@ -70,6 +73,7 @@ function helpTable({ admin = true } = {}) {
   const admins = CATALOG.filter((c) => c.admin);
   return `#### Everyone\n\n| Command | What it does |\n|---|---|\n${rows(everyone)}\n` +
     (admin ? `\n#### Maintainers\n\n| Command | What it does |\n|---|---|\n${rows(admins)}\n` : '') +
+    (admin ? '\nMaintainers can also do all of this from the [console](https://awesomeprojects.tech/admin/).\n' : '') +
     `\nCommands go at the start of a comment, in any issue or pull request here (and \`/help\`, \`/available\`, \`/whois\`, \`/mine\`, \`/verify\`, \`/stats\` in Discussions too).`;
 }
 
@@ -141,7 +145,7 @@ function stats(entries, { openRequests } = {}) {
 }
 
 /** Config edits for admin commands → { config?, reserved?, message } or { error }. */
-function adminEdit(cmd, args, { config, reserved, entries }) {
+function adminEdit(cmd, args, { config, reserved, entries, owner }) {
   const c = JSON.parse(JSON.stringify(config));
   const res = [...reserved];
   const who = lc(user(args[0]));
@@ -180,6 +184,17 @@ function adminEdit(cmd, args, { config, reserved, entries }) {
       if (!res.includes(name)) return { error: `\`${name}\` isn't reserved.` };
       return { reserved: res.filter((r) => r !== name), message: `✅ \`${name}\` is no longer reserved` };
     }
+    case '/promote':
+      if (!who || !valid.test(who)) return { error: 'Usage: `/promote @user`' };
+      if ((c.maintainers || []).map(lc).includes(who)) return { error: `@${who} is already a maintainer.` };
+      c.maintainers = [...(c.maintainers || []), who];
+      return { config: c, message: `⭐ @${who} is now a maintainer` };
+    case '/demote':
+      if (!who) return { error: 'Usage: `/demote @user`' };
+      if (who === lc(owner)) return { error: `@${who} is the owner, and always a maintainer.` };
+      if (!(c.maintainers || []).map(lc).includes(who)) return { error: `@${who} isn't a maintainer.` };
+      c.maintainers = c.maintainers.filter((u) => lc(u) !== who);
+      return { config: c, message: `↩️ @${who} is no longer a maintainer` };
     case '/lock':
       c.locked = args.join(' ') || true;
       return { config: c, message: `🔒 Requests paused${typeof c.locked === 'string' ? `: ${c.locked}` : ''}` };
@@ -192,4 +207,4 @@ function adminEdit(cmd, args, { config, reserved, entries }) {
   }
 }
 
-module.exports = { CATALOG, ADMIN_ONLY, READ_ONLY, parseCommand, helpTable, availability, whois, mine, stats, adminEdit, fmtRecords, hostOf, PROVIDER_NAMES };
+module.exports = { CATALOG, ADMIN_ONLY, OWNER_ONLY, READ_ONLY, parseCommand, helpTable, availability, whois, mine, stats, adminEdit, fmtRecords, hostOf, PROVIDER_NAMES };

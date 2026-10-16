@@ -584,10 +584,10 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
       const { pr, merged } = await removeName({ name, entries, why: `taken down by a maintainer${note ? `: ${note}` : ''}`, issue: number, by });
       return merged ? `🧹 Took down \`${name}.${R.DOMAIN}\` (#${pr.number}).` : `I opened #${pr.number} but couldn't merge it.`;
     }
-    case '/ban': case '/unban': case '/limit': case '/reserve': case '/unreserve': case '/lock': case '/unlock': {
+    case '/ban': case '/unban': case '/limit': case '/reserve': case '/unreserve': case '/lock': case '/unlock': case '/promote': case '/demote': {
       if (kind === 'discussion') return undefined;
       const current = { config: JSON.parse(mainFile('config.json')), reserved: JSON.parse(mainFile('reserved.json')) };
-      const edit = C.adminEdit(cmd, args, { ...current, entries: mainTree().entries });
+      const edit = C.adminEdit(cmd, args, { ...current, entries: mainTree().entries, owner });
       if (edit.error) return edit.error;
       const changes = [];
       if (edit.config) changes.push({ file: 'config.json', content: JSON.stringify(edit.config, null, 2) + '\n' });
@@ -622,6 +622,10 @@ async function onIssueComment(issue, comment) {
   if (C.ADMIN_ONLY.has(cmd) && !admin) {
     await react(comment.id, 'confused');
     return reply(issue.number, `@${by} \`${cmd}\` is for maintainers.`);
+  }
+  if (C.OWNER_ONLY.has(cmd) && lc(by) !== lc(owner) && comment.author_association !== 'OWNER') {
+    await react(comment.id, 'confused');
+    return reply(issue.number, `@${by} \`${cmd}\` is for the owner, @${owner}.`);
   }
   const form = kind === 'request' || kind === 'report' ? Q.parseForm(issue.body) : null;
   const text = await anywhereCommand({ cmd, args, rest, by, admin, number: issue.number, kind, form });
