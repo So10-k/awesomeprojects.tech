@@ -20,6 +20,7 @@
       <img id="whoAvatar" alt="" width="28" height="28">
       <span id="whoName"></span>
       <span class="role" id="whoRole"></span>
+      <span class="mode" id="whoMode"></span>
       <button class="link" id="signOut" type="button">Sign out</button>
     </div>
   </header>
@@ -28,23 +29,32 @@
     <!-- Signed out -->
     <section class="signin" id="signin" aria-labelledby="signin-title">
       <h1 id="signin-title">Maintainer console</h1>
-      <p class="lede">Review requests, handle reports, ban, reserve and run maintenance, all from one place. Every button posts the real slash command <b>as you</b>, so it's logged on the issue and in the activity log just like typing it yourself.</p>
-      <ol class="token-steps">
-        <li><a id="tokenLink" class="btn" target="_blank" rel="noopener" href="https://github.com/settings/personal-access-tokens/new">Create a token on GitHub</a>
-          <p class="help">Fine-grained · <b>Only select repositories</b> → <code>awesomeprojects.tech</code> · Permissions: <b>Issues</b> read &amp; write, <b>Pull requests</b> read &amp; write, <b>Discussions</b> read. 30 days is plenty.</p></li>
-        <li>
-          <form id="tokenForm" class="token-form">
-            <label for="token">Paste it here</label>
-            <div class="row">
-              <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required>
-              <button class="btn primary" type="submit">Sign in</button>
-            </div>
-            <label class="check"><input type="checkbox" id="remember"> Remember on this device</label>
-            <p class="help">The token stays in this browser and is sent only to <code>api.github.com</code>. Without "remember", it's gone when you close the tab.</p>
-            <p class="error" id="signinError" role="alert"></p>
-          </form>
-        </li>
-      </ol>
+      <p class="lede">Review requests, handle reports, ban, reserve and run maintenance, all from one place. Actions go privately to the bot: no comments, no slash commands. Each one is recorded in the audit log under your name.</p>
+      <div class="gh-signin" id="ghSignin">
+        <button class="btn primary big" id="ghLogin" type="button">Sign in with GitHub</button>
+        <label class="check"><input type="checkbox" id="keep"> Keep me signed in on this device</label>
+        <p class="help">GitHub only tells us who you are. We get no access to your account or repositories.</p>
+        <p class="error" id="panelDown" hidden>The console server isn't reachable right now. Use the token option below.</p>
+      </div>
+      <details class="alt" id="tokenMode">
+        <summary>Or use a token (actions are posted as comments)</summary>
+        <ol class="token-steps">
+          <li><a id="tokenLink" class="btn" target="_blank" rel="noopener" href="https://github.com/settings/personal-access-tokens/new">Create a token on GitHub</a>
+            <p class="help">Fine-grained · <b>Only select repositories</b> → <code>awesomeprojects.tech</code> · Permissions: <b>Issues</b> read &amp; write, <b>Pull requests</b> read &amp; write, <b>Discussions</b> read.</p></li>
+          <li>
+            <form id="tokenForm" class="token-form">
+              <label for="token">Paste it here</label>
+              <div class="row">
+                <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required>
+                <button class="btn" type="submit">Sign in</button>
+              </div>
+              <label class="check"><input type="checkbox" id="remember"> Remember on this device</label>
+              <p class="help">In this mode every button posts the slash command as a comment from your account (on the request, or on the 🛠️ Admin console issue).</p>
+              <p class="error" id="signinError" role="alert"></p>
+            </form>
+          </li>
+        </ol>
+      </details>
     </section>
 
     <!-- Signed in -->
@@ -178,6 +188,7 @@
     </form>
   </dialog>
 
+  <script src="../session.js" defer></script>
   <script src="admin.js" defer></script>
 </body>
 </html>

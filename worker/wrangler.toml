@@ -1,0 +1,17 @@
+# The panel backend: https://api.awesomeprojects.tech  (deployed by .github/workflows/panel.yml)
+name = "awesomeprojects-panel"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+account_id = "2f8365ea25e7fd8c95ba7da82046b81c"
+workers_dev = false
+routes = [{ pattern = "api.awesomeprojects.tech", custom_domain = true }]
+
+[vars]
+REPO = "So10-k/awesomeprojects.tech"
+SITE_ORIGIN = "https://awesomeprojects.tech"
+EXTRA_ORIGINS = "http://localhost:5191"
+
+# Jobs, rate limits and the private audit log. The deploy workflow fills in the id.
+[[kv_namespaces]]
+binding = "PANEL"
+id = "__PANEL_KV_ID__"

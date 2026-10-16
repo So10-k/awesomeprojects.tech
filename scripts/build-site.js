@@ -41,6 +41,7 @@ const data = {
   maxPerOwner: config.maxPerOwner,
   locked: config.locked || false,
   owner: (process.env.GITHUB_REPOSITORY || 'So10-k/awesomeprojects.tech').split('/')[0],
+  panelApi: process.env.PANEL_API || 'https://api.awesomeprojects.tech',
   maintainers: config.maintainers || [],
   bannedUsers: config.bannedUsers || [],
   limits: config.limits || {},

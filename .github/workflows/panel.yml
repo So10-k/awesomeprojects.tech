@@ -1,0 +1,97 @@
+name: Panel server
+
+# Deploys worker/ (api.awesomeprojects.tech) to Cloudflare Workers. Setup: docs/PANEL.md.
+on:
+  push:
+    branches: [main]
+    paths: ["worker/**", ".github/workflows/panel.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: panel-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_TOKEN }}
+    steps:
+      - name: Check the setup
+        id: ready
+        env:
+          S1: ${{ secrets.PANEL_GITHUB_CLIENT_ID }}
+          S2: ${{ secrets.PANEL_GITHUB_CLIENT_SECRET }}
+          S3: ${{ secrets.PANEL_DISPATCH_TOKEN }}
+          S4: ${{ secrets.PANEL_SESSION_SECRET }}
+          S5: ${{ secrets.PANEL_BOT_SECRET }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_WORKERS_TOKEN"
+          [ -n "$S1" ] || missing="$missing PANEL_GITHUB_CLIENT_ID"
+          [ -n "$S2" ] || missing="$missing PANEL_GITHUB_CLIENT_SECRET"
+          [ -n "$S3" ] || missing="$missing PANEL_DISPATCH_TOKEN"
+          [ -n "$S4" ] || missing="$missing PANEL_SESSION_SECRET"
+          [ -n "$S5" ] || missing="$missing PANEL_BOT_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::notice::Panel server not deployed yet. Missing repository secrets:$missing (see docs/PANEL.md)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.ready.outputs.ok == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          node-version: 22
+
+      - name: Make sure the KV namespace exists
+        if: steps.ready.outputs.ok == 'true'
+        working-directory: worker
+        run: |
+          set -euo pipefail
+          title="awesomeprojects-panel"
+          id=$(npx -y wrangler@4 kv namespace list 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const l=JSON.parse(s.slice(s.indexOf('[')));const n=l.find(x=>x.title==='$title');process.stdout.write(n?n.id:'')})")
+          if [ -z "$id" ]; then
+            npx -y wrangler@4 kv namespace create "$title" >/dev/null
+            id=$(npx -y wrangler@4 kv namespace list 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const l=JSON.parse(s.slice(s.indexOf('[')));process.stdout.write(l.find(x=>x.title==='$title').id)})")
+          fi
+          sed -i "s/__PANEL_KV_ID__/$id/" wrangler.toml
+          echo "KV namespace: $id"
+
+      - name: Deploy
+        if: steps.ready.outputs.ok == 'true'
+        working-directory: worker
+        run: npx -y wrangler@4 deploy
+
+      - name: Set the secrets
+        if: steps.ready.outputs.ok == 'true'
+        working-directory: worker
+        env:
+          GITHUB_CLIENT_ID: ${{ secrets.PANEL_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PANEL_GITHUB_CLIENT_SECRET }}
+          DISPATCH_TOKEN: ${{ secrets.PANEL_DISPATCH_TOKEN }}
+          SESSION_SECRET: ${{ secrets.PANEL_SESSION_SECRET }}
+          BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
+        run: |
+          set -euo pipefail
+          umask 077
+          f="$RUNNER_TEMP/panel-secrets.json"
+          node -e "const k=['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','DISPATCH_TOKEN','SESSION_SECRET','BOT_SECRET'];require('fs').writeFileSync(process.argv[1],JSON.stringify(Object.fromEntries(k.map(x=>[x,process.env[x]]))))" "$f"
+          npx -y wrangler@4 secret bulk "$f" >/dev/null
+          rm -f "$f"
+          echo "Secrets set."
+
+      - name: Check it answers
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS https://api.awesomeprojects.tech/health; then echo; exit 0; fi
+            sleep 10
+          done
+          echo "::warning::api.awesomeprojects.tech isn't answering yet (a new custom domain can take a few minutes)."

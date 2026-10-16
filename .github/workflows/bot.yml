@@ -15,6 +15,8 @@ on:
     types: [opened, edited]
   discussion_comment:
     types: [created]
+  repository_dispatch:
+    types: [panel] # actions from the panel (api.awesomeprojects.tech)
   schedule:
     - cron: "17 9 * * 1" # Mondays
   workflow_dispatch:
@@ -33,7 +35,7 @@ permissions:
   discussions: write # the activity log, and answering commands in Discussions
 
 concurrency:
-  group: bot-${{ github.event.pull_request.number || github.event.issue.number || github.event.discussion.number || github.run_id }}
+  group: bot-${{ github.event.pull_request.number || github.event.issue.number || github.event.discussion.number || github.event.client_payload.target || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -54,3 +56,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET: ${{ inputs.target }}
+          PANEL_API: https://api.awesomeprojects.tech
+          PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}

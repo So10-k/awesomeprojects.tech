@@ -92,6 +92,7 @@ Start a comment with a command, in any issue or pull request here. The read-only
 
 | Command | What it does |
 |---|---|
+| | **Prefer buttons?** [My domains](https://awesomeprojects.tech/me/): sign in with GitHub to change targets, add TXT records, verify, transfer or remove. |
 | `/available <name>` | Is a name free? (with a link to request it) |
 | `/whois <name>` | Who owns a name, where it points, what's under it |
 | `/mine` | Your names |
@@ -142,11 +143,11 @@ flowchart LR
 
 | I want to… | Do this |
 |---|---|
-| **Point it somewhere else** | [Request it again](../../issues/new?template=request.yml) with the same name: the bot sees it's yours and updates it. |
+| **Point it somewhere else** | [My domains](https://awesomeprojects.tech/me/) → *Change where it points* (live in a minute if it passes the checks), or [request it again](../../issues/new?template=request.yml) with the same name |
 | **Add a verification record** | `/txt <name> <label> <value>` on any issue |
 | **Give it to someone** | `/transfer <name> @them`, or [open a transfer](../../issues/new?template=transfer.yml). They reply `/accept`. |
 | **Get a name someone else has** | [Open a transfer](../../issues/new?template=transfer.yml). The owner replies `/approve` (a maintainer can step in after 30 days of silence). |
-| **Remove mine** | `/remove <name>`, instantly |
+| **Remove mine** | [My domains](https://awesomeprojects.tech/me/) → *Remove*, or `/remove <name>` |
 | **Report abuse** | [Open a report](../../issues/new?template=takedown.yml), or [privately](../../security/advisories/new) |
 
 ---

@@ -135,3 +135,19 @@ dialog input { width: 100%; margin-bottom: 1rem; }
   .toast { animation: rise 0.25s cubic-bezier(.2, .7, .2, 1) both; }
 }
 @keyframes cmd-in { from { opacity: 0; transform: translate(-50%, 14px); } }
+
+.btn.big { font-size: 1.1rem; padding: 0.95rem 1.6rem; }
+.gh-signin { display: grid; gap: 0.6rem; justify-items: start; margin-bottom: 2rem; }
+details.alt { border-top: 1px solid var(--line); padding-top: 1.2rem; }
+details.alt summary { cursor: pointer; color: var(--muted); font-weight: 500; }
+details.alt[open] summary { margin-bottom: 1rem; }
+.mode { font: 400 0.72rem var(--mono); color: var(--muted); }
+.md h3 { font: 600 0.95rem var(--body); margin: 0.3rem 0; }
+.md blockquote { margin: 0.4rem 0; padding-left: 0.7rem; border-left: 2px solid var(--line); color: var(--muted); }
+.md ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+.md p { margin: 0.3rem 0; }
+.log .state { font: 600 0.7rem var(--mono); text-transform: uppercase; margin-right: 0.4rem; }
+.log .state.done { color: var(--mint); }
+.log .state.error { color: var(--pink); }
+.log .state.queued { color: #ffd479; }
+.log .result { display: block; color: var(--muted); font-size: 0.82rem; }

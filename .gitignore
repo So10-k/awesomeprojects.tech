@@ -2,3 +2,5 @@ node_modules/
 .env
 *.local.json
 _site/
+worker/.wrangler/
+worker/node_modules/
