@@ -830,6 +830,7 @@ async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
   const status = S.statusOf(entry);
   const lines = [];
   let existing = await ghBot.get(`/repos/${full}`).catch(() => null);
+  if (existing && existing.archived && status === 'archived') return { created: false, full, lines: [ok('archived (access removed, DNS off)')] };
   const created = !existing;
   if (created) {
     existing = await ghBot.post(`/orgs/${ORG}/repos`, { name: repoName, ...S.repoSettings({ name, owner }), auto_init: true });
