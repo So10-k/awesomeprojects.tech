@@ -1,0 +1,14 @@
+{
+  "owner": {
+    "github": "So10-k"
+  },
+  "description": "End-to-end test of hosted sites (archived right after)",
+  "records": {
+    "CNAME": "awesomeprojects-sites.github.io"
+  },
+  "site": {
+    "provider": "hosted",
+    "repo": "awesomeprojects-sites/hosted-test",
+    "status": "active"
+  }
+}
