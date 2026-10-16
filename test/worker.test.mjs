@@ -90,12 +90,19 @@ test('an action is dispatched privately, tracked, and audited', async () => {
   const r = await call(e, '/api/action', { method: 'POST', token: mia, body: { action: 'approve', args: { number: 41 } } });
   const { id, summary } = await r.json();
   assert.equal(summary, '/approve on #41');
-  assert.deepEqual(dispatched[0], { event_type: 'panel', client_payload: { id, actor: 'mia', command: '/approve', target: 41 } });
+  const sent = dispatched[0].client_payload;
+  assert.deepEqual({ ...sent, at: 0 }, { id, actor: 'mia', at: 0, summary: '/approve on #41', command: '/approve', target: 41 });
+  assert.ok(Number.isFinite(sent.at));
   assert.equal((await (await call(e, `/api/status/${id}`, { token: mia })).json()).state, 'queued');
 
   // Only the bot can report back.
   assert.equal((await call(e, '/bot/result', { method: 'POST', body: { id, ok: true, message: 'merged' }, headers: { Authorization: 'Bearer wrong' } })).status, 401);
-  assert.equal((await call(e, '/bot/result', { method: 'POST', body: { id, ok: true, message: '🎉 live', link: 'L' }, headers: { Authorization: `Bearer ${e.BOT_SECRET}` } })).status, 200);
+  // The report carries everything it needs: it works even where the job isn't visible yet.
+  const report = { id, actor: sent.actor, at: sent.at, summary: sent.summary, ok: true, message: '🎉 live', link: 'L' };
+  const elsewhere = env({ PANEL: e.PANEL });
+  e.PANEL.m.delete(`job:${id}`);
+  assert.equal((await call(elsewhere, '/bot/result', { method: 'POST', body: report, headers: { Authorization: `Bearer ${e.BOT_SECRET}` } })).status, 200);
+  await e.PANEL.put(`job:${id}`, JSON.stringify({ id, actor: 'mia', state: 'queued', summary: sent.summary }));
   const done = await (await call(e, `/api/status/${id}`, { token: mia })).json();
   assert.deepEqual([done.state, done.message, done.link], ['done', '🎉 live', 'L']);
 

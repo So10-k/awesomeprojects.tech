@@ -25,7 +25,7 @@ const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).re
 const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 
 async function hmac(secret, data) {
-  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await crypto.subtle.importKey('raw', enc.encode(String(secret).trim()), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return b64url(await crypto.subtle.sign('HMAC', key, enc.encode(data)));
 }
 function safeEqual(a, b) {
@@ -238,7 +238,9 @@ async function action(req, env, s) {
   const r = await gh(env, `/repos/${env.REPO}/dispatches`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event_type: 'panel', client_payload: { id, actor: s.login, ...built } }),
+    // at + summary come back with the result, so reporting never needs to read KV (which is only
+    // eventually consistent between Cloudflare locations: the bot's report lands somewhere else).
+    body: JSON.stringify({ event_type: 'panel', client_payload: { id, actor: s.login, at: now, summary, ...built } }),
   });
   if (!r.ok) {
     const msg = `GitHub refused the action (${r.status}).`;
@@ -254,19 +256,26 @@ async function status(req, env, s, id) {
   if (!raw) return fail(req, env, 404, 'Not found.');
   const job = JSON.parse(raw);
   if (job.actor.toLowerCase() !== s.login.toLowerCase() && RANK[await roleOf(s.login, env)] < RANK.maintainer) return fail(req, env, 404, 'Not found.');
-  return json(req, env, job);
+  if (job.state !== 'queued') return json(req, env, job);
+  const result = await env.PANEL.get(`result:${id}`, { cacheTtl: 30 });
+  return json(req, env, result ? { ...job, ...JSON.parse(result) } : job);
 }
 
+/** The bot reports back. Write-only: the job may not be visible from this location yet. */
 async function botResult(req, env) {
   const h = req.headers.get('Authorization') || '';
-  if (!env.BOT_SECRET || !safeEqual(h, `Bearer ${env.BOT_SECRET}`)) return new Response('no', { status: 401 });
-  const { id, ok, message, link } = await req.json();
-  const raw = await env.PANEL.get(`job:${id}`);
-  if (!raw) return new Response('unknown job', { status: 404 });
-  const job = { ...JSON.parse(raw), state: ok ? 'done' : 'error', message: String(message || '').slice(0, 8000), link: link || null, doneAt: Date.now() };
-  await env.PANEL.put(`job:${id}`, JSON.stringify(job), { expirationTtl: 7 * 86400 });
-  const short = String(message || '').replace(/[#*`>|_]/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
-  await env.PANEL.put(job.auditKey, '', { metadata: { at: job.at, actor: job.actor, role: job.role, summary: job.summary, state: job.state, result: short, link: job.link } });
+  const secret = String(env.BOT_SECRET || '').trim();
+  if (!secret || !safeEqual(h.trim(), `Bearer ${secret}`)) return new Response('no', { status: 401 });
+  const { id, ok, message, link, actor, summary, at } = await req.json();
+  if (!id || typeof id !== 'string') return new Response('missing id', { status: 400 });
+  const state = ok ? 'done' : 'error';
+  const result = { state, message: String(message || '').slice(0, 8000), link: link || null, doneAt: Date.now() };
+  await env.PANEL.put(`result:${id}`, JSON.stringify(result), { expirationTtl: 7 * 86400 });
+  if (actor && Number.isFinite(at)) {
+    const short = String(message || '').replace(/[#*`>|_]/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const role = await roleOf(actor, env).catch(() => 'user');
+    await env.PANEL.put(auditKey(at, id), '', { metadata: { at, actor, role, summary: String(summary || '').slice(0, 200), state, result: short, link: result.link } });
+  }
   return new Response('ok');
 }
 
