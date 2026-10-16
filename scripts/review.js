@@ -178,6 +178,11 @@ function review(input) {
     }
 
     // A name under someone else's subdomain needs their OK.
+    // Only maintainers may mark a name as forced.
+    if (now_ && now_.forced !== undefined && (!old || old.forced !== now_.forced) && !isMaintainer && !overrideAll) {
+      add('ownership', 'error', `\`${n}\`: only maintainers can set \`forced\`.`, { hard: true });
+    }
+
     if (status === 'A' && parentOwner && newOwner && parentOwner !== newOwner && !admins.includes(parentOwner)) {
       if (approvedBy(parentOwner)) add('consent', 'pass', `@${parentOwner} approved \`${n}\` under \`${parent}\``);
       else add('consent', 'hold', `\`${n}\` is under \`${parent}\`, which belongs to @${parentOwner}. @${parentOwner}, reply \`/approve\` to allow it.`, { waitingFor: parentOwner, label: 'nested' });

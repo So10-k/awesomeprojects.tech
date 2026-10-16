@@ -374,6 +374,7 @@ async function onRequest(issue, { comment, cmd, force = false } = {}) {
     return say(result, { entry: built.entry, plan: rc.plan });
   }
 
+  if (result.overridden) built.entry.forced = lc(by);
   const { pr, merged } = await botChange({
     title: `${exists ? 'Update' : 'Add'} ${name}`,
     body: `Requested by @${author} in #${issue.number}; ${approving ? `${forcing ? 'force-' : ''}approved by @${by}` : 'auto-approved'}.`,
@@ -1305,6 +1306,7 @@ async function createFor({ name, owner: who, provider, repo: srcRepo = '', targe
     const forceable = blockers.filter((f) => !f.hard).length;
     return { ok: false, message: `Not created: it's **${ev.result.verdict}**.\n${blockers.map((f) => `- ${f.hard ? '⛔' : '✏️'} ${f.text}`).join('\n')}${forceable ? '\n\nThe ✏️ ones can be overridden: run it again with **force**.' : ''}` };
   }
+  if (ev.result.overridden) built.entry.forced = lc(by);
   const { pr, merged } = await botChange({
     title: `${ev.exists ? 'Update' : 'Add'} ${built.name} for @${profile.login}`,
     body: `Created by @${by} for @${profile.login}${force ? ` (forced, ${ev.result.overridden} overridden)` : ''}.`,
@@ -1428,6 +1430,7 @@ async function onPanelRequest(p) {
   if (rev.verdict !== 'ready') {
     return panelPost('/bot/request', { request: p.request, kind: 'failed', verdict: rev.verdict, review: rev, message: `Couldn't approve it yet: it's **${rev.verdict}**.\n\n${rev.findings.filter((f) => ['error', 'reject'].includes(f.level)).map((f) => `- ${f.text}`).join('\n')}` });
   }
+  if (ev.result.overridden) built.entry.forced = lc(p.actor);
   const { pr, merged } = await botChange({
     title: `${ev.exists ? 'Update' : 'Add'} ${built.name}`,
     body: `Requested privately by @${author}; ${p.force ? 'force-' : ''}approved by @${p.actor} in the panel.`,
@@ -1515,7 +1518,7 @@ async function onPanel(p) {
       });
     }
     const text = await anywhereCommand({ ...parsed, by: actor, admin, kind: 'panel' });
-    return finish(text === undefined ? { ok: false, message: `\`${parsed.cmd}\` needs a request or report.` } : { ok: !/^(Usage|Only|Can't|I opened)/.test(text) && !/isn't (registered|banned|reserved|a maintainer)/.test(text), message: text });
+    return finish(text === undefined ? { ok: false, message: `\`${parsed.cmd}\` needs a request or report.` } : { ok: !/^(Usage|Only|Can't|I opened|Not created|❌)/.test(text) && !/isn't (registered|banned|reserved|a maintainer|a hosted site|a GitHub account)/.test(text), message: text });
   } catch (e) {
     console.error(e);
     return finish({ ok: false, message: `Something broke: ${String(e.message).split('\n')[0].slice(0, 300)}`, link: runUrl });

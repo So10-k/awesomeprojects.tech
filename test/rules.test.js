@@ -87,3 +87,12 @@ test('owned names and families', () => {
   assert.deepEqual(R.namesOwnedBy(e, 'bob'), ['b']);
   assert.deepEqual(R.family(e, 'alice'), ['_v.alice', 'alice', 'blog.alice']);
 });
+
+test('forced names: reserved and limits don\'t apply, only to that name', () => {
+  const e = (github, extra = {}) => ({ owner: { github }, records: { TXT: 'x' }, ...extra });
+  assert.ok(tree({ www: e('alice') }).www, 'reserved');
+  assert.deepEqual(tree({ www: e('alice', { forced: 'boss' }) }), {}, 'forced reserved name passes');
+  const four = { a: e('alice'), b: e('alice'), c: e('alice'), d: e('alice', { forced: 'boss' }) };
+  assert.deepEqual(tree(four), {}, 'a forced name doesn\'t count toward the limit');
+  assert.ok(R.checkEntry('x', e('alice', { forced: 'not a user!' })).length);
+});
