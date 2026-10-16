@@ -69,14 +69,15 @@ jobs:
         if: steps.ready.outputs.ok == 'true'
         working-directory: worker
         run: |
-          set -uo pipefail
+          # No -e/pipefail here: a token without D1 permission must only turn private requests off.
+          set +e +o pipefail
           db="awesomeprojects-panel"
-          find_id() { npx -y wrangler@4 d1 list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const l=JSON.parse(s.slice(s.indexOf('[')));const n=l.find(x=>x.name==='$db');process.stdout.write(n?n.uuid:'')}catch{}})"; }
+          find_id() { (npx -y wrangler@4 d1 list --json 2>/dev/null || true) | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const l=JSON.parse(s.slice(s.indexOf('[')));const n=l.find(x=>x.name==='$db');process.stdout.write(n?n.uuid:'')}catch{}})"; }
           id=$(find_id)
-          if [ -z "$id" ]; then npx -y wrangler@4 d1 create "$db" >/dev/null 2>&1 || true; id=$(find_id); fi
+          if [ -z "$id" ]; then npx -y wrangler@4 d1 create "$db" >/dev/null 2>&1; id=$(find_id); fi
           if [ -n "$id" ]; then
             sed -i "s/__PANEL_D1_ID__/$id/" wrangler.toml
-            npx -y wrangler@4 d1 migrations apply "$db" --remote
+            npx -y wrangler@4 d1 migrations apply "$db" --remote || { echo "::error::Couldn't apply the D1 migrations."; exit 1; }
             echo "D1 database: $id"
           else
             sed -i '/# d1-start/,/# d1-end/d' wrangler.toml
