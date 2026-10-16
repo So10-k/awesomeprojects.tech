@@ -218,12 +218,17 @@ function review(input) {
     if (text) add(check, 'pass', text);
   }
 
+  // A maintainer's /approve clears every hold.
+  if (overrideHolds) {
+    for (const f of findings) if (f.level === 'hold') { f.level = 'pass'; f.text = `${f.text} (approved by a maintainer)`; delete f.label; }
+  }
+
   // ── Verdict ───────────────────────────────────────────────────
   const has = (lvl) => findings.some((f) => f.level === lvl);
   let verdict = 'ready';
   if (has('reject')) verdict = 'rejected';
   else if (has('error')) verdict = 'needs-changes';
-  else if (has('hold') && !overrideHolds) verdict = 'on-hold';
+  else if (has('hold')) verdict = 'on-hold';
 
   const reasonLabels = [...new Set(findings.filter((f) => f.level === 'hold' && f.label).map((f) => f.label))];
   const autoMerge = verdict === 'ready' && !!config.autoMerge && !isMaintainer && !!sig && !sig.isBot &&
