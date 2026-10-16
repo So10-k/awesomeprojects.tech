@@ -1,0 +1,14 @@
+{
+  "owner": {
+    "github": "Happyshot10"
+  },
+  "description": "my amazing projectes",
+  "records": {
+    "CNAME": "awesomeprojects-sites.github.io"
+  },
+  "site": {
+    "provider": "hosted",
+    "repo": "awesomeprojects-sites/samottens",
+    "status": "active"
+  }
+}
