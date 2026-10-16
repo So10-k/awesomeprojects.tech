@@ -191,7 +191,7 @@ async function repoChecksFor(entries, author) {
 }
 
 // ── Pull requests ───────────────────────────────────────────────
-async function reviewPR(number, { overrideHolds = false } = {}) {
+async function reviewPR(number, { overrideHolds = false, overrideAll = false, by = '' } = {}) {
   const pr = await gh.get(`${R_}/pulls/${number}`);
   if ((pr.state !== 'open' && !dryRun) || pr.base.ref !== 'main') return null;
 
@@ -224,7 +224,7 @@ async function reviewPR(number, { overrideHolds = false } = {}) {
 
   const result = review({
     author, profile, changes, base, head, invalid, comments, labels, dns,
-    reserved, config, maintainers, overrideHolds, extra: rc.findings, pagesOwners: rc.pagesOwners,
+    reserved, config, maintainers, overrideHolds, overrideAll, by, extra: rc.findings, pagesOwners: rc.pagesOwners,
   });
   console.log(`PR #${number} by ${author}: ${result.verdict}`);
   for (const f of result.findings) console.log(`  ${f.level.padEnd(6)} ${f.check}: ${f.text}`);
@@ -271,10 +271,11 @@ async function onPullRequestComment(number, comment, cmd, rest) {
   switch (cmd) {
     case '/approve': {
       await react(comment.id, 'eyes');
-      const res = await reviewPR(number, { overrideHolds: admin });
+      const force = admin && /\bforce\b/i.test(rest);
+      const res = await reviewPR(number, { overrideHolds: admin, overrideAll: force, by });
       if (!res || !admin) return; // non-maintainers: their approval is a consent, read by the review
       if (res.result.verdict !== 'ready') return reply(number, `@${by} I can't merge this yet: it's **${res.result.verdict}** (see the checks above).`);
-      if (await mergePR(res.pr, res.result)) await activityLog(`✅ **Approved** PR #${number} by @${res.pr.user.login} · by @${by}`);
+      if (await mergePR(res.pr, res.result)) await activityLog(`✅ **${force ? `Force-approved (${res.result.overridden} overridden)` : 'Approved'}** PR #${number} by @${res.pr.user.login} · by @${by}`);
       return;
     }
     case '/accept':
@@ -333,12 +334,13 @@ async function botChange({ title, body, changes, tag }) {
 }
 
 // ── Requests (the issue form) ───────────────────────────────────
-async function onRequest(issue, { comment, cmd } = {}) {
+async function onRequest(issue, { comment, cmd, force = false } = {}) {
   if (issue.state !== 'open') return;
   const author = issue.user.login;
   const by = comment ? comment.user.login : author;
   const admin = comment ? isAdmin(by, comment.author_association) : false;
   const approving = admin && cmd === '/approve';
+  const forcing = approving && force;
   const labels = issue.labels.map((l) => l.name);
   const built = P.buildRequest(Q.parseForm(issue.body), author, { sitesOrg: ORG });
   const { name } = built;
@@ -350,7 +352,7 @@ async function onRequest(issue, { comment, cmd } = {}) {
   }
 
   const comments = humans(await gh.all(`${R_}/issues/${issue.number}/comments`));
-  const ev = await evaluateRequest({ built, author, comments, labels, overrideHolds: approving });
+  const ev = await evaluateRequest({ built, author, comments, labels, overrideHolds: approving, overrideAll: forcing, by });
   if (ev.problems.length) {
     await setLabels(issue.number, labels, ['needs-changes']);
     return say(null, { problems: ev.problems });
@@ -374,7 +376,7 @@ async function onRequest(issue, { comment, cmd } = {}) {
 
   const { pr, merged } = await botChange({
     title: `${exists ? 'Update' : 'Add'} ${name}`,
-    body: `Requested by @${author} in #${issue.number}; ${approving ? `approved by @${by}` : 'auto-approved'}.`,
+    body: `Requested by @${author} in #${issue.number}; ${approving ? `${forcing ? 'force-' : ''}approved by @${by}` : 'auto-approved'}.`,
     changes: [{ file, content: JSON.stringify(built.entry, null, 2) + '\n' }],
     tag: `request-${issue.number}`,
   });
@@ -382,12 +384,12 @@ async function onRequest(issue, { comment, cmd } = {}) {
   const guide = P.setupGuide({ provider: built.provider, name, repo: built.entry.site && built.entry.site.repo, branch: rc.branch, sourceRepo: repo });
   await say(result, { live: true, guide, prUrl: pr.html_url });
   await setLabels(issue.number, result.labels, ['live'], [...MANAGED, 'live']);
-  await activityLog(`✅ **${exists ? 'Updated' : 'Added'}** \`${name}.${R.DOMAIN}\` for @${author} · ${approving ? `approved by @${by}` : 'auto-approved'} · #${issue.number} → #${pr.number}`);
+  await activityLog(`✅ **${exists ? 'Updated' : 'Added'}** \`${name}.${R.DOMAIN}\` for @${author} · ${approving ? `${forcing ? `force-approved (${result.overridden} overridden)` : 'approved'} by @${by}` : 'auto-approved'} · #${issue.number} → #${pr.number}`);
   return close(issue.number, 'completed');
 }
 
 /** Review a request (from an issue or the panel) the same way. `built` is P.buildRequest's output. */
-async function evaluateRequest({ built, author, comments = [], labels = [], overrideHolds = false }) {
+async function evaluateRequest({ built, author, comments = [], labels = [], overrideHolds = false, overrideAll = false, by = '' }) {
   const { entries } = mainTree();
   const { name } = built;
   const problems = [...built.problems];
@@ -409,7 +411,7 @@ async function evaluateRequest({ built, author, comments = [], labels = [], over
   }
   const result = review({
     author, profile, changes: [{ status: exists ? 'M' : 'A', file }], base: entries, head, comments, labels, dns,
-    reserved, config, maintainers, overrideHolds, extra: rc.findings, pagesOwners,
+    reserved, config, maintainers, overrideHolds, overrideAll, by, extra: rc.findings, pagesOwners,
   });
   return { problems: [], entries, file, exists, rc, result };
 }
@@ -422,7 +424,7 @@ async function onRequestComment(issue, comment, cmd, rest) {
     case '/accept':
     case '/recheck':
       await react(comment.id, 'eyes');
-      return onRequest(issue, { comment, cmd });
+      return onRequest(issue, { comment, cmd, force: cmd === '/approve' && /\bforce\b/i.test(rest) });
     case '/cancel':
       if (lc(issue.user.login) !== lc(by) && !admin) return react(comment.id, 'confused');
       await reply(issue.number, '👋 Cancelled. Open a new request any time.');
@@ -730,6 +732,25 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
       await activityLog(`🚫 **Suspended user** @${u} · by @${by}${args.length > 1 ? `: ${args.slice(1).join(' ')}` : ''}`);
       await notify(`🚫 Suspended @${u} (by @${by})`);
       return `### 🚫 @${u} suspended\n\n${lines.map((l) => `- ${l}`).join('\n') || '- nothing else to do'}`;
+    }
+    case '/create': {
+      if (kind === 'discussion') return undefined;
+      const force = args.some((a) => lc(a) === 'force');
+      const rest2 = args.filter((a) => lc(a) !== 'force');
+      const [nm, who, host, extra] = rest2;
+      if (!nm || !who || !host) return 'Usage: `/create <name> @user <host> [target|repo|template] [force]`';
+      const alias = HOST_ALIASES[lc(host)] || lc(host);
+      const r = await createFor({
+        name: nm, owner: who, provider: alias, force,
+        repo: alias === 'github-pages' ? extra || '' : '',
+        template: alias === 'hosted' ? extra || '' : '',
+        target: !['github-pages', 'hosted', 'vercel'].includes(alias) ? rest2.slice(3).join(' ') : '',
+      }, by);
+      return r.message;
+    }
+    case '/make-repo': {
+      if (kind === 'discussion') return undefined;
+      return makeRepo(args[0], args[1], args[2], by);
     }
     case '/ops':
       if (kind === 'discussion') return undefined;
@@ -1261,6 +1282,69 @@ async function ops({ by = 'schedule' } = {}) {
   return digest;
 }
 
+// ── Making things for people ───────────────────────────────────
+const HOST_ALIASES = {
+  hosted: 'hosted', host: 'hosted', us: 'hosted', github: 'github-pages', 'github-pages': 'github-pages', pages: 'github-pages', repo: 'github-pages',
+  vercel: 'vercel', netlify: 'netlify', cloudflare: 'cloudflare-pages', 'cloudflare-pages': 'cloudflare-pages', cf: 'cloudflare-pages',
+  render: 'render', railway: 'railway', fly: 'fly', cname: 'cname', server: 'server', ip: 'server',
+};
+
+/** A maintainer makes a name for someone: same checks (forceable), committed, hosted repos provisioned. */
+async function createFor({ name, owner: who, provider, repo: srcRepo = '', target = '', template = '', description = '', force = false }, by) {
+  const p = P.byLabelOrId(HOST_ALIASES[lc(provider)] || provider);
+  if (!p) return { ok: false, message: `Host must be one of: ${Object.keys(HOST_ALIASES).filter((k, i, a) => a.indexOf(k) === i).join(', ')}.` };
+  const person = String(who || '').replace(/^@/, '');
+  if (!/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i.test(person)) return { ok: false, message: 'Give a GitHub username for the owner.' };
+  const profile = await gh.get(`/users/${person}`).catch(() => null);
+  if (!profile) return { ok: false, message: `@${person} isn't a GitHub account.` };
+  const built = P.buildRequest({ Subdomain: name, 'Where should it point?': p.label, Template: template, 'GitHub repository': srcRepo, Target: target, Description: description }, profile.login, { sitesOrg: ORG });
+  const ev = await evaluateRequest({ built, author: profile.login, overrideHolds: true, overrideAll: force, by });
+  if (ev.problems.length) return { ok: false, message: `Can't create it:\n${ev.problems.map((x) => `- ${x}`).join('\n')}` };
+  if (ev.result.verdict !== 'ready') {
+    const blockers = ev.result.findings.filter((f) => ['error', 'reject', 'hold'].includes(f.level));
+    const forceable = blockers.filter((f) => !f.hard).length;
+    return { ok: false, message: `Not created: it's **${ev.result.verdict}**.\n${blockers.map((f) => `- ${f.hard ? '⛔' : '✏️'} ${f.text}`).join('\n')}${forceable ? '\n\nThe ✏️ ones can be overridden: run it again with **force**.' : ''}` };
+  }
+  const { pr, merged } = await botChange({
+    title: `${ev.exists ? 'Update' : 'Add'} ${built.name} for @${profile.login}`,
+    body: `Created by @${by} for @${profile.login}${force ? ` (forced, ${ev.result.overridden} overridden)` : ''}.`,
+    changes: [{ file: ev.file, content: JSON.stringify(built.entry, null, 2) + '\n' }],
+    tag: `create-${built.name}-${Date.now().toString(36)}`,
+  });
+  if (!merged) return { ok: false, message: `I opened #${pr.number} but couldn't merge it.`, link: pr.html_url };
+  await activityLog(`🎁 **Created** \`${built.name}.${R.DOMAIN}\` for @${profile.login} · ${C.hostOf(built.entry)}${force ? ` · forced (${ev.result.overridden} overridden)` : ''} · by @${by} → #${pr.number}`);
+  const guide = P.setupGuide({ provider: p, name: built.name, repo: built.entry.site && built.entry.site.repo, branch: ev.rc.branch, sourceRepo: repo });
+  return { ok: true, message: `🎁 \`${built.name}.${R.DOMAIN}\` is live for @${profile.login}${S.isHosted(built.entry) ? `, with [${built.entry.site.repo}](https://github.com/${built.entry.site.repo}) (they're invited)` : ''}.\n\nSend them these steps:\n\n${guide}`, link: pr.html_url };
+}
+
+/** A private repo in the sites org for someone, with no domain. */
+async function makeRepo(repoName, who, template, by) {
+  needOrg();
+  const rn = lc(repoName).replace(/[^a-z0-9._-]/g, '-').slice(0, 100);
+  const person = String(who || '').replace(/^@/, '');
+  if (!rn || !/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i.test(person)) return 'Usage: `/make-repo <repo> @user [template]`';
+  const profile = await gh.get(`/users/${person}`).catch(() => null);
+  if (!profile) return `@${person} isn't a GitHub account.`;
+  const full = `${ORG}/${rn}`;
+  if (await ghBot.get(`/repos/${full}`).catch(() => null)) return `[${full}](https://github.com/${full}) already exists.`;
+  const tpl = (S.TEMPLATES.find((t) => t.id === lc(template) || lc(t.label) === lc(template)) || S.TEMPLATES[0]).id;
+  const lines = [];
+  await ghBot.post(`/orgs/${ORG}/repos`, { name: rn, private: true, description: `@${profile.login}'s repo`, has_wiki: false, has_projects: false, auto_init: true });
+  lines.push(ok(`created [${full}](https://github.com/${full})`));
+  await step(lines, 'topic', async () => { await ghBot.put(`/repos/${full}/topics`, { names: ['awesomeprojects-repo'] }); });
+  await step(lines, 'properties', async () => { await ghBot.patch(`/orgs/${ORG}/properties/values`, { repository_names: [rn], properties: S.propertyValues({ status: 'active', owner: profile.login, name: rn, template: tpl }) }); });
+  await step(lines, `${tpl} template`, async () => {
+    await new Promise((r) => setTimeout(r, 1500));
+    const files = siteFiles({ name: rn, owner: profile.login, template: tpl }).filter((f) => !f.path.startsWith('.github/'));
+    await commitFiles(full, files, `Start from the ${tpl} template`);
+  });
+  await step(lines, 'Dependabot alerts', async () => { await ghBot.put(`/repos/${full}/vulnerability-alerts`); });
+  await step(lines, 'maintainers team access', async () => { await ghBot.put(`/orgs/${ORG}/teams/${S.TEAM.slug}/repos/${full}`, { permission: S.TEAM.permission }); });
+  await step(lines, `@${profile.login} invited`, async () => { await ghBot.put(`/repos/${full}/collaborators/${profile.login}`, { permission: S.ownerRole('active', await haveRoles()) }); });
+  await activityLog(`📦 **Repo made** [${full}](https://github.com/${full}) for @${profile.login} · by @${by}`);
+  return `📦 [${full}](https://github.com/${full}) is ready for @${profile.login} (they're invited; it uses a seat).\n\n${lines.join('\n')}`;
+}
+
 // ── Panel actions (repository_dispatch from api.awesomeprojects.tech) ──
 /** Tell the panel how it went. `job` is the dispatch payload (id, actor, at, summary). */
 async function reportResult(job, { ok, message, link }) {
@@ -1332,7 +1416,7 @@ const reviewSummary = (ev) => (ev.problems.length
 async function onPanelRequest(p) {
   const author = p.kind === 'approve' ? p.requester : p.actor;
   const built = P.buildRequest(panelForm(p.form), author, { sitesOrg: ORG });
-  const ev = await evaluateRequest({ built, author, labels: p.manualHold ? ['manual-hold'] : [], overrideHolds: p.kind === 'approve' });
+  const ev = await evaluateRequest({ built, author, labels: p.manualHold ? ['manual-hold'] : [], overrideHolds: p.kind === 'approve', overrideAll: p.kind === 'approve' && !!p.force, by: p.actor });
   const rev = { ...reviewSummary(ev), entry: built.entry || null };
   console.log(`panel request ${p.request} (${p.kind}) ${built.name}: ${rev.verdict}`);
   if (p.kind === 'review') {
@@ -1346,7 +1430,7 @@ async function onPanelRequest(p) {
   }
   const { pr, merged } = await botChange({
     title: `${ev.exists ? 'Update' : 'Add'} ${built.name}`,
-    body: `Requested privately by @${author}; approved by @${p.actor} in the panel.`,
+    body: `Requested privately by @${author}; ${p.force ? 'force-' : ''}approved by @${p.actor} in the panel.`,
     changes: [{ file: ev.file, content: JSON.stringify(built.entry, null, 2) + '\n' }],
     tag: `preq-${p.request}`,
   });
@@ -1411,6 +1495,7 @@ async function onPanel(p) {
     if (!id || !actor) return console.warn('panel: missing id/actor');
     if (p.update) return finish(await selfUpdate(p.update, actor));
     if (p.records) return finish(await setRecords(p.records.name, p.records.records, actor));
+    if (p.create) return finish(admin ? await createFor(p.create, actor) : { ok: false, message: 'That needs a maintainer.' });
     const parsed = C.parseCommand(p.command);
     if (!parsed) return finish({ ok: false, message: 'Unknown action.' });
     // The Worker checked roles; check again here, from main's config.

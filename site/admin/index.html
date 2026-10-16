@@ -69,6 +69,7 @@
         <button role="tab" data-tab="queue">Requests <span class="count" id="countQueue"></span></button>
         <button role="tab" data-tab="reports">Reports <span class="count" id="countReports"></span></button>
         <button role="tab" data-tab="sites" data-panel-only>Sites</button>
+        <button role="tab" data-tab="create" data-panel-only>Create</button>
         <button role="tab" data-tab="names">Names</button>
         <button role="tab" data-tab="people">People</button>
         <button role="tab" data-tab="maint">Maintenance</button>
@@ -110,6 +111,32 @@
           <tbody></tbody>
         </table>
         <p class="help" id="snapAt"></p>
+      </div>
+
+      <div class="panel" data-panel="create" role="tabpanel" hidden>
+        <div class="split">
+          <form class="box" id="createForm">
+            <h2>Make a name for someone</h2>
+            <p class="help">Same checks as a request. Tick <b>force</b> to override the automated blockers (limits, reserved names, account checks, seats, dead targets). Broken records and other people's names can't be forced.</p>
+            <label>Name <input name="name" placeholder="their-name" required spellcheck="false" autocomplete="off"></label>
+            <label>Owner <input name="owner" placeholder="@someone" required spellcheck="false" autocomplete="off"></label>
+            <label>Host <select name="provider" id="createHost"></select></label>
+            <label data-for="template">Template <select name="template" id="createTpl"></select></label>
+            <label data-for="repo">GitHub repository <input name="repo" placeholder="owner/repo" spellcheck="false"></label>
+            <label data-for="target">Target <input name="target" placeholder="hostname or IP" spellcheck="false"></label>
+            <label>Description <input name="description" maxlength="200"></label>
+            <label class="check"><input type="checkbox" name="force"> Force: override the automated blockers</label>
+            <button class="btn primary" type="submit">Create…</button>
+          </form>
+          <form class="box" id="repoForm">
+            <h2>Make a repo for someone</h2>
+            <p class="help">A private repo in the sites org with no domain, started from a template, with the person invited (uses a seat) and the maintainers team added.</p>
+            <label>Repo name <input name="repo" placeholder="project-name" required spellcheck="false" autocomplete="off"></label>
+            <label>Owner <input name="user" placeholder="@someone" required spellcheck="false" autocomplete="off"></label>
+            <label>Template <select name="template" id="repoTpl"></select></label>
+            <button class="btn primary" type="submit">Make repo…</button>
+          </form>
+        </div>
       </div>
 
       <div class="panel" data-panel="settings" role="tabpanel" hidden>

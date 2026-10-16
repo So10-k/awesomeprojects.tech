@@ -72,6 +72,8 @@ const domainName = (file) => (/^domains\/[^/]+\.json$/.test(file) ? R.nameFromFi
  *   dns           { [hostname]: true | false } whether CNAME/MX targets resolve (missing = unknown)
  *   reserved, config, maintainers, now
  *   overrideHolds a maintainer said /approve: holds don't block
+ *   overrideAll   a maintainer forced it: every finding that isn't `hard` is overridden too
+ *   by            who is approving (shown on overridden findings)
  *   extra         more findings worked out elsewhere (e.g. repository checks for GitHub Pages)
  *   pagesOwners   github.io owners verified for this author (their orgs), besides themselves
  *   limits        per-user limit overrides (config.limits)
@@ -82,7 +84,7 @@ const domainName = (file) => (/^domains\/[^/]+\.json$/.test(file) ? R.nameFromFi
 function review(input) {
   const {
     author, profile, changes, base, head, invalid = {}, comments = [], labels = [], dns = {},
-    reserved = [], config = {}, maintainers = [], now = Date.now(), overrideHolds = false,
+    reserved = [], config = {}, maintainers = [], now = Date.now(), overrideHolds = false, overrideAll = false, by = '',
     extra = [], pagesOwners = [],
   } = input;
   const who = lc(author);
@@ -130,15 +132,15 @@ function review(input) {
 
   // ── What changed ───────────────────────────────────────────────
   const maxFiles = config.maxFilesPerRequest ?? 10;
-  if (!changes.length) add('format', 'error', 'This pull request does not change anything.');
+  if (!changes.length) add('format', 'error', 'This pull request does not change anything.', { hard: true });
   if (changes.length > maxFiles && !isMaintainer) add('format', 'error', `Please change at most ${maxFiles} files per request.`);
   const touched = new Set();
   for (const { file } of changes) {
     const n = domainName(file);
     if (n) touched.add(n);
-    else if (!isMaintainer) add('format', 'error', `\`${file}\`: only files in \`domains/\` can be changed in a request.`);
+    else if (!isMaintainer) add('format', 'error', `\`${file}\`: only files in \`domains/\` can be changed in a request.`, { hard: true });
   }
-  for (const [n, msg] of Object.entries(invalid)) add('format', 'error', `\`domains/${n}.json\` is not valid JSON: ${msg}`);
+  for (const [n, msg] of Object.entries(invalid)) add('format', 'error', `\`domains/${n}.json\` is not valid JSON: ${msg}`, { hard: true });
 
   // New problems in the tree, for names this PR touches (or whose parent it touches).
   const opts = { reserved, maintainers, maxPerOwner, limits };
@@ -148,7 +150,9 @@ function review(input) {
     if (!touched.has(n) && !touched.has(R.baseOf(n))) continue;
     for (const e of es) {
       if (was.has(errKey(n, e))) continue;
-      add(/limit is/.test(e) ? 'limit' : 'format', 'error', `\`${n}\`: ${e}`);
+      // Policy (limits, reserved names) can be forced; broken records can't.
+      const policy = /limit is|is reserved/.test(e);
+      add(/limit is/.test(e) ? 'limit' : 'format', 'error', `\`${n}\`: ${e}`, policy ? {} : { hard: true });
     }
   }
 
@@ -165,7 +169,7 @@ function review(input) {
 
     if (!isMaintainer) {
       if (old && oldOwner !== who && !(status === 'D' && parentOwner === who)) {
-        add('ownership', 'reject', `\`${n}\` belongs to @${oldOwner}. To ask for it, open a [transfer request](../issues/new?template=transfer.yml).`);
+        add('ownership', 'reject', `\`${n}\` belongs to @${oldOwner}. To ask for it, open a [transfer request](../issues/new?template=transfer.yml).`, { hard: true });
         continue;
       }
       if (status === 'A' && newOwner !== who) {
@@ -227,8 +231,14 @@ function review(input) {
   }
 
   // A maintainer's /approve clears every hold.
-  if (overrideHolds) {
-    for (const f of findings) if (f.level === 'hold') { f.level = 'pass'; f.text = `${f.text} (approved by a maintainer)`; delete f.label; }
+  if (overrideHolds || overrideAll) {
+    for (const f of findings) if (f.level === 'hold') { f.level = 'pass'; f.text = `${f.text} (approved by ${by ? `@${by}` : 'a maintainer'})`; delete f.label; }
+  }
+  // Forced: everything except broken records and other people's names.
+  if (overrideAll) {
+    for (const f of findings) {
+      if ((f.level === 'error' || f.level === 'reject') && !f.hard) { f.level = 'pass'; f.text = `~~${f.text}~~ (overridden by ${by ? `@${by}` : 'a maintainer'})`; f.overridden = true; }
+    }
   }
 
   // ── Verdict ───────────────────────────────────────────────────
@@ -242,7 +252,8 @@ function review(input) {
   const autoMerge = verdict === 'ready' && !!config.autoMerge && !isMaintainer && !!sig && !sig.isBot &&
     sig.ageDays >= (config.autoMergeMinAccountAgeDays ?? 180) && sig.botScore === 0 && !has('hold');
 
-  return { verdict, findings, labels: [verdict, ...reasonLabels], autoMerge, existing, profile: sig };
+  const overridden = findings.filter((f) => f.overridden).length;
+  return { verdict, findings, labels: [verdict, ...reasonLabels], autoMerge, existing, profile: sig, overridden };
 }
 
 module.exports = { review, profileSignals, consentsFrom, VERDICTS, STATE_LABELS, REASON_LABELS, CHECKS, fmtAge, fmtDate };

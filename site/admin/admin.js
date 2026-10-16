@@ -284,6 +284,7 @@ async function loadAll() {
   renderOwner(cfg);
   if (mode === 'panel') {
     renderSites();
+    setupCreate();
     renderSettings(cfg);
     if (!$('[data-panel="overview"]').hidden) renderOverview();
   }
@@ -367,7 +368,7 @@ function renderQueue() {
       let acts;
       if (l.includes('transfer')) acts = [['Approve for owner', 'primary', onItem('approve', i, '/approve')]];
       else {
-        acts = [['Approve', 'primary', onItem('approve', i, '/approve')]];
+        acts = [['Approve', 'primary', onItem('approve', i, '/approve')], ['Force', 'danger', () => propose({ action: 'approve', args: { number: i.number, force: true }, command: '/approve force', target: i.number })]];
         acts.push(l.includes('manual-hold')
           ? ['Unhold', '', onItem('unhold', i, '/unhold')]
           : ['Hold', '', withReason('hold', { number: i.number }, '/hold', `Hold #${i.number}`, 'Why (shown on the request, optional)')]);
@@ -572,6 +573,7 @@ function privateCard(r) {
   const row = el('div', { className: 'card-actions' });
   const add = (label, cls, fn) => { const b = el('button', { className: `btn ${cls}`, type: 'button', textContent: label }); b.addEventListener('click', fn); row.append(b); };
   if (r.state !== 'approving') add('Approve', 'primary', decide('approve', 'Approve'));
+  if (r.state !== 'approving' && ['needs-changes', 'on-hold', 'ready'].includes(r.state)) add('Force approve', 'danger', decide('force-approve', 'Force approve'));
   add(r.manualHold ? 'Unhold' : 'Hold', '', decide(r.manualHold ? 'unhold' : 'hold', 'Hold', !r.manualHold));
   add('Reject', 'danger', decide('reject', 'Reject', true));
   add('Recheck', '', decide('recheck', 'Recheck'));
@@ -719,6 +721,37 @@ async function showProfile(raw) {
     const { entries } = await Panel.audit({ actor: login, limit: 8 });
     recent.replaceChildren(...(entries.length ? entries.map((a) => el('li', { textContent: `${when(a.at)} · ${a.summary}` })) : [el('li', { className: 'muted', textContent: 'nothing yet' })]));
   } catch { recent.replaceChildren(el('li', { className: 'muted', textContent: 'unavailable' })); }
+}
+
+// ── Create (panel mode) ────────────────────────────────────────
+function setupCreate() {
+  const host = $('#createHost');
+  if (host.options.length) return;
+  for (const p of D.providers) host.append(new Option(p.label, p.id));
+  for (const sel of [$('#createTpl'), $('#repoTpl')]) for (const t of D.templates || []) sel.append(new Option(t.label, t.id));
+  const form = $('#createForm');
+  const sync = () => {
+    const p = D.providers.find((x) => x.id === host.value);
+    form.querySelector('[data-for="template"]').hidden = p.id !== 'hosted';
+    form.querySelector('[data-for="repo"]').hidden = p.input !== 'repo';
+    form.querySelector('[data-for="target"]').hidden = !(p.input === 'target' || p.input === 'ips');
+  };
+  host.addEventListener('change', sync);
+  sync();
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(form));
+    const p = D.providers.find((x) => x.id === v.provider);
+    const owner = String(v.owner).trim().replace(/^@/, '');
+    const args = { name: String(v.name).trim().toLowerCase(), owner, provider: p.id, template: p.id === 'hosted' ? v.template : '', repo: p.input === 'repo' ? v.repo : '', target: p.input === 'target' || p.input === 'ips' ? v.target : '', description: v.description, force: !!v.force };
+    propose({ action: 'create', args, command: `create ${args.name} for @${owner} → ${p.label}${args.force ? ' (FORCE)' : ''}`, target: 'console' });
+  });
+  $('#repoForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(e.target));
+    const u = String(v.user).trim().replace(/^@/, '');
+    propose({ action: 'make-repo', args: { repo: v.repo, user: u, template: v.template }, command: `/make-repo ${v.repo} @${u} ${v.template}`, target: 'console' });
+  });
 }
 
 // ── Settings (owner, panel mode) ───────────────────────────────
