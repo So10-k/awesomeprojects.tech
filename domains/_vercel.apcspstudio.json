@@ -1,0 +1,9 @@
+{
+  "owner": {
+    "github": "so10-k"
+  },
+  "description": "Verification record",
+  "records": {
+    "TXT": "omainverify"
+  }
+}
