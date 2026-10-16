@@ -2,7 +2,7 @@
   "$comment": "Knobs for the review bot. Changes here go through a PR like everything else.",
 
   "maintainers": [],
-  "bannedUsers": ["happyshot10"],
+  "bannedUsers": [],
 
   "maxPerOwner": 3,
   "maxFilesPerRequest": 10,
