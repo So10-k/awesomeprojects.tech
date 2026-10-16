@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 🌱 Request a subdomain
-    url: https://github.com/So10-k/awesomeprojects.tech#-get-your-subdomain
-    about: Subdomains are requested with a pull request. Here's how (it takes two minutes).
+  - name: 🌐 Use the website
+    url: https://awesomeprojects.tech
+    about: Check if a name is free and build your request in a few clicks.
+  - name: 💬 Ask a question
+    url: https://github.com/So10-k/awesomeprojects.tech/discussions/categories/q-a
+    about: Help, ideas, and showing off what you built.
   - name: 🔒 Report something sensitive privately
     url: https://github.com/So10-k/awesomeprojects.tech/security/advisories/new
     about: For security problems you don't want to post in public.

@@ -1,6 +1,7 @@
 name: Subdomain bot
 
-# Reviews requests, runs /commands, handles transfer + takedown issues, weekly health check.
+# Request issues, PR reviews, /commands (issues, PRs, Discussions), transfers, takedowns,
+# the activity log, and the weekly health check.
 #
 # Safety: this runs main's code with a write token, so it must NEVER check out or run a PR's code.
 # scripts/bot.js only reads PR files as git objects + JSON.parse. Never interpolate PR/issue text
@@ -12,6 +13,8 @@ on:
     types: [created]
   issues:
     types: [opened, edited]
+  discussion_comment:
+    types: [created]
   schedule:
     - cron: "17 9 * * 1" # Mondays
   workflow_dispatch:
@@ -27,15 +30,16 @@ permissions:
   issues: write
   statuses: write
   actions: write # start a deploy after merging
+  discussions: write # the activity log, and answering commands in Discussions
 
 concurrency:
-  group: bot-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: bot-${{ github.event.pull_request.number || github.event.issue.number || github.event.discussion.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   bot:
     if: >-
-      github.event_name != 'issue_comment' ||
+      (github.event_name != 'issue_comment' && github.event_name != 'discussion_comment') ||
       (startsWith(github.event.comment.body, '/') && github.event.comment.user.type != 'Bot')
     runs-on: ubuntu-latest
     steps:

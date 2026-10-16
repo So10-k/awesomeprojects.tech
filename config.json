@@ -1,25 +1,43 @@
 {
-  "$comment": "Knobs for the review bot. Changes here go through a PR like everything else.",
-
+  "$comment": "Knobs for the review bot. Maintainers can change most of these with commands (/ban, /limit, /lock...); otherwise edit via a PR.",
   "maintainers": [],
   "bannedUsers": [],
-
+  "limits": {},
   "maxPerOwner": 3,
   "maxFilesPerRequest": 10,
-
   "rejectAccountsYoungerThanDays": 7,
   "holdAccountsYoungerThanDays": 30,
   "holdBotScoreAtLeast": 3,
-
   "holdNamesContaining": [
-    "login", "signin", "verify", "verification", "secure", "account", "wallet", "crypto", "airdrop",
-    "bank", "paypal", "apple", "google", "microsoft", "github", "discord", "steam", "roblox", "netflix",
-    "support", "official", "update", "recovery", "password", "gift"
+    "login",
+    "signin",
+    "verify",
+    "verification",
+    "secure",
+    "account",
+    "wallet",
+    "crypto",
+    "airdrop",
+    "bank",
+    "paypal",
+    "apple",
+    "google",
+    "microsoft",
+    "github",
+    "discord",
+    "steam",
+    "roblox",
+    "netflix",
+    "support",
+    "official",
+    "update",
+    "recovery",
+    "password",
+    "gift"
   ],
-
   "autoMerge": false,
   "autoMergeMinAccountAgeDays": 180,
-
   "closeNeedsChangesAfterDays": 14,
-  "consentTimeoutDays": 30
+  "consentTimeoutDays": 30,
+  "locked": false
 }

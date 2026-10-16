@@ -22,6 +22,7 @@ const CHECKS = {
   limit: 'Subdomains you own',
   name: 'Name check',
   target: 'Target is live',
+  repo: 'Repository',
   consent: 'Consent',
 };
 
@@ -71,6 +72,9 @@ const domainName = (file) => (/^domains\/[^/]+\.json$/.test(file) ? R.nameFromFi
  *   dns           { [hostname]: true | false } whether CNAME/MX targets resolve (missing = unknown)
  *   reserved, config, maintainers, now
  *   overrideHolds a maintainer said /approve: holds don't block
+ *   extra         more findings worked out elsewhere (e.g. repository checks for GitHub Pages)
+ *   pagesOwners   github.io owners verified for this author (their orgs), besides themselves
+ *   limits        per-user limit overrides (config.limits)
  *
  * returns { verdict, findings: [{ check, level, text, waitingFor?, label? }], labels, autoMerge, existing, profile }
  *   level: 'pass' | 'info' | 'hold' | 'error' | 'reject'
@@ -79,6 +83,7 @@ function review(input) {
   const {
     author, profile, changes, base, head, invalid = {}, comments = [], labels = [], dns = {},
     reserved = [], config = {}, maintainers = [], now = Date.now(), overrideHolds = false,
+    extra = [], pagesOwners = [],
   } = input;
   const who = lc(author);
   const admins = maintainers.map(lc);
@@ -86,6 +91,8 @@ function review(input) {
   const findings = [];
   const add = (check, level, text, extra = {}) => findings.push({ check, level, text, ...extra });
   const maxPerOwner = config.maxPerOwner ?? R.MAX_PER_OWNER;
+  const limits = config.limits || {};
+  const myLimit = R.limitFor(who, { maxPerOwner, limits });
   const consents = consentsFrom(comments);
   const approvedBy = (login) => consents.approve.has(lc(login)) || admins.some((m) => consents.approve.has(m));
   const acceptedBy = (login) => consents.accept.has(lc(login));
@@ -134,7 +141,7 @@ function review(input) {
   for (const [n, msg] of Object.entries(invalid)) add('format', 'error', `\`domains/${n}.json\` is not valid JSON: ${msg}`);
 
   // New problems in the tree, for names this PR touches (or whose parent it touches).
-  const opts = { reserved, maintainers, maxPerOwner };
+  const opts = { reserved, maintainers, maxPerOwner, limits };
   const errKey = (n, e) => `${n}\u0000${e}`;
   const was = new Set(Object.entries(R.checkTree(base, opts)).flatMap(([n, es]) => es.map((e) => errKey(n, e))));
   for (const [n, es] of Object.entries(R.checkTree(head, opts))) {
@@ -187,7 +194,7 @@ function review(input) {
       const r = now_.records;
       const owner = newOwner || who;
       const pages = typeof r.CNAME === 'string' && r.CNAME.toLowerCase().match(/^([a-z0-9-]+)\.github\.io\.?$/);
-      if (pages && pages[1] !== owner && !isMaintainer) {
+      if (pages && pages[1] !== owner && !isMaintainer && !pagesOwners.map(lc).includes(pages[1])) {
         add('target', 'hold', `\`${n}\` points at ${pages[1]}.github.io, which isn't your GitHub Pages site (\`${owner}.github.io\`). If it's an organization you're part of, a maintainer will confirm.`, { waitingFor: 'maintainer', label: 'pages-mismatch' });
       }
       const targets = [];
@@ -206,10 +213,11 @@ function review(input) {
   const after = R.namesOwnedBy(head, who);
   if (!findings.some((f) => f.check === 'limit')) {
     const list = existing.length ? ` (already: ${existing.map((x) => `\`${x}\``).join(', ')})` : '';
-    add('limit', 'pass', isMaintainer ? `${after.length} (no limit for maintainers)` : `${after.length} of ${maxPerOwner}${list}`);
+    add('limit', 'pass', isMaintainer ? `${after.length} (no limit for maintainers)` : `${after.length} of ${myLimit}${list}`);
   }
 
   if (labels.includes('manual-hold')) add('consent', 'hold', 'A maintainer put this on hold.', { waitingFor: 'maintainer' });
+  for (const f of extra) findings.push({ ...f });
 
   // Fill in passing rows for checks that found nothing.
   for (const check of Object.keys(CHECKS)) {

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>awesomeprojects.tech: free subdomains for the things you build</title>
+  <meta name="description" content="Get yourname.awesomeprojects.tech for your project. Free, open source, and set up in a minute. Point it at GitHub Pages, Vercel, Netlify or your own server.">
+  <meta name="theme-color" content="#0b1020">
+  <meta property="og:title" content="awesomeprojects.tech">
+  <meta property="og:description" content="Free subdomains for the things you build.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/So10-k/awesomeprojects.tech/main/assets/banner.svg">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#claim">Skip to the name search</a>
+
+  <header class="top">
+    <a class="brand" href="#" aria-label="awesomeprojects.tech home">awesomeprojects<span>.tech</span></a>
+    <nav aria-label="Sections">
+      <a href="#zone">Browse</a>
+      <a href="#how">How it works</a>
+      <a href="#commands">Commands</a>
+      <a class="gh" href="https://github.com/So10-k/awesomeprojects.tech">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- The address bar is the hero: type a name, get a live DNS-style answer. -->
+    <section class="hero" id="claim" aria-labelledby="hero-title">
+      <p class="eyebrow">Free subdomains for side projects, hackathon builds and portfolios</p>
+      <h1 id="hero-title" class="visually-hidden">Find your subdomain</h1>
+
+      <form class="bar" id="bar" autocomplete="off" novalidate>
+        <span class="scheme" aria-hidden="true">https://</span>
+        <label for="name" class="visually-hidden">Subdomain name</label>
+        <span class="slot">
+          <span class="sizer" id="sizer" aria-hidden="true">yourname</span>
+          <input id="name" name="name" spellcheck="false" autocapitalize="off" maxlength="63" placeholder="yourname" aria-describedby="answer">
+        </span>
+        <span class="zone" aria-hidden="true">.awesomeprojects.tech</span>
+      </form>
+
+      <output class="answer" id="answer" for="name" aria-live="polite">
+        <span class="semi">;;</span> type a name to look it up
+      </output>
+
+      <div class="hero-actions">
+        <button class="btn primary" id="claimBtn" type="button" disabled>Claim this name</button>
+        <span class="stat" id="stat">loading the zone…</span>
+      </div>
+    </section>
+
+    <!-- Wizard: shown once a free name is picked. -->
+    <section class="wizard" id="wizard" hidden aria-labelledby="wiz-title">
+      <h2 id="wiz-title">Where does <span class="mono grad" id="wizName">yourname</span> live?</h2>
+
+      <fieldset class="hosts" id="hosts">
+        <legend class="visually-hidden">Pick your host</legend>
+      </fieldset>
+
+      <div class="details" id="details" hidden>
+        <div class="field" id="repoField" hidden>
+          <label for="repo">GitHub repository</label>
+          <input id="repo" placeholder="you/your-site" spellcheck="false" autocapitalize="off">
+          <p class="help">Public repo. We'll build it on GitHub Pages: Next.js, Vite, Astro, plain HTML and more.</p>
+          <div class="repo-card" id="repoCard" hidden></div>
+        </div>
+        <div class="field" id="targetField" hidden>
+          <label for="target" id="targetLabel">Target</label>
+          <input id="target" spellcheck="false" autocapitalize="off">
+          <p class="help" id="targetHelp"></p>
+        </div>
+        <div class="field">
+          <label for="desc">One line about it <span class="opt">(optional, shown in the zone)</span></label>
+          <input id="desc" maxlength="200" placeholder="My portfolio and blog">
+        </div>
+
+        <div class="record" aria-label="The DNS record you'll get">
+          <div class="record-head"><span>your record</span><span id="recordNote"></span></div>
+          <pre id="record" class="mono"></pre>
+        </div>
+
+        <div class="send">
+          <a class="btn primary" id="sendBtn" href="#" target="_blank" rel="noopener" aria-disabled="true">Open my request on GitHub</a>
+          <p class="help">It opens a filled-in request. Press <b>Create</b>, and the bot checks it in seconds. You need a GitHub account (a week old or more).</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="how" id="how" aria-labelledby="how-title">
+      <h2 id="how-title">From request to live</h2>
+      <ol class="steps">
+        <li>
+          <h3>You ask</h3>
+          <p>Pick a name and a host here, or fill in the <a href="https://github.com/So10-k/awesomeprojects.tech/issues/new?template=request.yml">request form</a> directly. Prefer pull requests? <a href="https://github.com/So10-k/awesomeprojects.tech#-get-your-subdomain">That works too.</a></p>
+        </li>
+        <li>
+          <h3>The bot checks</h3>
+          <p>In seconds: the name, your records, your account, your repo and its framework, whether the target is live. It tells you exactly what to fix.</p>
+        </li>
+        <li>
+          <h3>A maintainer approves</h3>
+          <p>A person takes a final look, usually within a day. Requests that only need a human nod wait in the open with a ⏸ and a reason.</p>
+        </li>
+        <li>
+          <h3>It's live</h3>
+          <p>The bot writes your record and DNS updates in about a minute. For GitHub repos you get a one-click deploy workflow.</p>
+        </li>
+      </ol>
+
+      <figure class="bot" aria-label="Example of the bot's reply">
+        <figcaption><span class="dot"></span> github-actions <span class="tag">bot</span> commented</figcaption>
+        <div class="bot-body">
+          <p class="bot-title">✅ Ready to go live: <code>alice.awesomeprojects.tech</code></p>
+          <table>
+            <tr><td>✅</td><td>Format &amp; records</td><td>Valid</td></tr>
+            <tr><td>✅</td><td>Account age</td><td>4 years old</td></tr>
+            <tr><td>✅</td><td>Subdomains you own</td><td>1 of 3</td></tr>
+            <tr><td>✅</td><td>Repository</td><td>alice/portfolio is yours</td></tr>
+            <tr><td>ℹ️</td><td>Repository</td><td>Builds as <b>Next.js</b> (static export)</td></tr>
+            <tr><td>✅</td><td>Target is live</td><td>alice.github.io resolves</td></tr>
+          </table>
+        </div>
+      </figure>
+    </section>
+
+    <section class="zone-list" id="zone" aria-labelledby="zone-title">
+      <div class="zone-head">
+        <h2 id="zone-title">The zone</h2>
+        <label class="filter">
+          <span class="visually-hidden">Filter names</span>
+          <input id="filter" placeholder="filter: name, owner, host…" spellcheck="false">
+        </label>
+      </div>
+      <p class="zone-sub">Every live name, straight from <a href="https://github.com/So10-k/awesomeprojects.tech/tree/main/domains"><code>domains/</code></a>.</p>
+      <div class="zonefile mono" id="zonefile" role="list" aria-label="Registered subdomains">
+        <div class="zf-comment">; loading…</div>
+      </div>
+    </section>
+
+    <section class="commands" id="commands" aria-labelledby="cmd-title">
+      <h2 id="cmd-title">Talk to the bot</h2>
+      <p class="zone-sub">Start a comment with a command in any issue or pull request. <code>/help</code>, <code>/available</code>, <code>/whois</code>, <code>/mine</code>, <code>/verify</code> and <code>/stats</code> work in <a href="https://github.com/So10-k/awesomeprojects.tech/discussions">Discussions</a> too.</p>
+      <div class="cmd-cols">
+        <div><h3>Everyone</h3><dl id="cmdUser" class="cmds"></dl></div>
+        <div><h3>Maintainers</h3><dl id="cmdAdmin" class="cmds"></dl></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Run by volunteers. Free, and <a href="https://github.com/So10-k/awesomeprojects.tech">open source</a>. Real projects only: <a href="https://github.com/So10-k/awesomeprojects.tech#-rules">the rules</a> · <a href="https://github.com/So10-k/awesomeprojects.tech/issues/new?template=takedown.yml">report a name</a> · <a href="https://github.com/So10-k/awesomeprojects.tech/discussions">ask a question</a></p>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

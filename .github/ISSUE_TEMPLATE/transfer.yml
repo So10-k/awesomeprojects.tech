@@ -9,17 +9,20 @@ body:
         Either the **current owner** or the **new owner** can open this. The bot asks the other person to confirm,
         then moves the name (and anything under it the current owner has) automatically. The DNS records stay the same.
   - type: input
+    id: subdomain
     attributes:
       label: Subdomain
       placeholder: alice.awesomeprojects.tech
     validations:
       required: true
   - type: input
+    id: new_owner
     attributes:
       label: New owner
       description: The GitHub username who should own it. Leave it blank if that's you.
       placeholder: "@carol"
   - type: textarea
+    id: why
     attributes:
       label: Why
       description: Optional, but it helps if the current owner doesn't know you.

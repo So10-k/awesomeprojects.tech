@@ -9,12 +9,14 @@ body:
         **Your own subdomain?** Pick the first reason and it's removed automatically, right away.
         **Someone else's?** A maintainer reviews it, usually within a day. Phishing and malware come first.
   - type: input
+    id: subdomain
     attributes:
       label: Subdomain
       placeholder: something.awesomeprojects.tech
     validations:
       required: true
   - type: dropdown
+    id: reason
     attributes:
       label: Reason
       options:
@@ -27,6 +29,7 @@ body:
     validations:
       required: true
   - type: textarea
+    id: details
     attributes:
       label: Details
       description: Links, screenshots, anything that helps. Please don't visit suspected malware.
