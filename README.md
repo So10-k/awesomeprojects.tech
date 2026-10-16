@@ -70,6 +70,10 @@ Once a maintainer approves it, the bot writes your record, DNS goes live in abou
 
 ---
 
+## 🏠 Or let us host it
+
+Pick **"Host it for me"** and you get a private repo in our org with a starter page that's already live at `yourname.awesomeprojects.tech`. Push HTML, or a Next.js / Vite / Astro / SvelteKit project, and it's rebuilt and live a minute later. Manage your records, and see your repo, at **[My domains](https://awesomeprojects.tech/me/)**.
+
 ## 🛠️ Host your repo
 
 Pick **"My GitHub repo"** and your repo is built and hosted on GitHub Pages for free, on every push:

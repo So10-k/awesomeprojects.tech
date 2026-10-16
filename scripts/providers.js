@@ -137,7 +137,7 @@ function setupGuide({ provider, name, repo, branch = 'main', sourceRepo, domain 
       ].join('\n\n');
     }
     case 'vercel':
-      return `**1.** Vercel → your project → **Settings → Domains** → add \`${host}\`.\n\n**2.** If Vercel asks for a TXT record, comment here: \`/txt ${name} _vercel <the value Vercel shows>\`. I'll add it for you.\n\n**3.** Comment \`/verify ${name}\` to check it.`;
+      return `**1.** Vercel → your project → **Settings → Domains** → add \`${host}\`.\n\n**2.** If Vercel asks for a TXT record, add it in [My domains](https://awesomeprojects.tech/me/) → *DNS records* (or comment \`/txt ${name} _vercel <value>\`).\n\n**3.** Check it with *Check it* in My domains, or \`/verify ${name}\`.`;
     case 'netlify':
       return `Netlify → your site → **Domain management → Add a domain** → \`${host}\`. Then comment \`/verify ${name}\`.`;
     case 'cloudflare-pages':

@@ -331,26 +331,13 @@ async function onRequest(issue, { comment, cmd } = {}) {
     return say(null, { locked: config.locked });
   }
 
-  const { entries } = mainTree();
-  const problems = [...built.problems];
-  const taken = name && entries[name] && R.ownerOf(entries[name]) !== lc(author) && !isMaintainer(author);
-  if (taken) problems.push(`\`${name}\` is taken by @${R.ownerOf(entries[name])}. Pick another name, or [ask for it](${repoUrl}/issues/new?template=transfer.yml&title=${encodeURIComponent(`Transfer: ${name}`)}&subdomain=${encodeURIComponent(name)}).`);
-  if (problems.length) {
-    await setLabels(issue.number, labels, ['needs-changes']);
-    return say(null, { problems });
-  }
-
-  const file = `domains/${name}.json`;
-  const exists = !!entries[name];
-  const head = { ...entries, [name]: built.entry };
-  const profile = await gh.get(`/users/${author}`).catch(() => null);
   const comments = humans(await gh.all(`${R_}/issues/${issue.number}/comments`));
-  const rc = await repoChecks(built.entry, author);
-  const dns = await checkTargets([built.entry]);
-  const result = review({
-    author, profile, changes: [{ status: exists ? 'M' : 'A', file }], base: entries, head, comments, labels, dns,
-    reserved, config, maintainers, overrideHolds: approving, extra: rc.findings, pagesOwners: rc.pagesOwners,
-  });
+  const ev = await evaluateRequest({ built, author, comments, labels, overrideHolds: approving });
+  if (ev.problems.length) {
+    await setLabels(issue.number, labels, ['needs-changes']);
+    return say(null, { problems: ev.problems });
+  }
+  const { file, exists, rc, result } = ev;
   console.log(`request #${issue.number} ${name} by ${author}: ${result.verdict}`);
   for (const f of result.findings) console.log(`  ${f.level.padEnd(6)} ${f.check}: ${f.text}`);
   await setLabels(issue.number, labels, result.labels);
@@ -378,6 +365,30 @@ async function onRequest(issue, { comment, cmd } = {}) {
   await setLabels(issue.number, result.labels, ['live'], [...MANAGED, 'live']);
   await activityLog(`✅ **${exists ? 'Updated' : 'Added'}** \`${name}.${R.DOMAIN}\` for @${author} · ${approving ? `approved by @${by}` : 'auto-approved'} · #${issue.number} → #${pr.number}`);
   return close(issue.number, 'completed');
+}
+
+/** Review a request (from an issue or the panel) the same way. `built` is P.buildRequest's output. */
+async function evaluateRequest({ built, author, comments = [], labels = [], overrideHolds = false }) {
+  const { entries } = mainTree();
+  const { name } = built;
+  const problems = [...built.problems];
+  const taken = name && entries[name] && R.ownerOf(entries[name]) !== lc(author) && !isMaintainer(author);
+  if (taken) problems.push(`\`${name}\` is taken by @${R.ownerOf(entries[name])}. Pick another name, or [ask for it](${repoUrl}/issues/new?template=transfer.yml&title=${encodeURIComponent(`Transfer: ${name}`)}&subdomain=${encodeURIComponent(name)}).`);
+  if (problems.length) return { problems, entries };
+  const file = `domains/${name}.json`;
+  const exists = !!entries[name];
+  const head = { ...entries, [name]: built.entry };
+  const profile = await gh.get(`/users/${author}`).catch(() => null);
+  const rc = await repoChecks(built.entry, author);
+  const dns = await checkTargets([built.entry]);
+  // A hosted site points at our own org's github.io on purpose.
+  const pagesOwners = [...rc.pagesOwners, ...(S.isHosted(built.entry) && ORG ? [lc(ORG)] : [])];
+  if (S.isHosted(built.entry)) rc.findings.push({ check: 'repo', level: 'info', text: `We'll create a private repo, [${built.entry.site.repo}](https://github.com/${built.entry.site.repo}), with a starter site, and invite you` });
+  const result = review({
+    author, profile, changes: [{ status: exists ? 'M' : 'A', file }], base: entries, head, comments, labels, dns,
+    reserved, config, maintainers, overrideHolds, extra: rc.findings, pagesOwners,
+  });
+  return { problems: [], entries, file, exists, rc, result };
 }
 
 async function onRequestComment(issue, comment, cmd, rest) {
@@ -593,7 +604,7 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
       const { pr, merged } = await removeName({ name, entries, why: `taken down by a maintainer${note ? `: ${note}` : ''}`, issue: number, by });
       return merged ? `🧹 Took down \`${name}.${R.DOMAIN}\` (#${pr.number}).` : `I opened #${pr.number} but couldn't merge it.`;
     }
-    case '/ban': case '/unban': case '/limit': case '/reserve': case '/unreserve': case '/lock': case '/unlock': case '/promote': case '/demote': {
+    case '/ban': case '/unban': case '/limit': case '/reserve': case '/unreserve': case '/lock': case '/unlock': case '/promote': case '/demote': case '/config': {
       if (kind === 'discussion') return undefined;
       const current = { config: JSON.parse(mainFile('config.json')), reserved: JSON.parse(mainFile('reserved.json')) };
       const edit = C.adminEdit(cmd, args, { ...current, entries: mainTree().entries, owner });
@@ -916,26 +927,8 @@ async function repoAccessCmd(name, user, level, by) {
 // ── Panel actions (repository_dispatch from api.awesomeprojects.tech) ──
 /** Tell the panel how it went. `job` is the dispatch payload (id, actor, at, summary). */
 async function reportResult(job, { ok, message, link }) {
-  console.log(`panel result ${job.id}: ${ok ? 'ok' : 'error'}: ${String(message).split('\n')[0]}`);
-  const api = process.env.PANEL_API;
-  const secret = String(process.env.PANEL_BOT_SECRET || '').trim();
-  if (!api || !secret || dryRun) return;
-  const body = JSON.stringify({ id: job.id, actor: job.actor, at: job.at, summary: job.summary, ok, message, link });
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const res = await fetch(`${api}/bot/result`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', 'User-Agent': 'awesomeprojects-bot' },
-        body,
-      });
-      console.log(`panel: reported (${res.status})`);
-      if (res.ok) return;
-      if (res.status === 401) return console.warn('panel: the Worker rejected the bot secret (PANEL_BOT_SECRET differs from the Worker\'s BOT_SECRET?)');
-    } catch (e) {
-      console.warn(`panel: couldn't report (${e.message})`);
-    }
-    await new Promise((r) => setTimeout(r, 2000 * attempt));
-  }
+  console.log(`panel result ${job.id}: ${ok ? 'ok' : 'error'}:\n${String(message)}`);
+  return panelPost('/bot/result', { id: job.id, actor: job.actor, at: job.at, summary: job.summary, ok, message, link });
 }
 
 /** Change where one of your names points, from the "My domains" panel. Same checks as a request. */
@@ -956,7 +949,7 @@ async function selfUpdate(u, actor) {
   const dns = await checkTargets([entry]);
   const result = review({
     author: actor, profile, changes: [{ status: 'M', file }], base: entries, head: { ...entries, [name]: entry }, dns,
-    reserved, config, maintainers, extra: rc.findings, pagesOwners: rc.pagesOwners,
+    reserved, config, maintainers, extra: rc.findings, pagesOwners: [...rc.pagesOwners, ...(S.isHosted(entry) && ORG ? [lc(ORG)] : [])],
   });
   if (result.verdict !== 'ready') {
     const issues = result.findings.filter((f) => ['error', 'reject', 'hold'].includes(f.level)).map((f) => `- ${f.text}`).join('\n');
@@ -978,7 +971,98 @@ async function selfUpdate(u, actor) {
   return { ok: true, message: `✅ \`${name}.${R.DOMAIN}\` now points at ${C.fmtRecords(entry.records)}. DNS updates in a minute.\n\n${guide}`, link: pr.html_url };
 }
 
+/** POST to the panel server with the bot secret. */
+async function panelPost(pathname, body) {
+  const api = process.env.PANEL_API;
+  const secret = String(process.env.PANEL_BOT_SECRET || '').trim();
+  if (!api || !secret || dryRun) return console.log(`[panel] ${pathname} ${JSON.stringify(body).slice(0, 300)}`);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${api}${pathname}`, { method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', 'User-Agent': 'awesomeprojects-bot' }, body: JSON.stringify(body) });
+      console.log(`panel ${pathname}: ${res.status}`);
+      if (res.ok || res.status === 401 || res.status === 404) return;
+    } catch (e) { console.warn(`panel ${pathname}: ${e.message}`); }
+    await new Promise((r) => setTimeout(r, 2000 * attempt));
+  }
+}
+
+const panelForm = (f = {}) => ({ Subdomain: f.name, 'Where should it point?': f.provider, 'GitHub repository': f.repo || '', Target: f.target || '', Description: f.description || '' });
+const reviewSummary = (ev) => (ev.problems.length
+  ? { verdict: 'needs-changes', findings: ev.problems.map((t) => ({ check: 'format', level: 'error', text: t })) }
+  : { verdict: ev.result.verdict, findings: ev.result.findings, plan: ev.rc.plan || null });
+
+/** A private request from the panel: review it, or (approved by a maintainer) make it live. */
+async function onPanelRequest(p) {
+  const author = p.kind === 'approve' ? p.requester : p.actor;
+  const built = P.buildRequest(panelForm(p.form), author, { sitesOrg: ORG });
+  const ev = await evaluateRequest({ built, author, labels: p.manualHold ? ['manual-hold'] : [], overrideHolds: p.kind === 'approve' });
+  const rev = { ...reviewSummary(ev), entry: built.entry || null };
+  console.log(`panel request ${p.request} (${p.kind}) ${built.name}: ${rev.verdict}`);
+  if (p.kind === 'review') return panelPost('/bot/request', { request: p.request, kind: 'review', verdict: rev.verdict, review: rev });
+
+  // Approve
+  if (rev.verdict !== 'ready') {
+    return panelPost('/bot/request', { request: p.request, kind: 'failed', verdict: rev.verdict, review: rev, message: `Couldn't approve it yet: it's **${rev.verdict}**.\n\n${rev.findings.filter((f) => ['error', 'reject'].includes(f.level)).map((f) => `- ${f.text}`).join('\n')}` });
+  }
+  const { pr, merged } = await botChange({
+    title: `${ev.exists ? 'Update' : 'Add'} ${built.name}`,
+    body: `Requested privately by @${author}; approved by @${p.actor} in the panel.`,
+    changes: [{ file: ev.file, content: JSON.stringify(built.entry, null, 2) + '\n' }],
+    tag: `preq-${p.request}`,
+  });
+  if (!merged) return panelPost('/bot/request', { request: p.request, kind: 'failed', verdict: 'ready', message: `I opened ${pr.html_url} but couldn't merge it. A maintainer will.` });
+  const guide = P.setupGuide({ provider: built.provider, name: built.name, repo: built.entry.site && built.entry.site.repo, branch: ev.rc.branch, sourceRepo: repo });
+  await activityLog(`✅ **${ev.exists ? 'Updated' : 'Added'}** \`${built.name}.${R.DOMAIN}\` for @${author} · approved by @${p.actor} (panel) → #${pr.number}`);
+  return panelPost('/bot/request', { request: p.request, kind: 'live', result: { pr: pr.html_url, guide }, message: `🎉 **${built.name}.${R.DOMAIN} is live!** DNS updates in a minute.\n\n${guide}` });
+}
+
+/**
+ * The DNS manager: set (or, with records = null, delete) the records of a name you own
+ * or of a name under it ("blog.alice", "_vercel.alice").
+ */
+async function setRecords(full, records, actor) {
+  const { entries } = mainTree();
+  const name = Q.cleanName(full);
+  const base = R.baseOf(name);
+  const parent = entries[base];
+  if (!parent) return { ok: false, message: `\`${base}\` isn't registered.` };
+  const owns = R.ownerOf(parent) === lc(actor) || isMaintainer(actor);
+  if (!owns) return { ok: false, message: `Only @${R.ownerOf(parent)} can change records under \`${base}\`.` };
+  const existing = entries[name];
+  if (name === base) {
+    if (records === null) return { ok: false, message: 'Use *Remove* to give up the whole name.' };
+    if (S.isHosted(parent)) return { ok: false, message: `\`${name}\` is hosted by us, so its own record is managed for you. Add records *under* it instead (like \`www.${name}\` or \`_verify.${name}\`).` };
+  }
+  const file = `domains/${name}.json`;
+  if (records === null) {
+    if (!existing) return { ok: false, message: `\`${name}\` has no records.` };
+    const { pr, merged } = await botChange({ title: `Remove records ${name}`, body: `From My domains, by @${actor}.`, changes: [{ file, content: null }], tag: `rec-${name}-${Date.now().toString(36)}` });
+    if (!merged) return { ok: false, message: `I opened #${pr.number} but couldn't merge it.`, link: pr.html_url };
+    await activityLog(`🧾 **Records removed** \`${name}\` · by @${actor} (panel) → #${pr.number}`);
+    return { ok: true, message: `🗑️ Removed the records at \`${name}.${R.DOMAIN}\`.`, link: pr.html_url };
+  }
+  const entry = { ...(existing || { owner: { github: R.ownerOf(parent) } }), records };
+  if (name !== base && entry.site) delete entry.site;
+  const errs = [...R.checkName(name, reserved), ...R.checkEntry(name, entry)];
+  const dns = await checkTargets([entry]);
+  for (const [h, v] of Object.entries(dns)) if (v === false) errs.push(`\`${h}\` doesn't exist yet. Set up the target first.`);
+  if (errs.length) return { ok: false, message: `Can't save that:\n${errs.map((e) => `- ${e}`).join('\n')}` };
+  const { pr, merged } = await botChange({
+    title: `${existing ? 'Update' : 'Add'} records ${name}`, body: `From My domains, by @${actor}.`,
+    changes: [{ file, content: JSON.stringify(entry, null, 2) + '\n' }], tag: `rec-${name}-${Date.now().toString(36)}`,
+  });
+  if (!merged) return { ok: false, message: `I opened #${pr.number} but couldn't merge it.`, link: pr.html_url };
+  await activityLog(`🧾 **Records** \`${name}\` → ${C.fmtRecords(records)} · by @${actor} (panel) → #${pr.number}`);
+  return { ok: true, message: `✅ \`${name}.${R.DOMAIN}\` → ${C.fmtRecords(records)}. Live in a minute.`, link: pr.html_url };
+}
+
 async function onPanel(p) {
+  if (p.kind === 'review' || p.kind === 'approve') {
+    return onPanelRequest(p).catch(async (e) => {
+      console.error(e);
+      await panelPost('/bot/request', { request: p.request, kind: 'failed', verdict: 'needs-changes', message: `Something broke while checking this (${String(e.message).slice(0, 200)}). A maintainer has been told.` });
+    });
+  }
   const id = String(p.id || '');
   const actor = String(p.actor || '');
   const admin = isMaintainer(actor);
@@ -986,6 +1070,7 @@ async function onPanel(p) {
   try {
     if (!id || !actor) return console.warn('panel: missing id/actor');
     if (p.update) return finish(await selfUpdate(p.update, actor));
+    if (p.records) return finish(await setRecords(p.records.name, p.records.records, actor));
     const parsed = C.parseCommand(p.command);
     if (!parsed) return finish({ ok: false, message: 'Unknown action.' });
     // The Worker checked roles; check again here, from main's config.

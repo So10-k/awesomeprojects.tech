@@ -25,6 +25,7 @@ let me = null;
 let role = 'none'; // owner | maintainer | none
 let live = { config: {}, reserved: [] };
 let openItems = [];
+let panelReqs = []; // private requests (panel mode)
 let consoleIssue = null;
 
 // ── GitHub API (token mode, and public reads) ──────────────────
@@ -102,6 +103,14 @@ $('#cmdRun').addEventListener('click', async () => {
 });
 
 async function runPanel(spec) {
+  if (spec.request) {
+    try {
+      await Panel.requestDo(spec.request, 'decide', { decision: spec.decision, reason: spec.reason || '' });
+      toast('Done', { body: `${spec.command}. ${spec.decision === 'approve' ? 'The bot is setting it up.' : ''}`, kind: 'ok' });
+      setTimeout(loadAll, 1200);
+    } catch (e) { toast('Couldn\'t do that', { body: e.message, kind: 'err' }); }
+    return;
+  }
   const waiting = toast(`Running ${spec.command}`, { body: 'Sent to the bot…', ms: 0 });
   try {
     const job = await Panel.run(spec.action, spec.args);
@@ -215,25 +224,28 @@ async function enter(avatar) {
   $('#whoRole').classList.toggle('none', role === 'none');
   $('#whoMode').textContent = mode === 'panel' ? 'private mode' : 'comment mode';
   $('#notMaintainer').hidden = role !== 'none';
-  $('#ownerTab').hidden = role !== 'owner';
+  for (const t of $$('[data-owner-only]')) t.hidden = role !== 'owner';
+  for (const t of $$('[data-panel-only]')) if (mode !== 'panel') t.hidden = true;
+  selectTab(mode === 'panel' ? 'overview' : 'queue');
   if (role !== 'none') await loadAll();
+}
+function selectTab(name) {
+  for (const x of $$('.tabs button')) x.setAttribute('aria-selected', String(x.dataset.tab === name));
+  for (const p of $$('.panel')) p.hidden = p.dataset.panel !== name;
+  if (name === 'log') loadLog();
+  if (name === 'overview') renderOverview();
 }
 
 // ── Tabs ───────────────────────────────────────────────────────
-for (const b of $$('.tabs button')) {
-  b.addEventListener('click', () => {
-    for (const x of $$('.tabs button')) x.setAttribute('aria-selected', String(x === b));
-    for (const p of $$('.panel')) p.hidden = p.dataset.panel !== b.dataset.tab;
-    if (b.dataset.tab === 'log') loadLog();
-  });
-}
+for (const b of $$('.tabs button')) b.addEventListener('click', () => selectTab(b.dataset.tab));
 
 // ── Data ───────────────────────────────────────────────────────
 async function loadAll() {
   try {
     if (mode === 'panel') {
-      const q = await Panel.queue();
+      const [q, pr] = await Promise.all([Panel.queue(), Panel.requests({ scope: 'all' }).catch(() => ({ requests: [] }))]);
       openItems = q.items.map((i) => ({ ...i, labels: i.labels.map((name) => ({ name })) }));
+      panelReqs = pr.requests || [];
       live = { config: q.config || {}, reserved: q.reserved || D.reserved };
     } else {
       [openItems, live.config, live.reserved] = await Promise.all([
@@ -256,6 +268,11 @@ async function loadAll() {
   renderPeople(cfg);
   renderMaint(cfg);
   renderOwner(cfg);
+  if (mode === 'panel') {
+    renderSites();
+    renderSettings(cfg);
+    if (!$('[data-panel="overview"]').hidden) renderOverview();
+  }
 }
 
 const labelsOf = (i) => i.labels.map((l) => (typeof l === 'string' ? l : l.name));
@@ -322,11 +339,15 @@ function renderQueue() {
   const box = $('#lanes');
   box.replaceChildren();
   let ready = 0;
+  const laneOf = (state) => (state === 'ready' ? 'Ready' : state === 'needs-changes' ? 'Needs changes' : 'Waiting on someone');
+  const openPanel = panelReqs.filter((r) => ['checking', 'ready', 'on-hold', 'needs-changes', 'approving'].includes(r.state));
   for (const [name, test] of lanes) {
     const mine = items.filter((i) => test(labelsOf(i)));
-    if (name === 'Ready') ready = mine.length;
-    const lane = el('section', { className: 'lane' }, [el('h2', {}, [name, el('span', { textContent: String(mine.length) })])]);
+    const priv = openPanel.filter((r) => laneOf(r.state) === name);
+    if (name === 'Ready') ready = mine.length + priv.length;
+    const lane = el('section', { className: 'lane' }, [el('h2', {}, [name, el('span', { textContent: String(mine.length + priv.length) })])]);
     const cards = el('div', { className: 'cards' });
+    for (const r of priv) cards.append(privateCard(r));
     for (const i of mine) {
       const l = labelsOf(i);
       let acts;
@@ -341,7 +362,7 @@ function renderQueue() {
       }
       cards.append(card(i, acts));
     }
-    if (!mine.length) cards.append(el('p', { className: 'empty', textContent: name === 'Ready' ? 'Nothing to approve. 🎉' : 'Empty.' }));
+    if (!mine.length && !priv.length) cards.append(el('p', { className: 'empty', textContent: name === 'Ready' ? 'Nothing to approve. 🎉' : 'Empty.' }));
     lane.append(cards);
     box.append(lane);
   }
@@ -445,22 +466,27 @@ for (const b of $$('[data-action]')) b.addEventListener('click', () => propose({
 
 // ── Activity ───────────────────────────────────────────────────
 const when = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-async function loadLog() {
+async function loadLog({ more = false } = {}) {
   const box = $('#log');
-  box.replaceChildren(el('li', { className: 'muted', textContent: 'Loading…' }));
+  if (!more) box.replaceChildren(el('li', { className: 'muted', textContent: 'Loading…' }));
   try {
     if (mode === 'panel') {
-      const { entries } = await Panel.audit();
-      box.replaceChildren();
+      const f = Object.fromEntries(new FormData($('#logFilter')));
+      const q = { ...(f.actor ? { actor: f.actor } : {}), ...(f.q ? { q: f.q } : {}), ...(more && logCursor ? { before: logCursor } : {}) };
+      const { entries, cursor } = await Panel.audit(q);
+      logCursor = cursor;
+      $('#logMore').hidden = !cursor;
+      if (!more) box.replaceChildren();
+      else box.querySelector('li.end')?.remove();
       for (const a of entries) {
         const md = el('div', { className: 'md' });
-        md.innerHTML = `<span class="state ${a.state}">${a.state}</span>${Panel.md(`@${a.actor} · \`${a.summary}\``).replace(/^<p>|<\/p>$/g, '')}`;
+        md.innerHTML = `<span class="state ${a.state}">${a.state}</span>${Panel.md(`@${a.actor} · \`${String(a.summary).replace(/`/g, '')}\``).replace(/^<p>|<\/p>$/g, '')}`;
         if (a.result) md.append(el('span', { className: 'result', textContent: a.result }));
         if (a.link) md.append(el('a', { href: a.link, target: '_blank', rel: 'noopener', textContent: ' open →' }));
         box.append(el('li', {}, [el('time', { dateTime: new Date(a.at).toISOString(), textContent: when(a.at) }), md]));
       }
-      if (!entries.length) box.append(el('li', { className: 'muted', textContent: 'Nothing yet.' }));
-      box.append(el('li', {}, [el('span'), el('a', { href: `https://github.com/${R}/discussions`, target: '_blank', rel: 'noopener', textContent: 'Public activity log on GitHub →' })]));
+      if (!entries.length && !more) box.append(el('li', { className: 'muted', textContent: 'Nothing matches.' }));
+      if (!cursor) box.append(el('li', { className: 'end' }, [el('span'), el('a', { href: `https://github.com/${R}/discussions`, target: '_blank', rel: 'noopener', textContent: 'Public activity log on GitHub →' })]));
       return;
     }
     const [o, n] = R.split('/');
@@ -478,6 +504,151 @@ async function loadLog() {
     box.replaceChildren(el('li', { className: 'muted', textContent: `Couldn't load the log (${e.message}).` }));
   }
 }
+
+// ── Private requests (panel mode) ──────────────────────────────
+const ICONS = { pass: '✅', info: 'ℹ️', hold: '⏸️', error: '✏️', reject: '⛔' };
+function privateCard(r) {
+  const decide = (decision, label, needReason) => async () => {
+    let reason = '';
+    if (needReason) {
+      reason = await askReason(`${label} ${r.name}`, decision === 'reject' ? 'Reason (the requester sees it)' : 'Why (the requester sees it, optional)');
+      if (reason === null) return;
+    }
+    propose({ request: r.id, decision, reason, command: `${decision} request ${r.name}${reason ? `: ${reason}` : ''}` });
+  };
+  const c = el('article', { className: 'card' }, [
+    el('div', { className: 'card-top' }, [
+      el('span', { className: 'card-name' }, [r.name, el('span', { className: 'private-tag', textContent: 'private' })]),
+      el('span', { className: 'card-meta', textContent: r.state }),
+    ]),
+    el('div', { className: 'card-meta' }, [el('a', { href: `https://github.com/${r.requester}`, target: '_blank', rel: 'noopener', textContent: `@${r.requester}` }), ` · ${ago(new Date(r.createdAt).toISOString())} ago · ${r.form.provider}`]),
+  ]);
+  const det = el('details', { className: 'bot-says' }, [el('summary', { textContent: 'Review & conversation' })]);
+  det.addEventListener('toggle', async () => {
+    if (!det.open || det.dataset.loaded) return;
+    det.dataset.loaded = '1';
+    const box = el('div', { className: 'md', textContent: 'Loading…' });
+    det.append(box);
+    try {
+      const d = await Panel.request(r.id);
+      const f = (d.request.review && d.request.review.findings) || [];
+      box.innerHTML = `<table>${f.filter((x) => x.level !== 'pass').map((x) => `<tr><td>${ICONS[x.level]}</td><td>${Panel.md(x.text).replace(/^<p>|<\/p>$/g, '')}</td></tr>`).join('') || '<tr><td>✅</td><td>Every check passed.</td></tr>'}</table>`;
+      const th = el('div', { className: 'thread-mini' });
+      for (const n of d.notes) th.append(el('div', { className: `m ${n.internal ? 'internal' : ''}` }, [el('small', { textContent: `${n.author === 'bot' ? '🤖 bot' : `@${n.author}`}${n.internal ? ' · internal' : ''} · ${new Date(n.created_at).toLocaleString()}` }), n.body]));
+      const ta = el('textarea', { placeholder: 'Write to the requester, or an internal note…' });
+      const internal = el('input', { type: 'checkbox' });
+      const send = el('button', { className: 'btn', type: 'button', textContent: 'Send' });
+      send.addEventListener('click', async () => {
+        if (!ta.value.trim()) return;
+        try { await Panel.requestDo(r.id, 'note', { body: ta.value, internal: internal.checked }); det.dataset.loaded = ''; det.open = false; det.open = true; toast('Sent', { kind: 'ok' }); } catch (e) { toast('Couldn\'t send', { body: e.message, kind: 'err' }); }
+      });
+      box.after(th, el('div', { className: 'note-box' }, [ta, el('label', { className: 'check' }, [internal, ' Internal (maintainers only)']), send]));
+    } catch (e) { box.textContent = e.message; }
+  });
+  c.append(det);
+  const row = el('div', { className: 'card-actions' });
+  const add = (label, cls, fn) => { const b = el('button', { className: `btn ${cls}`, type: 'button', textContent: label }); b.addEventListener('click', fn); row.append(b); };
+  if (r.state !== 'approving') add('Approve', 'primary', decide('approve', 'Approve'));
+  add(r.manualHold ? 'Unhold' : 'Hold', '', decide(r.manualHold ? 'unhold' : 'hold', 'Hold', !r.manualHold));
+  add('Reject', 'danger', decide('reject', 'Reject', true));
+  add('Recheck', '', decide('recheck', 'Recheck'));
+  c.append(row);
+  return c;
+}
+
+// ── Overview (panel mode) ──────────────────────────────────────
+async function renderOverview() {
+  if (mode !== 'panel') return;
+  const top = D.names.filter((n) => !n.name.includes('.'));
+  const hostedN = top.filter((n) => n.host === 'Hosted by us');
+  const people = new Set(top.map((n) => n.owner)).size;
+  let st = { requests: {}, last30: 0, actions7: 0, topActors: [], perDay: [] };
+  try { st = await Panel.stats(); } catch { /* keep zeros */ }
+  const open = ['checking', 'ready', 'on-hold', 'needs-changes', 'approving'].reduce((a, k) => a + (st.requests[k] || 0), 0)
+    + openItems.filter((i) => labelsOf(i).includes('request')).length;
+  const cards = [
+    [top.length, 'names'], [people, 'people'], [hostedN.length, 'hosted sites'],
+    [open, 'open requests', open > 0], [st.requests.ready || 0, 'ready to approve', (st.requests.ready || 0) > 0],
+    [openItems.filter((i) => labelsOf(i).includes('takedown')).length, 'open reports'], [st.actions7, 'actions this week'],
+  ];
+  $('#statGrid').replaceChildren(...cards.map(([n, label, warn]) => el('div', { className: `stat ${warn ? 'warn' : ''}` }, [el('b', { textContent: String(n) }), el('span', { textContent: label })])));
+  // Requests per day (30 bars)
+  const today = Math.floor(Date.now() / 86400000);
+  const byDay = Object.fromEntries((st.perDay || []).map((d) => [d.day, d.n]));
+  const max = Math.max(1, ...Object.values(byDay));
+  const bars = [];
+  for (let d = today - 29; d <= today; d++) bars.push(el('i', { title: `${new Date(d * 86400000).toLocaleDateString()}: ${byDay[d] || 0}`, style: `height:${((byDay[d] || 0) / max) * 100}%` }));
+  $('#perDay').replaceChildren(...(Object.keys(byDay).length ? bars : []));
+  // Hosts
+  const hosts = {};
+  for (const n of top) hosts[n.host] = (hosts[n.host] || 0) + 1;
+  const hmax = Math.max(1, ...Object.values(hosts));
+  $('#hosts').replaceChildren(...Object.entries(hosts).sort((a, b) => b[1] - a[1]).map(([k, v]) => el('div', { className: 'hbar' }, [el('span', { textContent: k }), el('i', { style: `width:${(v / hmax) * 100}%` }), el('b', { textContent: String(v) })])));
+  $('#topActors').replaceChildren(...(st.topActors.length ? st.topActors.map((a) => el('li', {}, [`@${a.actor} `, el('span', { textContent: `${a.n}` })])) : [el('li', { className: 'muted', textContent: 'Nobody yet.' })]));
+  try {
+    const { entries } = await Panel.audit({ limit: 6 });
+    $('#recent').replaceChildren(...entries.map((a) => el('li', {}, [el('time', { textContent: when(a.at) }), el('span', { textContent: `@${a.actor} · ${a.summary}` })])));
+  } catch { $('#recent').replaceChildren(el('li', { className: 'muted', textContent: 'Activity unavailable.' })); }
+}
+
+// ── Sites (panel mode) ─────────────────────────────────────────
+function renderSites() {
+  const sites = D.names.filter((n) => n.host === 'Hosted by us');
+  $('#sitesHelp').textContent = D.sitesOrg ? `Private repos in ${D.sitesOrg}. Locked = owner read-only · suspended = also DNS off · archived = repo archived, access removed.` : 'Hosting isn\'t switched on (set sitesOrg in config.json).';
+  const tbody = $('#sitesTable tbody');
+  tbody.replaceChildren();
+  for (const n of sites) {
+    const sel = el('select', { className: 'status-select', ariaLabel: `Status of ${n.name}` });
+    for (const st of ['active', 'locked', 'suspended', 'archived']) sel.append(new Option(st, st, false, st === (n.status || 'active')));
+    sel.addEventListener('change', () => {
+      const to = sel.value;
+      sel.value = n.status || 'active';
+      propose({ action: 'site', args: { name: n.name, status: to }, command: `/site ${n.name} ${to}`, target: 'console' });
+    });
+    const sync = el('button', { className: 'btn', type: 'button', textContent: 'Re-sync' });
+    sync.addEventListener('click', () => propose({ action: 'site-sync', args: { name: n.name }, command: `/site-sync ${n.name}`, target: 'console' }));
+    const access = el('button', { className: 'btn', type: 'button', textContent: 'Access…' });
+    access.addEventListener('click', async () => {
+      const who = await askReason(`Repo access for ${n.name}`, 'GitHub username');
+      if (!who) return;
+      const lvl = await askReason(`Access for @${who.replace(/^@/, '')}`, 'read, write, maintain or none', 'write');
+      if (!lvl) return;
+      propose({ action: 'repo-access', args: { name: n.name, user: who, level: lvl.toLowerCase() }, command: `/repo-access ${n.name} @${who.replace(/^@/, '')} ${lvl.toLowerCase()}`, target: 'console' });
+    });
+    tbody.append(el('tr', {}, [
+      el('td', {}, [el('a', { href: `https://${n.name}.${D.domain}`, target: '_blank', rel: 'noopener', textContent: n.name })]),
+      el('td', {}, [el('a', { href: `https://github.com/${n.owner}`, target: '_blank', rel: 'noopener', textContent: `@${n.owner}` })]),
+      el('td', {}, [sel]),
+      el('td', {}, [el('a', { href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: n.repo })]),
+      el('td', {}, [sync, ' ', access]),
+    ]));
+  }
+  if (!sites.length) tbody.append(el('tr', {}, [el('td', { colSpan: 5, className: 'muted', textContent: 'No hosted sites yet.' })]));
+}
+
+// ── Settings (owner, panel mode) ───────────────────────────────
+function renderSettings(cfg) {
+  const box = $('#settingsList');
+  box.replaceChildren();
+  for (const [key, spec] of Object.entries(D.settings || {})) {
+    const cur = cfg[key] !== undefined ? cfg[key] : spec.value;
+    let input;
+    if (spec.type === 'bool') { input = el('select'); input.append(new Option('on', 'true', false, !!cur), new Option('off', 'false', false, !cur)); }
+    else if (spec.type === 'int') input = el('input', { type: 'number', min: spec.min, max: spec.max, value: cur });
+    else input = el('input', { value: [].concat(cur || []).join(', ') });
+    const form = el('form', {}, [input, el('button', { className: 'btn', type: 'submit', textContent: 'Save…' })]);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      propose({ action: 'config', args: { key, value: input.value }, command: `/config ${key} ${input.value}`, target: 'console' });
+    });
+    box.append(el('div', { className: 'setting' }, [el('div', {}, [el('b', { textContent: key }), el('p', { textContent: spec.help })]), form]));
+  }
+}
+
+// ── Audit search (panel mode) ──────────────────────────────────
+let logCursor = null;
+$('#logFilter').addEventListener('submit', (e) => { e.preventDefault(); logCursor = null; loadLog(); });
+$('#logMore').addEventListener('click', () => loadLog({ more: true }));
 
 // ── Boot ───────────────────────────────────────────────────────
 fetch('../data.json', { cache: 'no-cache' }).then((r) => r.json()).then(async (data) => {

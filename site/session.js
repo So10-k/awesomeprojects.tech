@@ -43,9 +43,15 @@ const Panel = (() => {
     async up() {
       try { const r = await fetch(`${api}/health`, { signal: AbortSignal.timeout(5000) }); return r.ok; } catch { return false; }
     },
+    call,
     me: () => call('/api/me'),
     queue: () => call('/api/queue'),
-    audit: () => call('/api/audit?limit=200'),
+    audit: (q = {}) => call(`/api/audit?${new URLSearchParams({ limit: 200, ...q })}`),
+    stats: () => call('/api/stats'),
+    requests: (q = {}) => call(`/api/requests?${new URLSearchParams(q)}`),
+    request: (id) => call(`/api/requests/${encodeURIComponent(id)}`),
+    newRequest: (form) => call('/api/requests', { method: 'POST', body: form }),
+    requestDo: (id, verb, body = {}) => call(`/api/requests/${encodeURIComponent(id)}/${verb}`, { method: 'POST', body }),
     /**
      * Queue an action and wait for the bot. onUpdate(state) is called as it changes.
      * Resolves with the finished job ({ state: 'done'|'error', message, link }).

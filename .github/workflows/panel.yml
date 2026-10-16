@@ -64,6 +64,25 @@ jobs:
           sed -i "s/__PANEL_KV_ID__/$id/" wrangler.toml
           echo "KV namespace: $id"
 
+      - name: Make sure the D1 database exists
+        id: d1
+        if: steps.ready.outputs.ok == 'true'
+        working-directory: worker
+        run: |
+          set -uo pipefail
+          db="awesomeprojects-panel"
+          find_id() { npx -y wrangler@4 d1 list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const l=JSON.parse(s.slice(s.indexOf('[')));const n=l.find(x=>x.name==='$db');process.stdout.write(n?n.uuid:'')}catch{}})"; }
+          id=$(find_id)
+          if [ -z "$id" ]; then npx -y wrangler@4 d1 create "$db" >/dev/null 2>&1 || true; id=$(find_id); fi
+          if [ -n "$id" ]; then
+            sed -i "s/__PANEL_D1_ID__/$id/" wrangler.toml
+            npx -y wrangler@4 d1 migrations apply "$db" --remote
+            echo "D1 database: $id"
+          else
+            sed -i '/# d1-start/,/# d1-end/d' wrangler.toml
+            echo "::warning::Couldn't create or find the D1 database, so private requests are off. Give the CLOUDFLARE_WORKERS_TOKEN the 'D1: Edit' permission (Cloudflare → API Tokens → edit the token) and re-run this workflow."
+          fi
+
       - name: Deploy
         if: steps.ready.outputs.ok == 'true'
         working-directory: worker

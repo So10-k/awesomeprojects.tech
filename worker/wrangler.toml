@@ -15,3 +15,11 @@ EXTRA_ORIGINS = "http://localhost:5191"
 [[kv_namespaces]]
 binding = "PANEL"
 id = "__PANEL_KV_ID__"
+
+# d1-start: requests, notes and the audit log (strongly consistent). The deploy workflow fills in the id.
+[[d1_databases]]
+binding = "DB"
+database_name = "awesomeprojects-panel"
+database_id = "__PANEL_D1_ID__"
+migrations_dir = "migrations"
+# d1-end

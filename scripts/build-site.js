@@ -30,6 +30,8 @@ for (const f of fs.readdirSync(path.join(root, 'domains')).sort()) {
     host: C.hostOf(d),
     description: d.description || undefined,
     repo: d.site && d.site.repo,
+    status: d.site && d.site.provider === 'hosted' ? d.site.status || 'active' : undefined,
+    records: d.records,
   });
 }
 
@@ -50,6 +52,8 @@ const data = {
   providers: P.PROVIDERS,
   frameworks: F.FRAMEWORKS.map(({ id, label, dep }) => ({ id, label, dep })),
   commands: C.CATALOG,
+  sitesOrg: config.sitesOrg || '',
+  settings: Object.fromEntries(Object.entries(C.SETTINGS).map(([k, v]) => [k, { ...v, value: config[k] }])),
 };
 
 fs.rmSync(out, { recursive: true, force: true });

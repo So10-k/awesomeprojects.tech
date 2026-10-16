@@ -7,13 +7,17 @@
 //   GET  /api/status/:id             → how that action went
 //   GET  /api/queue                  → open requests/reports/PRs + live config (maintainers)
 //   GET  /api/audit                  → the private audit log (maintainers)
-//   POST /bot/result                 → the bot reports back (shared secret)
+//   GET  /api/stats                  → numbers for the admin overview (maintainers)
+//   *    /api/requests[/:id[/…]]     → private requests: create, list, read, edit, cancel, note, decide
+//   POST /bot/result                 → the bot reports an action's result (shared secret)
+//   POST /bot/request                → the bot reports a request's review or go-live (shared secret)
 //
 // Sessions are bearer tokens kept by the page, never cookies: every *.awesomeprojects.tech site is
 // "same-site" with this API, so a cookie could be ridden by someone's subdomain. A bearer token can't.
 //
 // Env: REPO, SITE_ORIGIN, EXTRA_ORIGINS (optional, comma-separated), GITHUB_CLIENT_ID,
-//      GITHUB_CLIENT_SECRET, DISPATCH_TOKEN, SESSION_SECRET, BOT_SECRET; KV binding PANEL.
+//      GITHUB_CLIENT_SECRET, DISPATCH_TOKEN, SESSION_SECRET, BOT_SECRET; KV binding PANEL
+//      (jobs, rate limits); D1 binding DB (requests, notes, audit: strongly consistent).
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -73,6 +77,25 @@ export const ACTIONS = {
     },
   },
   remove: { role: 'user', build: (a) => ({ command: `/remove ${name(a.name)}` }) },
+  // The DNS manager: set (or delete, records = null) one name's records. The bot checks ownership.
+  records: {
+    role: 'user',
+    build: (a) => {
+      const n = name(a.name);
+      if (a.records === null) return { records: { name: n, records: null } };
+      const r = a.records;
+      if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Error('Records must be an object.');
+      const allowed = ['A', 'AAAA', 'CNAME', 'TXT', 'MX'];
+      const out = {};
+      for (const [k, v] of Object.entries(r)) {
+        if (!allowed.includes(k)) throw new Error(`${k} records aren't offered.`);
+        if (JSON.stringify(v).length > 3000) throw new Error('That\'s too much data for one name.');
+        out[k] = v;
+      }
+      if (!Object.keys(out).length) throw new Error('Add at least one record.');
+      return { records: { name: n, records: out } };
+    },
+  },
   update: {
     role: 'user',
     build: (a) => ({
@@ -131,6 +154,14 @@ export const ACTIONS = {
     },
   },
   // Owner
+  config: {
+    role: 'owner',
+    build: (a) => {
+      const key = clean(a.key, 60);
+      if (!/^[A-Za-z]+$/.test(key)) throw new Error('Unknown setting.');
+      return { command: `/config ${key} ${clean(a.value, 2000)}` };
+    },
+  },
   'org-setup': { role: 'owner', build: () => ({ command: '/org-setup' }) },
   'bot-check': { role: 'owner', build: () => ({ command: '/bot-check' }) },
   promote: { role: 'owner', build: (a) => ({ command: `/promote @${user(a.user)}` }) },
@@ -183,6 +214,9 @@ async function config(env, now = Date.now()) {
   configCache = { at: now, value: await repoJson(env, 'config.json') };
   return configCache.value;
 }
+/** Tests only: forget cached config. */
+export function resetCaches() { configCache = { at: 0, value: null }; queueCache = { at: 0, value: null }; }
+
 export async function roleOf(login, env) {
   const owner = env.REPO.split('/')[0].toLowerCase();
   const l = String(login).toLowerCase();
@@ -249,11 +283,11 @@ async function action(req, env, s) {
   await env.PANEL.put(rk, String(used + 1), { expirationTtl: RATE.windowSec * 2 });
 
   const id = newId();
-  const summary = built.update ? `update ${built.update.name}` : `${built.command}${built.target ? ` on #${built.target}` : ''}`;
+  const summary = built.update ? `update ${built.update.name}` : built.records ? `records ${built.records.name}${built.records.records === null ? ' (delete)' : ''}` : `${built.command}${built.target ? ` on #${built.target}` : ''}`;
   const key = auditKey(now, id);
   const job = { id, actor: s.login, role, action: body.action, summary, state: 'queued', at: now, auditKey: key };
   await env.PANEL.put(`job:${id}`, JSON.stringify(job), { expirationTtl: 7 * 86400 });
-  await env.PANEL.put(key, '', { metadata: { at: now, actor: s.login, role, summary, state: 'queued' } });
+  await auditWrite(env, { id, at: now, actor: s.login, role, summary, state: 'queued' });
 
   const r = await gh(env, `/repos/${env.REPO}/dispatches`, {
     method: 'POST',
@@ -265,7 +299,7 @@ async function action(req, env, s) {
   if (!r.ok) {
     const msg = `GitHub refused the action (${r.status}).`;
     await env.PANEL.put(`job:${id}`, JSON.stringify({ ...job, state: 'error', message: msg }), { expirationTtl: 7 * 86400 });
-    await env.PANEL.put(key, '', { metadata: { at: now, actor: s.login, role, summary, state: 'error' } });
+    await auditWrite(env, { id, at: now, actor: s.login, role, summary, state: 'error', result: msg });
     return fail(req, env, 502, msg);
   }
   return json(req, env, { id, summary });
@@ -292,17 +326,211 @@ async function botResult(req, env) {
   const result = { state, message: String(message || '').slice(0, 8000), link: link || null, doneAt: Date.now() };
   await env.PANEL.put(`result:${id}`, JSON.stringify(result), { expirationTtl: 7 * 86400 });
   if (actor && Number.isFinite(at)) {
-    const short = String(message || '').replace(/[#*`>|_]/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
     const role = await roleOf(actor, env).catch(() => 'user');
-    await env.PANEL.put(auditKey(at, id), '', { metadata: { at, actor, role, summary: String(summary || '').slice(0, 200), state, result: short, link: result.link } });
+    await auditWrite(env, { id, at, actor, role, summary: String(summary || '').slice(0, 200), state, result: shortText(message), link: result.link });
   }
   return new Response('ok');
 }
 
+const shortText = (m) => String(m || '').replace(/[#*`>|_]/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+
+/** The audit log: D1 when bound (searchable, consistent), KV otherwise. Upserts by id. */
+async function auditWrite(env, a) {
+  if (env.DB) {
+    await env.DB.prepare(`INSERT INTO audit (id, at, actor, role, summary, state, result, link, request_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+      ON CONFLICT(id) DO UPDATE SET state = excluded.state, result = excluded.result, link = excluded.link`)
+      .bind(a.id, a.at, a.actor, a.role, a.summary, a.state, a.result || null, a.link || null, a.request || null).run();
+    return;
+  }
+  await env.PANEL.put(auditKey(a.at, a.id), '', { metadata: a });
+}
+
 async function audit(req, env, s, url) {
   if (RANK[await roleOf(s.login, env)] < RANK.maintainer) return fail(req, env, 403, 'Only maintainers can read the audit log.');
-  const list = await env.PANEL.list({ prefix: 'audit:', limit: Math.min(Number(url.searchParams.get('limit')) || 100, 500), cursor: url.searchParams.get('cursor') || undefined });
+  const limit = Math.min(Number(url.searchParams.get('limit')) || 100, 500);
+  if (env.DB) {
+    const actor = clean(url.searchParams.get('actor'), 40).replace(/^@/, '');
+    const q = clean(url.searchParams.get('q'), 100);
+    const before = Number(url.searchParams.get('before')) || 9e15;
+    const rows = await env.DB.prepare(`SELECT * FROM audit WHERE at < ?1 AND (?2 = '' OR lower(actor) = lower(?2)) AND (?3 = '' OR summary LIKE ?4 OR result LIKE ?4)
+      ORDER BY at DESC LIMIT ?5`).bind(before, actor, q, `%${q}%`, limit).all();
+    const entries = rows.results || [];
+    return json(req, env, { entries, cursor: entries.length === limit ? entries[entries.length - 1].at : null });
+  }
+  const list = await env.PANEL.list({ prefix: 'audit:', limit, cursor: url.searchParams.get('cursor') || undefined });
   return json(req, env, { entries: list.keys.map((k) => k.metadata).filter(Boolean), cursor: list.list_complete ? null : list.cursor });
+}
+
+// ── Private requests ────────────────────────────────────────────
+const OPEN_STATES = ['checking', 'ready', 'on-hold', 'needs-changes', 'approving'];
+const MAX_OPEN_PER_PERSON = 5;
+
+function cleanForm(a) {
+  const n = name(a.name);
+  if (n.includes('.')) throw new Error('Request a top-level name; add records under it from My domains afterwards.');
+  return { name: n, provider: clean(a.provider, 80), repo: clean(a.repo, 140), target: clean(a.target, 300), description: clean(a.description, 200) };
+}
+const rowOut = (r, { full }) => ({
+  id: r.id, name: r.name, requester: r.requester, state: r.state, manualHold: !!r.manual_hold, form: JSON.parse(r.form),
+  review: r.review ? JSON.parse(r.review) : null, result: r.result ? JSON.parse(r.result) : null,
+  decidedBy: r.decided_by, createdAt: r.created_at, updatedAt: r.updated_at, ...(full ? {} : {}),
+});
+
+async function dispatch(env, payload) {
+  const r = await gh(env, `/repos/${env.REPO}/dispatches`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_type: 'panel', client_payload: payload }),
+  });
+  if (!r.ok) throw new Error(`GitHub refused it (${r.status}).`);
+}
+async function rateLimit(env, login, now = Date.now()) {
+  const rk = `rl:${login.toLowerCase()}:${Math.floor(now / 1000 / RATE.windowSec)}`;
+  const used = Number(await env.PANEL.get(rk)) || 0;
+  if (used >= RATE.max) throw Object.assign(new Error('Slow down a little: try again in a few minutes.'), { status: 429 });
+  await env.PANEL.put(rk, String(used + 1), { expirationTtl: RATE.windowSec * 2 });
+}
+async function getRequest(env, id) {
+  return env.DB.prepare('SELECT * FROM requests WHERE id = ?1').bind(id).first();
+}
+async function requestReview(env, row, form) {
+  await dispatch(env, { kind: 'review', request: row.id, actor: row.requester, form, manualHold: !!row.manual_hold });
+}
+
+async function requests(req, env, s, url, parts) {
+  if (!env.DB) return fail(req, env, 503, 'Requests aren\'t set up on the server yet.');
+  const role = await roleOf(s.login, env);
+  const isMaint = RANK[role] >= RANK.maintainer;
+  const now = Date.now();
+  const [, , , id, verb] = parts; // /api/requests/:id/:verb
+  const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+  const audited = (summary, request) => auditWrite(env, { id: newId(), at: now, actor: s.login, role, summary, state: 'done', request });
+
+  // List
+  if (!id && req.method === 'GET') {
+    const scope = url.searchParams.get('scope') === 'all' && isMaint ? 'all' : 'mine';
+    const state = clean(url.searchParams.get('state'), 20);
+    const rows = await env.DB.prepare(`SELECT * FROM requests WHERE (?1 = 'all' OR lower(requester) = lower(?2)) AND (?3 = '' OR state = ?3)
+      ORDER BY updated_at DESC LIMIT 200`).bind(scope, s.login, state).all();
+    return json(req, env, { requests: (rows.results || []).map((r) => rowOut(r, { full: false })) });
+  }
+
+  // Create
+  if (!id && req.method === 'POST') {
+    let form;
+    try { form = cleanForm(body); } catch (e) { return fail(req, env, 400, e.message); }
+    const cfg = await config(env);
+    if (cfg.locked && !isMaint) return fail(req, env, 423, `Requests are paused${typeof cfg.locked === 'string' ? `: ${cfg.locked}` : ''}. Try again later.`);
+    if ((cfg.bannedUsers || []).map((u) => u.toLowerCase()).includes(s.login.toLowerCase())) return fail(req, env, 403, 'This account can\'t request names.');
+    try { await rateLimit(env, s.login, now); } catch (e) { return fail(req, env, e.status || 429, e.message); }
+    const open = await env.DB.prepare(`SELECT id, name FROM requests WHERE lower(requester) = lower(?1) AND state IN ('checking','ready','on-hold','needs-changes','approving')`).bind(s.login).all();
+    const mineOpen = open.results || [];
+    if (mineOpen.some((r) => r.name === form.name)) return fail(req, env, 409, `You already have an open request for ${form.name}.`);
+    if (mineOpen.length >= MAX_OPEN_PER_PERSON && !isMaint) return fail(req, env, 429, `You have ${mineOpen.length} open requests. Wait for those first.`);
+    const row = { id: newId(), name: form.name, requester: s.login, form: JSON.stringify(form), state: 'checking', manual_hold: 0, created_at: now, updated_at: now };
+    await env.DB.prepare('INSERT INTO requests (id, name, requester, form, state, manual_hold, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?6)')
+      .bind(row.id, row.name, row.requester, row.form, row.state, now).run();
+    await audited(`request ${form.name}`, row.id);
+    try { await requestReview(env, row, form); } catch (e) { return fail(req, env, 502, e.message); }
+    return json(req, env, { request: rowOut(row, { full: true }) });
+  }
+
+  const row = await getRequest(env, id);
+  const mine = row && row.requester.toLowerCase() === s.login.toLowerCase();
+  if (!row || (!mine && !isMaint)) return fail(req, env, 404, 'Not found.');
+
+  // Read (with the conversation; internal notes for maintainers only)
+  if (!verb && req.method === 'GET') {
+    const notes = await env.DB.prepare(`SELECT author, body, internal, created_at FROM notes WHERE request_id = ?1 AND (?2 = 1 OR internal = 0) ORDER BY created_at`).bind(id, isMaint ? 1 : 0).all();
+    const history = isMaint ? (await env.DB.prepare('SELECT at, actor, summary FROM audit WHERE request_id = ?1 ORDER BY at').bind(id).all()).results : undefined;
+    return json(req, env, { request: rowOut(row, { full: true }), notes: notes.results || [], history });
+  }
+  if (req.method !== 'POST') return fail(req, env, 405, 'Use POST.');
+  const closed = ['live', 'rejected', 'cancelled'].includes(row.state);
+
+  if (verb === 'note') {
+    const text = String(body.body || '').trim().slice(0, 4000);
+    if (!text) return fail(req, env, 400, 'The note is empty.');
+    const internal = isMaint && body.internal ? 1 : 0;
+    await env.DB.prepare('INSERT INTO notes (request_id, author, body, internal, created_at) VALUES (?1, ?2, ?3, ?4, ?5)').bind(id, s.login, text, internal, now).run();
+    await env.DB.prepare('UPDATE requests SET updated_at = ?2 WHERE id = ?1').bind(id, now).run();
+    return json(req, env, { ok: true });
+  }
+  if (verb === 'edit') {
+    if (!mine && !isMaint) return fail(req, env, 403, 'Only the requester can edit it.');
+    if (closed || row.state === 'approving') return fail(req, env, 409, 'This request can\'t be changed any more.');
+    let form;
+    try { form = cleanForm({ ...JSON.parse(row.form), ...body, name: row.name }); } catch (e) { return fail(req, env, 400, e.message); }
+    await env.DB.prepare(`UPDATE requests SET form = ?2, state = 'checking', review = NULL, updated_at = ?3 WHERE id = ?1`).bind(id, JSON.stringify(form), now).run();
+    await audited(`edit request ${row.name}`, id);
+    try { await requestReview(env, row, form); } catch (e) { return fail(req, env, 502, e.message); }
+    return json(req, env, { ok: true });
+  }
+  if (verb === 'cancel') {
+    if (!mine && !isMaint) return fail(req, env, 403, 'Only the requester can cancel it.');
+    if (closed) return fail(req, env, 409, 'It\'s already closed.');
+    await env.DB.prepare(`UPDATE requests SET state = 'cancelled', updated_at = ?2 WHERE id = ?1`).bind(id, now).run();
+    await audited(`cancel request ${row.name}`, id);
+    return json(req, env, { ok: true });
+  }
+  if (verb === 'decide') {
+    if (!isMaint) return fail(req, env, 403, 'Only maintainers can decide.');
+    if (closed) return fail(req, env, 409, 'It\'s already closed.');
+    const decision = clean(body.decision, 20);
+    const reason = clean(body.reason, 500);
+    const form = JSON.parse(row.form);
+    if (reason) await env.DB.prepare('INSERT INTO notes (request_id, author, body, internal, created_at) VALUES (?1, ?2, ?3, 0, ?4)').bind(id, s.login, `${decision === 'reject' ? 'Rejected' : decision === 'hold' ? 'On hold' : 'Note'}: ${reason}`, now).run();
+    if (decision === 'reject') {
+      await env.DB.prepare(`UPDATE requests SET state = 'rejected', decided_by = ?2, updated_at = ?3 WHERE id = ?1`).bind(id, s.login, now).run();
+    } else if (decision === 'hold') {
+      await env.DB.prepare(`UPDATE requests SET manual_hold = 1, state = 'on-hold', updated_at = ?2 WHERE id = ?1`).bind(id, now).run();
+    } else if (decision === 'unhold') {
+      await env.DB.prepare(`UPDATE requests SET manual_hold = 0, state = 'checking', updated_at = ?2 WHERE id = ?1`).bind(id, now).run();
+      await requestReview(env, { ...row, manual_hold: 0 }, form);
+    } else if (decision === 'recheck') {
+      await env.DB.prepare(`UPDATE requests SET state = 'checking', updated_at = ?2 WHERE id = ?1`).bind(id, now).run();
+      await requestReview(env, row, form);
+    } else if (decision === 'approve') {
+      await env.DB.prepare(`UPDATE requests SET state = 'approving', decided_by = ?2, updated_at = ?3 WHERE id = ?1`).bind(id, s.login, now).run();
+      await dispatch(env, { kind: 'approve', request: id, actor: s.login, requester: row.requester, form });
+    } else return fail(req, env, 400, 'Unknown decision.');
+    await audited(`${decision} request ${row.name}${reason ? `: ${reason}` : ''}`, id);
+    return json(req, env, { ok: true });
+  }
+  return fail(req, env, 404, 'Not found.');
+}
+
+/** The bot reports a review (kind "review") or the outcome of an approval (kind "live" / "failed"). */
+async function botRequest(req, env) {
+  const h = req.headers.get('Authorization') || '';
+  const secret = String(env.BOT_SECRET || '').trim();
+  if (!secret || !safeEqual(h.trim(), `Bearer ${secret}`)) return new Response('no', { status: 401 });
+  if (!env.DB) return new Response('no db', { status: 503 });
+  const b = await req.json();
+  const row = await getRequest(env, String(b.request || ''));
+  if (!row) return new Response('unknown request', { status: 404 });
+  const now = Date.now();
+  if (['live', 'rejected', 'cancelled'].includes(row.state)) return new Response('closed');
+  if (b.kind === 'review') {
+    const state = row.manual_hold && b.verdict !== 'rejected' ? 'on-hold' : b.verdict;
+    await env.DB.prepare('UPDATE requests SET state = ?2, review = ?3, updated_at = ?4 WHERE id = ?1').bind(row.id, state, JSON.stringify(b.review || null), now).run();
+  } else if (b.kind === 'live') {
+    await env.DB.prepare(`UPDATE requests SET state = 'live', result = ?2, updated_at = ?3 WHERE id = ?1`).bind(row.id, JSON.stringify(b.result || null), now).run();
+  } else if (b.kind === 'failed') {
+    await env.DB.prepare('UPDATE requests SET state = ?2, review = COALESCE(?3, review), updated_at = ?4 WHERE id = ?1').bind(row.id, b.verdict || 'needs-changes', b.review ? JSON.stringify(b.review) : null, now).run();
+  }
+  if (b.message) await env.DB.prepare(`INSERT INTO notes (request_id, author, body, internal, created_at) VALUES (?1, 'bot', ?2, 0, ?3)`).bind(row.id, String(b.message).slice(0, 4000), now).run();
+  return new Response('ok');
+}
+
+async function stats(req, env, s) {
+  if (RANK[await roleOf(s.login, env)] < RANK.maintainer) return fail(req, env, 403, 'Maintainers only.');
+  if (!env.DB) return json(req, env, { requests: {}, last30: 0, actions7: 0, topActors: [] });
+  const since30 = Date.now() - 30 * 86400e3;
+  const byState = (await env.DB.prepare('SELECT state, COUNT(*) AS n FROM requests GROUP BY state').all()).results || [];
+  const last30 = await env.DB.prepare('SELECT COUNT(*) AS n FROM requests WHERE created_at > ?1').bind(since30).first();
+  const actions7 = await env.DB.prepare('SELECT COUNT(*) AS n FROM audit WHERE at > ?1').bind(Date.now() - 7 * 86400e3).first();
+  const topActors = (await env.DB.prepare('SELECT actor, COUNT(*) AS n FROM audit WHERE at > ?1 GROUP BY actor ORDER BY n DESC LIMIT 8').bind(since30).all()).results || [];
+  const perDay = (await env.DB.prepare(`SELECT CAST(created_at / 86400000 AS INTEGER) AS day, COUNT(*) AS n FROM requests WHERE created_at > ?1 GROUP BY day ORDER BY day`).bind(since30).all()).results || [];
+  return json(req, env, { requests: Object.fromEntries(byState.map((r) => [r.state, r.n])), last30: last30.n, actions7: actions7.n, topActors, perDay });
 }
 
 let queueCache = { at: 0, value: null };
@@ -335,6 +563,7 @@ export default {
       if (url.pathname === '/auth/login' && req.method === 'GET') return login(req, env, url);
       if (url.pathname === '/auth/callback' && req.method === 'GET') return callback(req, env, url);
       if (url.pathname === '/bot/result' && req.method === 'POST') return botResult(req, env);
+      if (url.pathname === '/bot/request' && req.method === 'POST') return botRequest(req, env);
       if (url.pathname.startsWith('/api/')) {
         // State-changing calls must come from the site itself.
         if (req.method === 'POST' && !origins(env).includes(req.headers.get('Origin'))) return fail(req, env, 403, 'Wrong origin.');
@@ -345,6 +574,8 @@ export default {
         if (url.pathname.startsWith('/api/status/') && req.method === 'GET') return status(req, env, s, url.pathname.slice(12));
         if (url.pathname === '/api/queue' && req.method === 'GET') return queue(req, env, s);
         if (url.pathname === '/api/audit' && req.method === 'GET') return audit(req, env, s, url);
+        if (url.pathname === '/api/stats' && req.method === 'GET') return stats(req, env, s);
+        if (url.pathname === '/api/requests' || url.pathname.startsWith('/api/requests/')) return requests(req, env, s, url, url.pathname.split('/'));
       }
       return fail(req, env, 404, 'Not found.');
     } catch (e) {
