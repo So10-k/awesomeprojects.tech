@@ -188,7 +188,7 @@ dnsconfig.js              DNSControl: domains/ → Cloudflare records
 
 **Security model.** `bot.yml` runs on `pull_request_target` with a write token, so it **only runs `main`'s code** and reads PR files as git objects + `JSON.parse`. It never checks out a PR, runs `npm install`, or puts PR text into a shell command. Keep it that way. `checks.yml` runs PR code but with a read-only token and no secrets. The Cloudflare token lives only in `deploy.yml`, which only runs from `main`.
 
-**Status check.** The bot posts a commit status called `subdomain-review` (success = ready, pending = held, failure = needs changes or rejected). The `protect-main` ruleset requires it, plus a code-owner review. GitHub Actions is on the ruleset's bypass list so `/approve` can merge.
+**Status check.** The bot posts a commit status called `subdomain-review` (success = ready, pending = held, failure = needs changes or rejected). The `protect-main` ruleset requires it on every PR, so nothing merges without the bot's OK, and only people with write access can merge at all. `/approve` works because the bot merges with its own token once the status is green. (There's no "required approvals" rule: on a personal repo GitHub Actions can't bypass one, and you can't approve your own PRs anyway. If the repo moves to an organization, you can add approvals back and put GitHub Actions on the bypass list.)
 
 **Locally:**
 
@@ -208,7 +208,7 @@ GITHUB_TOKEN=$(gh auth token) GITHUB_REPOSITORY=So10-k/awesomeprojects.tech DRY_
 Already done for this repo; here for reference.
 
 1. **Cloudflare:** the zone on Cloudflare's nameservers; an API token from the *Edit zone DNS* template, scoped to this zone only, saved as the `CLOUDFLARE_API_TOKEN` Actions secret.
-2. **Ruleset `protect-main`:** PRs only, 1 code-owner approval, required status `subdomain-review`, no force pushes or deletion. Bypass: repo admins (PR only) and GitHub Actions (for the bot's merges).
+2. **Ruleset `protect-main`:** PRs only, required status `subdomain-review`, no force pushes or deletion. Bypass: repo admins, PR only (to merge changes to the bot itself, which it can't review before they exist).
 3. **Actions:** require approval for workflows from outside contributors (this covers `checks.yml`; the bot always runs); default token read-only (each workflow asks for what it needs).
 4. **Labels:** `ready`, `needs-changes`, `on-hold`, `rejected`, `nested`, `transfer`, `new-account`, `maybe-bot`, `sensitive-name`, `pages-mismatch`, `manual-hold`, `takedown`, `abuse`, `dangling`, `health`, `stale`.
 5. **Later: the [Public Suffix List](https://github.com/publicsuffix/list).** Once established, apply so browsers isolate cookies between subdomains. Until then, nothing with logins should live on the root domain.

@@ -184,6 +184,8 @@ async function botChange({ issue, title, body, changes }) {
     }
   }
   const pr = await gh.post(`${R_}/pulls`, { title, head: branch, base: 'main', body: `${body}\n\nCloses #${issue}` });
+  // The bot worked this change out itself (both sides agreed / a takedown), so it passes review.
+  await gh.post(`${R_}/statuses/${pr.head.sha}`, { state: 'success', context: 'subdomain-review', description: `Approved in #${issue}`, target_url: runUrl });
   const merged = await mergePR(pr, null);
   return { pr, merged };
 }
