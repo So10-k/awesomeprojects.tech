@@ -65,21 +65,47 @@
       <div class="banner warn" id="lockedBanner" hidden></div>
 
       <nav class="tabs" role="tablist" aria-label="Console sections">
-        <button role="tab" data-tab="queue" aria-selected="true">Queue <span class="count" id="countQueue"></span></button>
+        <button role="tab" data-tab="overview" aria-selected="true" data-panel-only>Overview</button>
+        <button role="tab" data-tab="queue">Requests <span class="count" id="countQueue"></span></button>
         <button role="tab" data-tab="reports">Reports <span class="count" id="countReports"></span></button>
+        <button role="tab" data-tab="sites" data-panel-only>Sites</button>
         <button role="tab" data-tab="names">Names</button>
         <button role="tab" data-tab="people">People</button>
         <button role="tab" data-tab="maint">Maintenance</button>
-        <button role="tab" data-tab="owner" id="ownerTab" hidden>Owner</button>
+        <button role="tab" data-tab="settings" data-owner-only data-panel-only>Settings</button>
+        <button role="tab" data-tab="owner" id="ownerTab" data-owner-only>Owner</button>
         <button role="tab" data-tab="log">Activity</button>
       </nav>
 
-      <div class="panel" data-panel="queue" role="tabpanel">
+      <div class="panel" data-panel="overview" role="tabpanel">
+        <div class="stat-grid" id="statGrid"></div>
+        <div class="split">
+          <div class="box"><h2>New requests, last 30 days</h2><div class="bars" id="perDay"></div></div>
+          <div class="box"><h2>Where names point</h2><div class="hbars" id="hosts"></div></div>
+          <div class="box"><h2>Most active, last 30 days</h2><ol class="people-rank" id="topActors"></ol></div>
+          <div class="box"><h2>Latest</h2><ol class="log mini" id="recent"></ol></div>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="queue" role="tabpanel" hidden>
         <div class="lanes" id="lanes"></div>
       </div>
 
       <div class="panel" data-panel="reports" role="tabpanel" hidden>
         <div class="cards" id="reports"></div>
+      </div>
+
+      <div class="panel" data-panel="sites" role="tabpanel" hidden>
+        <p class="help" id="sitesHelp"></p>
+        <table class="grid" id="sitesTable">
+          <thead><tr><th>Site</th><th>Owner</th><th>Status</th><th>Repo</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel" data-panel="settings" role="tabpanel" hidden>
+        <p class="help">Bot settings. Each change goes through the bot as a commit to <code>config.json</code>, logged under your name.</p>
+        <div class="settings" id="settingsList"></div>
       </div>
 
       <div class="panel" data-panel="names" role="tabpanel" hidden>
@@ -151,6 +177,18 @@
             <ul class="people" id="maintList"></ul>
           </div>
         </div>
+        <div class="split">
+          <div class="box">
+            <h2>Sites org</h2>
+            <p class="help" id="orgHelp">Re-apply the org's safe defaults, rulesets, Actions allow-list and maintainers team.</p>
+            <button class="btn" data-action="org-setup" type="button">Run org setup…</button>
+          </div>
+          <div class="box">
+            <h2>Bot account</h2>
+            <p class="help">Check the bot's token scopes and its role in the sites org.</p>
+            <button class="btn" data-action="bot-check" type="button">Check the bot…</button>
+          </div>
+        </div>
         <div class="box danger-zone">
           <h2>Danger zone</h2>
           <p class="help">For anything the console can't do: <a id="repoSettings" target="_blank" rel="noopener">repository settings</a>, <a id="cfLink" href="https://dash.cloudflare.com" target="_blank" rel="noopener">Cloudflare</a>, and the <a id="ghActions" target="_blank" rel="noopener">workflows</a> (disable <i>Subdomain bot</i> to stop all automation).</p>
@@ -158,7 +196,13 @@
       </div>
 
       <div class="panel" data-panel="log" role="tabpanel" hidden>
+        <form class="toolbar inline" id="logFilter">
+          <input name="actor" placeholder="@who" spellcheck="false" aria-label="Filter by person">
+          <input name="q" placeholder="search actions…" spellcheck="false" aria-label="Search">
+          <button class="btn" type="submit">Filter</button>
+        </form>
         <ol class="log" id="log"></ol>
+        <button class="btn" id="logMore" type="button" hidden>Load more</button>
       </div>
     </section>
   </main>

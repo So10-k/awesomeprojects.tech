@@ -4,6 +4,7 @@ The bot does the checking. You make the calls it can't: approve, hold, reject, t
 Everything is a comment, so it all works from the GitHub mobile app.
 
 - [The console](#the-console)
+- [Hosted sites](#hosted-sites)
 - [Your daily routine](#your-daily-routine)
 - [Command reference](#command-reference)
 - [Request issues](#request-issues)
@@ -48,6 +49,27 @@ Everything is a comment, so it all works from the GitHub mobile app.
 
 ---
 
+## Hosted sites
+
+"**Host it for me**" names get a private repo in **[awesomeprojects-sites](https://github.com/awesomeprojects-sites)**, created and managed by the bot account (`BOT_PAT`, used only for that org).
+
+- **On approval** the bot creates `awesomeprojects-sites/<name>` with a starter page, the managed deploy workflow and an `awesomeprojects.json`. It turns on Pages (public) on `<name>.awesomeprojects.tech`, gives the `site-maintainers` team *maintain*, and invites the owner with *write*. That invite uses an enterprise seat.
+- **Status** lives in `domains/<name>.json → site.status` and is applied to the repo:
+
+  | Status | Owner | Site / DNS | Use it when |
+  |---|---|---|---|
+  | `active` | write | live | normal |
+  | `locked` | read | live | a dispute, or "please stop changing it" |
+  | `suspended` | read | **DNS off** | abuse under review (DNS off so nobody can take the name over) |
+  | `archived` | removed | DNS off, repo archived | done with it |
+
+  Change it from the console's **Sites** tab or with `/site`. Only the owner can bring back an archived site.
+- **Locked down:** org rulesets block every change to `.github/workflows/**` except by org admins (the bot), and the Actions allow-list only permits GitHub's own actions and our build workflow. Site owners edit content; they can't run arbitrary Actions on the org's minutes. To give a site a different build, edit its workflow as an admin, or `/site-sync` to reset it.
+- **Removing** a hosted name (takedown or `/remove`) archives the repo and removes the owner; nothing is deleted.
+- **The bot token** is a classic PAT on `@appdev7710-netizen` with `repo`, `workflow` and `admin:org`. `/bot-check` shows what it has. Keep it out of every other org.
+
+---
+
 ## Your daily routine
 
 1. **Takedown reports first**, especially ones labelled `abuse`: [open reports](../../../issues?q=is%3Aopen+label%3Atakedown).
@@ -75,7 +97,12 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 | `/lock <reason>` · `/unlock` | any issue | Pauses new requests (requesters see your reason; nothing is lost, they're re-checked after `/unlock` + `/recheck`) |
 | `/deploy` | anywhere | Re-runs the DNS deploy and rebuilds the website |
 | `/health` | anywhere | Runs the dangling-name check now |
-| `/promote @user` · `/demote @user` | any issue | **Owner only.** Edits `config.json → maintainers` |
+| `/promote @user` · `/demote @user` | any issue | **Owner only.** Edits `config.json → maintainers`, and syncs the sites org's maintainers team |
+| `/site <name> <active\|locked\|suspended\|archived>` | any issue | A hosted site's status: locked = owner read-only · suspended = also DNS off · archived = repo archived, access removed |
+| `/site-sync <name>` | any issue | Re-apply a hosted repo's standard setup (settings, workflow, Pages, team, owner access) |
+| `/repo-access <name> @user <read\|write\|maintain\|none>` | any issue | Give someone access to a hosted repo (each outside person uses an enterprise seat) |
+| `/config <setting> <value>` | any issue | **Owner only.** Change a bot setting (also in the console's *Settings* tab) |
+| `/org-setup` · `/bot-check` | any issue | **Owner only.** Re-apply the sites org's defaults · check the bot token and its org role |
 | `/help` | anywhere | Everything, including the user commands |
 
 **A good place to run admin commands:** open one issue titled "Admin console", pin it, and run `/ban`, `/reserve`, `/lock`… there. Its history is your audit trail.

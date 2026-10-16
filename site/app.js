@@ -14,6 +14,7 @@ const REPO = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\/[\w.-]{1,100}$/i;
 const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
 const BLURB = {
+  hosted: 'We make you a private repo with a starter site, already live. Just push.',
   'github-pages': 'Free hosting for your repo: Next.js, Vite, Astro, plain HTML…',
   vercel: 'Full Next.js, server features included',
   netlify: 'Static sites and functions',
@@ -113,7 +114,7 @@ function renderHosts() {
     const id = `host-${p.id}`;
     const input = el('input', { type: 'radio', name: 'host', id, value: p.id });
     input.addEventListener('change', () => pick(p));
-    const short = p.id === 'github-pages' ? 'GitHub repo' : p.id === 'cname' ? 'Another host' : p.id === 'server' ? 'Own server' : p.label;
+    const short = p.id === 'hosted' ? 'Host it for me' : p.id === 'github-pages' ? 'GitHub repo' : p.id === 'cname' ? 'Another host' : p.id === 'server' ? 'Own server' : p.label;
     box.append(el('div', { className: 'host' }, [input, el('label', { htmlFor: id }, [el('b', { textContent: short }), el('small', { textContent: BLURB[p.id] || '' })])]));
   }
 }
@@ -144,6 +145,10 @@ function compute() {
     if (!repo) return { ok: false, note: 'enter owner/repo' };
     return { ok: true, type: 'CNAME', value: `${owner(repo)}.github.io.`, form: { repo } };
   }
+  if (p.id === 'hosted') {
+    if (!D.sitesOrg) return { ok: false, note: 'hosting isn\'t switched on yet' };
+    return { ok: true, type: 'CNAME', value: `${D.sitesOrg.toLowerCase()}.github.io.`, form: {} };
+  }
   if (p.id === 'vercel') return { ok: true, type: 'CNAME', value: 'cname.vercel-dns.com.', form: {} };
   const raw = $('#target').value.trim().toLowerCase();
   if (p.input === 'ips') {
@@ -173,19 +178,22 @@ function updateRecord() {
   $('#record').textContent = text;
   $('#recordNote').textContent = r.ok ? `${name}.${D.domain}` : r.note;
   const send = $('#sendBtn');
+  const sendGh = $('#sendGh');
   const ready = r.ok && verdict(current).kind === 'free';
-  send.setAttribute('aria-disabled', String(!ready));
+  for (const b of [send, sendGh]) b.setAttribute('aria-disabled', String(!ready));
   if (ready) {
+    const desc = $('#desc').value.trim();
     const q = new URLSearchParams({
       template: 'request.yml',
       title: `Request: ${current}`,
       subdomain: current,
       provider: picked.label,
       ...r.form,
-      ...($('#desc').value.trim() ? { description: $('#desc').value.trim() } : {}),
+      ...(desc ? { description: desc } : {}),
     });
-    send.href = `https://github.com/${D.repo}/issues/new?${q}`;
-  } else send.removeAttribute('href');
+    sendGh.href = `https://github.com/${D.repo}/issues/new?${q}`;
+    send.href = `me/?${new URLSearchParams({ new: '', name: current, provider: picked.label, ...r.form, ...(desc ? { description: desc } : {}) })}`;
+  } else { send.removeAttribute('href'); sendGh.removeAttribute('href'); }
 }
 for (const id of ['#target', '#desc']) $(id).addEventListener('input', updateRecord);
 

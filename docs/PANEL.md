@@ -19,7 +19,9 @@ flowchart LR
 - **Audit log:** every action, who did it, and how it went, kept privately in Workers KV (shown in the console's *Activity* tab, maintainers only). The public 📜 activity log still gets one line per change.
 - **Fallbacks:** if the Worker is down, the console offers token mode (actions as comments), and slash commands always work.
 
-Cost: Cloudflare Workers + KV free tier (100k requests/day).
+- **Private requests** live in a D1 database (Cloudflare's SQLite): the request, the bot's review, a conversation with optional maintainers-only notes, and who decided what. Only the requester and maintainers can read one. Requests opened as public GitHub issues still work too.
+
+Cost: Cloudflare Workers + KV + D1 free tiers (100k requests/day).
 
 ## One-time setup (about 10 minutes)
 
@@ -42,7 +44,7 @@ Create it, copy the **Client ID**, then **Generate a new client secret** and cop
 
 ### 3. A Cloudflare token for deploying the Worker
 
-Cloudflare → My Profile → API Tokens → **Create Token** → template **Edit Cloudflare Workers** → *Account resources*: your account · *Zone resources*: `awesomeprojects.tech`. (The DNS token stays DNS-only.)
+Cloudflare → My Profile → API Tokens → **Create Token** → template **Edit Cloudflare Workers** → *Account resources*: your account · *Zone resources*: `awesomeprojects.tech`. Then **add one permission**: *Account → D1 → Edit* (the template doesn't include it, and private requests need it). The DNS token stays DNS-only.
 
 ### 4. Repository secrets
 

@@ -43,6 +43,7 @@ const CATALOG = [
   { cmd: '/site', who: 'maintainer', where: 'issues', usage: '/site <name> <active|locked|suspended|archived>', does: 'Change a hosted site\'s status: locked = owner read-only, suspended = also DNS off, archived = repo archived', admin: true },
   { cmd: '/site-sync', who: 'maintainer', where: 'issues', usage: '/site-sync <name>', does: 'Re-apply the standard repo setup (settings, workflow, Pages, access)', admin: true },
   { cmd: '/repo-access', who: 'maintainer', where: 'issues', usage: '/repo-access <name> @user <read|write|maintain|none>', does: 'Give someone access to a hosted site\'s repo (uses a seat)', admin: true },
+  { cmd: '/config', who: 'owner', where: 'issues', usage: '/config <setting> <value>', does: 'Change a bot setting (limits, holds, auto-merge…) (owner only)', admin: true, owner: true },
   { cmd: '/org-setup', who: 'owner', where: 'issues', usage: '/org-setup', does: 'Apply the org\'s safe defaults, rulesets, Actions policy and maintainers team (owner only)', admin: true, owner: true },
   { cmd: '/bot-check', who: 'owner', where: 'issues', usage: '/bot-check', does: 'Check the bot account\'s token and org role (owner only)', admin: true, owner: true },
   { cmd: '/promote', who: 'owner', where: 'issues', usage: '/promote @user', does: 'Make someone a maintainer (owner only)', admin: true, owner: true },
@@ -51,8 +52,21 @@ const CATALOG = [
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check']);
-const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config']);
+const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check', '/config']);
+
+/** Settings /config may change, and how to read the value. */
+const SETTINGS = {
+  maxPerOwner: { type: 'int', min: 1, max: 50, help: 'names per person' },
+  maxFilesPerRequest: { type: 'int', min: 1, max: 50, help: 'files per pull request' },
+  rejectAccountsYoungerThanDays: { type: 'int', min: 0, max: 365, help: 'reject accounts younger than this' },
+  holdAccountsYoungerThanDays: { type: 'int', min: 0, max: 730, help: 'hold accounts younger than this' },
+  holdBotScoreAtLeast: { type: 'int', min: 1, max: 6, help: 'throwaway signals that trigger a hold (6 = never)' },
+  autoMerge: { type: 'bool', help: 'merge ready requests without a maintainer' },
+  autoMergeMinAccountAgeDays: { type: 'int', min: 0, max: 3650, help: 'minimum account age for auto-merge' },
+  consentTimeoutDays: { type: 'int', min: 1, max: 365, help: 'days before a maintainer may stand in for an owner' },
+  holdNamesContaining: { type: 'list', help: 'comma-separated words that put a name on hold' },
+};
 const READ_ONLY = new Set(['/help', '/available', '/whois', '/mine', '/verify', '/stats']);
 
 /** First line of a comment → { cmd, args, rest } or null. Quotes group words: /txt a _x "b c". */
@@ -200,6 +214,25 @@ function adminEdit(cmd, args, { config, reserved, entries, owner }) {
       if (!(c.maintainers || []).map(lc).includes(who)) return { error: `@${who} isn't a maintainer.` };
       c.maintainers = c.maintainers.filter((u) => lc(u) !== who);
       return { config: c, message: `↩️ @${who} is no longer a maintainer` };
+    case '/config': {
+      const key = String(args[0] || '');
+      const spec = SETTINGS[key];
+      if (!spec) return { error: `Settings you can change: ${Object.keys(SETTINGS).map((k) => `\`${k}\``).join(', ')}.` };
+      const raw = args.slice(1).join(' ').trim();
+      let value;
+      if (spec.type === 'int') {
+        value = Number(raw);
+        if (!Number.isInteger(value) || value < spec.min || value > spec.max) return { error: `\`${key}\` must be a whole number from ${spec.min} to ${spec.max}.` };
+      } else if (spec.type === 'bool') {
+        if (!['true', 'false', 'on', 'off', 'yes', 'no'].includes(lc(raw))) return { error: `\`${key}\` must be true or false.` };
+        value = ['true', 'on', 'yes'].includes(lc(raw));
+      } else {
+        value = raw.split(',').map((w) => lc(w).trim()).filter(Boolean).slice(0, 200);
+        if (!value.length) return { error: `Give \`${key}\` a comma-separated list.` };
+      }
+      c[key] = value;
+      return { config: c, message: `⚙️ \`${key}\` = \`${Array.isArray(value) ? value.join(', ') : value}\`` };
+    }
     case '/lock':
       c.locked = args.join(' ') || true;
       return { config: c, message: `🔒 Requests paused${typeof c.locked === 'string' ? `: ${c.locked}` : ''}` };
@@ -212,4 +245,4 @@ function adminEdit(cmd, args, { config, reserved, entries, owner }) {
   }
 }
 
-module.exports = { CATALOG, ADMIN_ONLY, OWNER_ONLY, READ_ONLY, parseCommand, helpTable, availability, whois, mine, stats, adminEdit, fmtRecords, hostOf, PROVIDER_NAMES };
+module.exports = { CATALOG, ADMIN_ONLY, OWNER_ONLY, READ_ONLY, SETTINGS, parseCommand, helpTable, availability, whois, mine, stats, adminEdit, fmtRecords, hostOf, PROVIDER_NAMES };

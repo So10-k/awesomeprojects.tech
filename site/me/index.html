@@ -15,7 +15,7 @@
 </head>
 <body class="console">
   <header class="top">
-    <a class="brand" href="../" aria-label="awesomeprojects.tech home">awesomeprojects<span>.tech</span> <em>my domains</em></a>
+    <a class="brand" href="../" aria-label="awesomeprojects.tech home">awesomeprojects<span>.tech</span> <em>dns</em></a>
     <div class="who" id="who" hidden>
       <img id="whoAvatar" alt="" width="28" height="28">
       <span id="whoName"></span>
@@ -25,8 +25,8 @@
 
   <main>
     <section class="signin" id="signin" aria-labelledby="signin-title">
-      <h1 id="signin-title">Your names, in one place</h1>
-      <p class="lede">Point a name somewhere new, add the TXT record your host asks for, check that it's working, hand it to a friend, or let it go. Changes that pass the checks go live in about a minute.</p>
+      <h1 id="signin-title">Your names, your records</h1>
+      <p class="lede">Edit DNS records, add the TXT your host asks for, check it's working, follow your requests, hand a name to a friend, or let it go. Changes that pass the checks are live in about a minute.</p>
       <div class="gh-signin">
         <button class="btn primary big" id="ghLogin" type="button">Sign in with GitHub</button>
         <label class="check"><input type="checkbox" id="keep"> Keep me signed in on this device</label>
@@ -35,59 +35,17 @@
       </div>
     </section>
 
-    <section class="mine" id="mine" hidden aria-labelledby="mine-title">
-      <div class="mine-head">
-        <h1 id="mine-title">Your names <span class="muted" id="mineCount"></span></h1>
-        <a class="btn primary" id="claimMore" href="../#claim">Claim a name</a>
-      </div>
-      <p class="help" id="freshness"></p>
-      <div class="names" id="names"></div>
+    <section class="dns" id="app" hidden>
+      <aside class="side" aria-label="Your names and requests">
+        <div class="side-head"><h2>Names <span class="muted" id="nameCount"></span></h2></div>
+        <nav class="side-list" id="nameList"></nav>
+        <div class="side-head"><h2>Requests</h2></div>
+        <nav class="side-list" id="reqList"></nav>
+        <button class="btn primary side-new" id="newBtn" type="button">＋ New name</button>
+      </aside>
+      <div class="pane" id="pane" aria-live="polite"></div>
     </section>
   </main>
-
-  <template id="nameTpl">
-    <article class="name-card">
-      <div class="nc-top">
-        <a class="nc-name" target="_blank" rel="noopener"></a>
-        <span class="nc-host"></span>
-      </div>
-      <pre class="nc-record mono"></pre>
-      <p class="nc-desc"></p>
-      <ul class="nc-under"></ul>
-      <div class="card-actions">
-        <button class="btn" data-do="verify" type="button">Check it</button>
-        <button class="btn" data-do="change" type="button">Change where it points</button>
-        <button class="btn" data-do="txt" type="button">Add TXT record</button>
-        <a class="btn" data-do="transfer" target="_blank" rel="noopener">Transfer</a>
-        <button class="btn danger" data-do="remove" type="button">Remove</button>
-      </div>
-
-      <form class="nc-form" data-form="change" hidden>
-        <label>Host
-          <select name="provider"></select>
-        </label>
-        <label data-for="repo">GitHub repository <input name="repo" placeholder="you/your-site" spellcheck="false"></label>
-        <label data-for="target">Target <input name="target" spellcheck="false"></label>
-        <label>One line about it <input name="description" maxlength="200"></label>
-        <div class="row"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-cancel>Cancel</button></div>
-      </form>
-
-      <form class="nc-form" data-form="txt" hidden>
-        <label>Label <input name="label" placeholder="_vercel" required spellcheck="false"></label>
-        <label>Value <input name="value" placeholder="vc-domain-verify=…" required spellcheck="false"></label>
-        <p class="help">For verification records your host asks for. It's added under your name, e.g. <code>_vercel.yourname</code>.</p>
-        <div class="row"><button class="btn primary" type="submit">Add record</button><button class="btn" type="button" data-cancel>Cancel</button></div>
-      </form>
-
-      <form class="nc-form" data-form="remove" hidden>
-        <p>This removes the name <b>and everything under it</b>. Anyone could claim it afterwards.</p>
-        <label>Type <code class="nc-confirm-name"></code> to confirm <input name="confirm" required spellcheck="false" autocomplete="off"></label>
-        <div class="row"><button class="btn danger" type="submit">Remove it</button><button class="btn" type="button" data-cancel>Cancel</button></div>
-      </form>
-
-      <div class="nc-result md" hidden></div>
-    </article>
-  </template>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
   <script src="../session.js" defer></script>

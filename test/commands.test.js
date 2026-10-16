@@ -83,6 +83,12 @@ test('admin edits', () => {
   assert.deepEqual(C.adminEdit('/demote', ['carol'], { config: pro.config, reserved: [] }).config.maintainers, []);
   assert.match(C.adminEdit('/demote', ['boss'], { config: pro.config, reserved: [], owner: 'Boss' }).error, /owner/);
   assert.ok(C.OWNER_ONLY.has('/promote') && C.ADMIN_ONLY.has('/demote'));
+  assert.equal(C.adminEdit('/config', ['maxPerOwner', '5'], { config, reserved: [] }).config.maxPerOwner, 5);
+  assert.equal(C.adminEdit('/config', ['autoMerge', 'on'], { config, reserved: [] }).config.autoMerge, true);
+  assert.deepEqual(C.adminEdit('/config', ['holdNamesContaining', 'Login,', 'bank'], { config, reserved: [] }).config.holdNamesContaining, ['login', 'bank']);
+  assert.ok(C.adminEdit('/config', ['maxPerOwner', '999'], { config, reserved: [] }).error);
+  assert.ok(C.adminEdit('/config', ['maintainers', 'x'], { config, reserved: [] }).error, 'only allow-listed settings');
+  assert.ok(C.OWNER_ONLY.has('/config'));
 });
 
 test('request comments', () => {

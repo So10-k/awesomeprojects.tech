@@ -1,140 +1,431 @@
-// "My domains": sign in with GitHub, manage your own names. Every action goes to the bot through
-// api.awesomeprojects.tech, which checks it's yours and runs the same checks as a request.
+// My domains: a DNS manager over the panel server. Records edits, checks and requests go to the bot
+// privately (api.awesomeprojects.tech), which checks you own the name and runs the same rules as always.
 'use strict';
 
 const $ = (s, root = document) => root.querySelector(s);
-const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const lc = (s) => String(s || '').toLowerCase();
-let D = null;
+const h = (tag, props = {}, ...kids) => {
+  const n = Object.assign(document.createElement(tag), props);
+  for (const k of kids.flat()) if (k !== null && k !== undefined && k !== false) n.append(k);
+  return n;
+};
+const BASE_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
+
+let D = null; // ../data.json
 let me = null;
+let requests = [];
+let pick = { kind: 'name', id: null }; // name | req | new
+const pending = new Map(); // full name → records (optimistic, until data.json catches up)
 
 function toast(title, body, kind = '') {
-  const t = Object.assign(document.createElement('div'), { className: `toast ${kind}` });
-  t.append(Object.assign(document.createElement('b'), { textContent: title }), body || '');
+  const t = h('div', { className: `toast ${kind}` }, h('b', { textContent: title }), body || '');
   $('#toasts').append(t);
   setTimeout(() => t.remove(), 6000);
 }
 
-$('#ghLogin').addEventListener('click', () => Panel.login($('#keep').checked));
-$('#signOut').addEventListener('click', () => { Panel.logout(); location.reload(); });
-
-const records = (n) => `${n.name.padEnd(14)} ${n.type.padEnd(6)} ${n.target}`;
-
-function show() {
-  $('#signin').hidden = true;
-  $('#mine').hidden = false;
-  $('#who').hidden = false;
-  $('#whoName').textContent = `@${me.login}`;
-  if (me.avatar) $('#whoAvatar').src = `${me.avatar}${me.avatar.includes('?') ? '&' : '?'}s=56`;
-
-  const mineAll = D.names.filter((n) => lc(n.owner) === lc(me.login));
-  const top = mineAll.filter((n) => !n.name.includes('.'));
-  const limit = Object.entries(D.limits || {}).find(([u]) => lc(u) === lc(me.login))?.[1] ?? D.maxPerOwner;
-  const unlimited = me.role === 'owner' || me.role === 'maintainer';
-  $('#mineCount').textContent = unlimited ? `${top.length}` : `${top.length} of ${limit}`;
-  $('#claimMore').hidden = !unlimited && top.length >= limit;
-  $('#freshness').textContent = `Updated ${new Date(D.generatedAt).toLocaleString()}. After a change, this list catches up within a couple of minutes.`;
-
-  const box = $('#names');
-  box.replaceChildren();
-  if (!top.length) {
-    const e = Object.assign(document.createElement('div'), { className: 'empty-state' });
-    e.append('You don\'t have a name yet.', document.createElement('br'), Object.assign(document.createElement('a'), { className: 'btn primary', href: '../#claim', textContent: 'Find one' }));
-    box.append(e);
-    return;
+// ── Data helpers ───────────────────────────────────────────────
+const entriesUnder = (base) => D.names.filter((n) => n.name === base || n.name.endsWith(`.${base}`));
+const recordsOf = (full) => (pending.has(full) ? pending.get(full) : (D.names.find((n) => n.name === full) || {}).records || null);
+const myTop = () => D.names.filter((n) => !n.name.includes('.') && lc(n.owner) === lc(me.login)).sort((a, b) => a.name.localeCompare(b.name));
+function rows(base) {
+  const fulls = new Set([...entriesUnder(base).map((n) => n.name), ...[...pending.keys()].filter((k) => k === base || k.endsWith(`.${base}`))]);
+  const out = [];
+  for (const full of [...fulls].sort((a, b) => (a === base ? -1 : b === base ? 1 : a.localeCompare(b)))) {
+    const r = recordsOf(full);
+    if (!r) continue;
+    for (const [type, v] of Object.entries(r)) {
+      for (const x of [].concat(v)) out.push({ full, type, value: x, label: full === base ? '@' : full.slice(0, -(base.length + 1)) });
+    }
   }
-  for (const n of top) box.append(nameCard(n, mineAll.filter((x) => x.name.endsWith(`.${n.name}`))));
+  return out;
+}
+const show = (type, v) => (type === 'MX' ? (typeof v === 'string' ? `10 ${v}` : `${v.priority ?? 10} ${v.host}`) : String(v));
+
+/** Records object for `full` after removing `old` and/or adding `add` ({ type, value }). */
+function nextRecords(full, { old, add }) {
+  const cur = JSON.parse(JSON.stringify(recordsOf(full) || {}));
+  if (old) {
+    if (old.type === 'CNAME') delete cur.CNAME;
+    else {
+      const list = [].concat(cur[old.type] || []).filter((x) => JSON.stringify(x) !== JSON.stringify(old.value));
+      if (list.length) cur[old.type] = list; else delete cur[old.type];
+    }
+  }
+  if (add) {
+    if (add.type === 'CNAME') {
+      if (Object.keys(cur).some((t) => t !== 'CNAME')) throw new Error('A CNAME can\'t sit next to other records on the same name. Remove those first, or use another name.');
+      cur.CNAME = add.value;
+    } else {
+      if (cur.CNAME) throw new Error('This name has a CNAME, so it can\'t have other records too.');
+      const list = [].concat(cur[add.type] || []);
+      if (list.some((x) => JSON.stringify(x) === JSON.stringify(add.value))) throw new Error('That record already exists.');
+      cur[add.type] = [...list, add.value];
+    }
+  }
+  if (cur.TXT && cur.TXT.length === 1) cur.TXT = cur.TXT[0];
+  return Object.keys(cur).length ? cur : null;
 }
 
-function nameCard(n, under) {
-  const c = $('#nameTpl').content.firstElementChild.cloneNode(true);
-  const host = `${n.name}.${D.domain}`;
-  Object.assign($('.nc-name', c), { href: `https://${host}`, textContent: host });
-  $('.nc-host', c).textContent = n.host;
-  $('.nc-record', c).textContent = records(n);
-  $('.nc-desc', c).textContent = n.description || '';
-  for (const u of under) $('.nc-under', c).append(Object.assign(document.createElement('li'), { textContent: `${u.name.slice(0, -n.name.length - 1)} ${u.type}` }));
-  $('.nc-confirm-name', c).textContent = n.name;
-  $('[data-do="transfer"]', c).href = `https://github.com/${D.repo}/issues/new?template=transfer.yml&title=${encodeURIComponent(`Transfer: ${n.name}`)}&subdomain=${encodeURIComponent(n.name)}`;
-
-  const forms = $$('.nc-form', c);
-  const open = (which) => forms.forEach((f) => { f.hidden = f.dataset.form !== which || !f.hidden; });
-  for (const f of forms) $('[data-cancel]', f).addEventListener('click', () => { f.hidden = true; });
-
-  // Change: providers from data.json, prefilled with what's there now.
-  const form = $('[data-form="change"]', c);
-  const sel = form.provider;
-  for (const p of D.providers) sel.append(new Option(p.label, p.id));
-  const current = D.providers.find((p) => p.label === n.host || p.id === (n.repo ? 'github-pages' : '')) || D.providers.find((p) => p.id === (n.type === 'A' || n.type === 'AAAA' ? 'server' : 'cname'));
-  sel.value = current ? current.id : 'cname';
-  form.repo.value = n.repo || '';
-  form.target.value = n.type === 'CNAME' ? n.target : n.type === 'A' || n.type === 'AAAA' ? n.target : '';
-  form.description.value = n.description || '';
-  const sync = () => {
-    const p = D.providers.find((x) => x.id === sel.value);
-    $('[data-for="repo"]', form).hidden = p.input !== 'repo';
-    $('[data-for="target"]', form).hidden = !(p.input === 'target' || p.input === 'ips');
-    form.target.placeholder = p.input === 'ips' ? '203.0.113.7' : p.suffix ? `my-site${p.suffix}` : 'host.example.com';
-  };
-  sel.addEventListener('change', sync);
-  sync();
-
-  $('[data-do="verify"]', c).addEventListener('click', () => run(c, 'verify', { name: n.name }, 'Checking DNS and HTTPS…'));
-  $('[data-do="change"]', c).addEventListener('click', () => open('change'));
-  $('[data-do="txt"]', c).addEventListener('click', () => open('txt'));
-  $('[data-do="remove"]', c).addEventListener('click', () => open('remove'));
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const p = D.providers.find((x) => x.id === sel.value);
-    run(c, 'update', {
-      name: n.name,
-      provider: p.label,
-      repo: p.input === 'repo' ? form.repo.value : '',
-      target: p.input === 'target' || p.input === 'ips' ? form.target.value : '',
-      description: form.description.value,
-    }, 'Checking the new target…');
-    form.hidden = true;
-  });
-  $('[data-form="txt"]', c).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const f = e.target;
-    run(c, 'txt', { name: n.name, label: f.label.value, value: f.value.value }, 'Adding the record…');
-    f.hidden = true;
-  });
-  $('[data-form="remove"]', c).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const f = e.target;
-    if (lc(f.confirm.value.trim()) !== n.name) { toast('Type the name exactly to confirm.', '', 'err'); return; }
-    run(c, 'remove', { name: n.name }, 'Removing…');
-    f.hidden = true;
-  });
-  return c;
-}
-
-async function run(cardEl, action, args, busyText) {
-  const out = $('.nc-result', cardEl);
-  out.hidden = false;
-  out.className = 'nc-result md busy';
-  out.textContent = busyText;
-  for (const b of $$('button', cardEl)) b.disabled = true;
+// ── Running things ─────────────────────────────────────────────
+async function run(box, action, args, busy, onDone) {
+  box.hidden = false;
+  box.className = 'result busy md';
+  box.textContent = busy;
   try {
     const job = await Panel.run(action, args);
-    out.className = `nc-result md ${job.state === 'done' ? 'ok' : 'err'}`;
-    out.innerHTML = Panel.md(job.message || (job.state === 'done' ? 'Done.' : 'That didn\'t work.'));
+    box.className = `result md ${job.state === 'done' ? 'ok' : 'err'}`;
+    box.innerHTML = Panel.md(job.message || (job.state === 'done' ? 'Done.' : 'That didn\'t work.'));
+    if (job.state === 'done' && onDone) onDone();
+    return job;
   } catch (e) {
-    out.className = 'nc-result md err';
-    out.textContent = e.status === 401 ? 'Your sign-in expired. Sign in again.' : e.message;
-  } finally {
-    for (const b of $$('button', cardEl)) b.disabled = false;
+    box.className = 'result err';
+    box.textContent = e.status === 401 ? 'Your sign-in expired. Sign in again.' : e.message;
+    return null;
   }
 }
+
+// ── Sidebar ────────────────────────────────────────────────────
+function renderSide() {
+  const top = myTop();
+  const unlimited = me.role === 'owner' || me.role === 'maintainer';
+  const limit = Object.entries(D.limits || {}).find(([u]) => lc(u) === lc(me.login))?.[1] ?? D.maxPerOwner;
+  $('#nameCount').textContent = unlimited ? `(${top.length})` : `(${top.length}/${limit})`;
+  const list = $('#nameList');
+  list.replaceChildren();
+  for (const n of top) {
+    const b = h('button', { className: 'side-item', type: 'button', ariaCurrent: String(pick.kind === 'name' && pick.id === n.name) },
+      n.name, h('small', { textContent: n.status && n.status !== 'active' ? n.status : n.host }));
+    b.addEventListener('click', () => { pick = { kind: 'name', id: n.name }; render(); });
+    list.append(b);
+  }
+  if (!top.length) list.append(h('p', { className: 'side-empty', textContent: 'No names yet.' }));
+  const rl = $('#reqList');
+  rl.replaceChildren();
+  for (const r of requests.slice(0, 20)) {
+    const b = h('button', { className: 'side-item', type: 'button', ariaCurrent: String(pick.kind === 'req' && pick.id === r.id) },
+      r.name, h('small', {}, h('span', { className: `pill ${r.state}`, textContent: r.state })));
+    b.addEventListener('click', () => { pick = { kind: 'req', id: r.id }; render(); });
+    rl.append(b);
+  }
+  if (!requests.length) rl.append(h('p', { className: 'side-empty', textContent: 'None.' }));
+}
+
+// ── A name: the DNS manager ────────────────────────────────────
+function renderName(n) {
+  const pane = $('#pane');
+  const host = `${n.name}.${D.domain}`;
+  const hosted = n.host === 'Hosted by us';
+  const result = h('div', { className: 'result', hidden: true });
+  const facts = h('div', { className: 'facts' },
+    h('span', { className: 'fact', textContent: n.host }),
+    n.repo ? h('span', { className: 'fact' }, h('a', { href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: n.repo })) : null,
+    n.status ? h('span', { className: `pill ${n.status}`, textContent: n.status }) : null,
+    n.description ? h('span', { className: 'fact', textContent: n.description }) : null);
+  const check = h('button', { className: 'btn', type: 'button', textContent: 'Check it' });
+  check.addEventListener('click', () => run(result, 'verify', { name: n.name }, 'Checking DNS and HTTPS…'));
+
+  // Records table
+  const table = h('table', { className: 'records' }, h('thead', {}, h('tr', {}, ...['Type', 'Name', 'Content', ''].map((t) => h('th', { textContent: t })))));
+  const tbody = h('tbody');
+  for (const r of rows(n.name)) {
+    const managed = hosted && r.full === n.name;
+    const actions = h('td', { className: 'a' });
+    if (managed) actions.append(h('span', { className: 'lock', textContent: '🔒 managed' }));
+    else {
+      const edit = h('button', { className: 'icon-btn', type: 'button', textContent: 'Edit' });
+      edit.addEventListener('click', () => openForm({ label: r.label === '@' ? '' : r.label, type: r.type, value: r.value, old: r }));
+      const del = h('button', { className: 'icon-btn del', type: 'button', textContent: 'Delete' });
+      del.addEventListener('click', () => {
+        if (!confirm(`Delete ${r.type} ${r.label === '@' ? host : `${r.label}.${host}`} → ${show(r.type, r.value)}?`)) return;
+        save(r.full, { old: r });
+      });
+      actions.append(edit, del);
+    }
+    tbody.append(h('tr', {},
+      h('td', { className: 't', textContent: r.type }),
+      h('td', { className: 'n' }, r.label === '@' ? '@' : r.label, h('span', { textContent: r.label === '@' ? '' : `.${n.name}` })),
+      h('td', { className: 'c', textContent: show(r.type, r.value) + (pending.has(r.full) ? '  (updating…)' : '') }),
+      actions));
+  }
+  table.append(tbody);
+
+  // Add / edit form
+  const form = h('form', { className: 'rec-form', hidden: true });
+  const type = h('select', { name: 'type' }, ...['A', 'AAAA', 'CNAME', 'TXT', 'MX'].map((t) => new Option(t, t)));
+  const label = h('input', { name: 'label', placeholder: '@ or www', spellcheck: false, autocomplete: 'off' });
+  const content = h('input', { name: 'content', placeholder: '', spellcheck: false, autocomplete: 'off', required: true });
+  const prio = h('input', { name: 'prio', type: 'number', min: 0, max: 65535, value: 10, hidden: true, style: 'width:5rem' });
+  const hint = { A: '203.0.113.7', AAAA: '2001:db8::7', CNAME: 'something.example.com', TXT: 'verification string', MX: 'mx1.example.com' };
+  const syncType = () => { content.placeholder = hint[type.value]; prio.hidden = type.value !== 'MX'; };
+  type.addEventListener('change', syncType);
+  let editing = null;
+  const cancel = h('button', { className: 'btn', type: 'button', textContent: 'Cancel' });
+  cancel.addEventListener('click', () => { form.hidden = true; editing = null; });
+  form.append(
+    h('label', {}, 'Type', type),
+    h('label', {}, 'Name', h('div', { className: 'suffix-wrap' }, label, h('span', { textContent: `.${n.name}` }))),
+    h('label', {}, 'Content', h('div', { className: 'row' }, prio, content)),
+    h('div', { className: 'row' }, h('button', { className: 'btn primary', type: 'submit', textContent: 'Save' }), cancel));
+  function openForm(v = {}) {
+    form.hidden = false;
+    editing = v.old || null;
+    type.value = v.type || 'A';
+    label.value = v.label || '';
+    content.value = v.value ? (v.type === 'MX' ? (typeof v.value === 'string' ? v.value : v.value.host) : String(v.value)) : '';
+    prio.value = v.type === 'MX' && typeof v.value === 'object' ? v.value.priority ?? 10 : 10;
+    syncType();
+    content.focus();
+  }
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const lab = lc(label.value.trim()).replace(/^@$/, '').replace(new RegExp(`\\.?${n.name.replace(/[.]/g, '\\.')}(\\.${D.domain.replace(/[.]/g, '\\.')})?$`), '');
+    if (lab && !lab.split('.').every((l) => /^_?[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?$/.test(l))) { toast('That name isn\'t valid', 'Use letters, numbers, dashes, and a leading _ for verification records.', 'err'); return; }
+    const full = lab ? `${lab}.${n.name}` : n.name;
+    if (hosted && full === n.name) { toast('Managed record', `${host} itself points at your hosted site. Add records under it instead (like www).`, 'err'); return; }
+    let value = content.value.trim();
+    if (type.value === 'MX') value = { host: lc(value).replace(/\.$/, ''), priority: Number(prio.value) || 10 };
+    else if (type.value !== 'TXT') value = lc(value).replace(/\.$/, '');
+    try {
+      if (editing && editing.full !== full) {
+        save(editing.full, { old: editing }, { quiet: true });
+        save(full, { add: { type: type.value, value } });
+      } else save(full, { old: editing, add: { type: type.value, value } });
+      form.hidden = true;
+    } catch (err) { toast('Can\'t add that', err.message, 'err'); }
+  });
+  const add = h('button', { className: 'btn primary', type: 'button', textContent: '＋ Add record' });
+  add.addEventListener('click', () => openForm({ label: '' }));
+
+  function save(full, change, { quiet } = {}) {
+    const records = nextRecords(full, change);
+    run(result, 'records', { name: full, records }, quiet ? 'Saving…' : `Saving ${full}.${D.domain}…`, () => {
+      pending.set(full, records);
+      renderName(n);
+      setTimeout(refreshData, 90000);
+    });
+  }
+
+  // Danger zone
+  const transfer = h('a', { className: 'btn', target: '_blank', rel: 'noopener', textContent: 'Transfer…', href: `https://github.com/${D.repo}/issues/new?template=transfer.yml&title=${encodeURIComponent(`Transfer: ${n.name}`)}&subdomain=${encodeURIComponent(n.name)}` });
+  const remove = h('button', { className: 'btn danger', type: 'button', textContent: 'Remove name…' });
+  remove.addEventListener('click', () => {
+    const typed = prompt(`This removes ${host} and every record under it${hosted ? ', and archives its repo' : ''}. Anyone could claim it afterwards.\n\nType ${n.name} to confirm.`);
+    if (lc(typed || '').trim() !== n.name) return;
+    run(result, 'remove', { name: n.name }, 'Removing…', () => setTimeout(refreshData, 90000));
+  });
+
+  fill(pane,
+    h('div', { className: 'pane-head' },
+      h('div', {}, h('h1', {}, h('a', { href: `https://${host}`, target: '_blank', rel: 'noopener', textContent: host })), facts),
+      check),
+    result,
+    h('section', { className: 'card-box' },
+      h('header', {}, h('h2', { textContent: 'DNS records' }), add),
+      table, form),
+    hosted ? h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Your repo' })),
+      h('div', { className: 'body' },
+        h('p', {}, 'Push to ', h('code', { textContent: 'main' }), ' and it\'s live a minute later. Workflows are managed for you.'),
+        h('div', { className: 'danger-row' },
+          h('a', { className: 'btn', href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: 'Open the repo' }),
+          h('a', { className: 'btn', href: `https://github.com/${n.repo}/invitations`, target: '_blank', rel: 'noopener', textContent: 'Accept the invite' }),
+          h('a', { className: 'btn', href: `https://github.com/${n.repo}/actions`, target: '_blank', rel: 'noopener', textContent: 'Deploys' })))) : null,
+    h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Name' })),
+      h('div', { className: 'body' }, h('div', { className: 'danger-row' }, transfer, remove))));
+}
+
+// ── A request ──────────────────────────────────────────────────
+const ICON = { pass: '✅', info: 'ℹ️', hold: '⏸️', error: '✏️', reject: '⛔' };
+const LABELS = { format: 'Format & records', ownership: 'Ownership', account: 'Account age', bot: 'Bot check', limit: 'Subdomains you own', name: 'Name check', target: 'Target is live', repo: 'Repository', consent: 'Consent' };
+const STATE_TEXT = {
+  checking: 'The bot is checking it…',
+  ready: 'Everything checks out. A maintainer will approve it soon.',
+  'on-hold': 'Waiting on a maintainer\'s look. Nothing for you to do.',
+  'needs-changes': 'A few things to fix: edit the request below.',
+  approving: 'Approved! Setting it up…',
+  live: 'It\'s live.',
+  rejected: 'This request wasn\'t accepted.',
+  cancelled: 'You cancelled this request.',
+};
+let reqTimer = null;
+
+async function renderRequest(id) {
+  clearTimeout(reqTimer);
+  const pane = $('#pane');
+  let data;
+  try { data = await Panel.request(id); } catch (e) { pane.replaceChildren(h('p', { className: 'error', textContent: e.message })); return; }
+  const r = data.request;
+  const open = !['live', 'rejected', 'cancelled'].includes(r.state);
+  const findings = (r.review && r.review.findings) || [];
+  const table = h('table', { className: 'records check-table' }, h('tbody', {},
+    ...Object.entries(LABELS).map(([k, label]) => {
+      const fs = findings.filter((f) => f.check === k);
+      if (!fs.length) return null;
+      const rank = { pass: 0, info: 1, hold: 2, error: 3, reject: 4 };
+      const worst = fs.reduce((a, f) => (rank[f.level] > rank[a.level] ? f : a));
+      const shown = worst.level === 'pass' || worst.level === 'info' ? fs : fs.filter((f) => f.level !== 'pass');
+      const cell = h('td', { className: 'md' });
+      cell.innerHTML = shown.map((f) => Panel.md(f.text).replace(/^<p>|<\/p>$/g, '')).join('<br>');
+      return h('tr', {}, h('td', { textContent: ICON[worst.level] }), h('td', { textContent: label }), cell);
+    })));
+  const thread = h('div', { className: 'thread' });
+  for (const n of data.notes) {
+    const body = h('div', { className: 'md' });
+    body.innerHTML = Panel.md(n.body);
+    thread.append(h('article', { className: `msg ${n.author === 'bot' ? 'bot' : ''}` },
+      h('header', {}, h('b', { textContent: n.author === 'bot' ? '🤖 bot' : `@${n.author}` }), new Date(n.created_at).toLocaleString()), body));
+  }
+  const noteForm = h('form', { className: 'note-form' }, h('textarea', { name: 'body', placeholder: 'Write to the maintainers…', required: true }), h('div', { className: 'row' }, h('button', { className: 'btn', type: 'submit', textContent: 'Send' })));
+  noteForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await Panel.requestDo(id, 'note', { body: noteForm.body.value }); renderRequest(id); } catch (err) { toast('Couldn\'t send', err.message, 'err'); }
+  });
+  const actions = h('div', { className: 'danger-row' });
+  if (open && r.state !== 'approving') {
+    const edit = h('button', { className: 'btn', type: 'button', textContent: 'Edit request' });
+    edit.addEventListener('click', () => renderNew({ editing: r }));
+    const cancel = h('button', { className: 'btn danger', type: 'button', textContent: 'Cancel request' });
+    cancel.addEventListener('click', async () => {
+      if (!confirm(`Cancel your request for ${r.name}?`)) return;
+      await Panel.requestDo(id, 'cancel').catch((err) => toast('Couldn\'t cancel', err.message, 'err'));
+      await loadRequests();
+      render();
+    });
+    actions.append(edit, cancel);
+  }
+  const guide = r.result && r.result.guide ? h('div', { className: 'md' }) : null;
+  if (guide) guide.innerHTML = Panel.md(r.result.guide);
+  fill(pane,
+    h('div', { className: 'pane-head' },
+      h('div', {}, h('h1', { textContent: `${r.name}.${D.domain}` }),
+        h('div', { className: 'facts' }, h('span', { className: `pill ${r.state}`, textContent: r.state }), h('span', { className: 'fact', textContent: r.form.provider }), h('span', { className: 'fact', textContent: `asked ${new Date(r.createdAt).toLocaleDateString()}` }))),
+      actions),
+    h('p', { className: 'lede', textContent: STATE_TEXT[r.state] || '' }),
+    guide ? h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Next steps' })), h('div', { className: 'body' }, guide)) : null,
+    findings.length ? h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'What the bot checked' })), table) : null,
+    h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Conversation' })), h('div', { className: 'body' }, data.notes.length ? thread : h('p', { className: 'muted', textContent: 'No messages yet.' }), open ? noteForm : null)));
+  if (['checking', 'approving'].includes(r.state)) reqTimer = setTimeout(() => { if (pick.kind === 'req' && pick.id === id) { renderRequest(id); loadRequests().then(renderSide); } }, 4000);
+}
+
+// ── New request ────────────────────────────────────────────────
+function renderNew({ editing } = {}) {
+  const pane = $('#pane');
+  const f = editing ? editing.form : {};
+  const name = h('input', { name: 'name', placeholder: 'yourname', value: editing ? editing.name : '', disabled: !!editing, spellcheck: false, autocomplete: 'off', required: true });
+  const avail = h('p', { className: 'help' });
+  const prov = h('select', { name: 'provider' }, ...D.providers.map((p) => new Option(p.label, p.label)));
+  prov.value = f.provider || D.providers[0].label;
+  const repo = h('input', { name: 'repo', placeholder: 'you/your-site', value: f.repo || '', spellcheck: false });
+  const target = h('input', { name: 'target', value: f.target || '', spellcheck: false });
+  const desc = h('input', { name: 'description', maxLength: 200, value: f.description || '', placeholder: 'My portfolio' });
+  const repoL = h('label', {}, 'GitHub repository', repo);
+  const targetL = h('label', {}, 'Target', target);
+  const sync = () => {
+    const p = D.providers.find((x) => x.label === prov.value);
+    repoL.hidden = p.input !== 'repo';
+    targetL.hidden = !(p.input === 'target' || p.input === 'ips');
+    target.placeholder = p.input === 'ips' ? '203.0.113.7' : p.suffix ? `my-site${p.suffix}` : 'host.example.com';
+  };
+  prov.addEventListener('change', sync);
+  const check = () => {
+    const v = lc(name.value.trim());
+    if (editing || !v) { avail.textContent = ''; return; }
+    avail.textContent = !BASE_LABEL.test(v) ? '✏️ a-z, 0-9 and dashes; no dash at the ends'
+      : D.reserved.includes(v) ? '⛔ reserved'
+        : D.names.some((n) => n.name === v) ? `🔒 taken by @${D.names.find((n) => n.name === v).owner}`
+          : `✅ ${v}.${D.domain} is free`;
+  };
+  name.addEventListener('input', check);
+  const result = h('div', { className: 'result', hidden: true });
+  const form = h('form', { className: 'form-grid' },
+    h('label', {}, 'Name', h('div', { className: 'suffix-wrap' }, name, h('span', { textContent: `.${D.domain}` })), avail),
+    h('label', {}, 'Where should it point?', prov), repoL, targetL,
+    h('label', {}, 'One line about it', desc),
+    h('div', { className: 'row' }, h('button', { className: 'btn primary', type: 'submit', textContent: editing ? 'Save changes' : 'Send request' })),
+    h('p', { className: 'help', textContent: 'Only you and the maintainers can see your request.' }));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const p = D.providers.find((x) => x.label === prov.value);
+    const body = { name: lc(name.value.trim()), provider: prov.value, repo: p.input === 'repo' ? repo.value : '', target: p.input === 'target' || p.input === 'ips' ? target.value : '', description: desc.value };
+    result.hidden = false;
+    result.className = 'result busy';
+    result.textContent = 'Sending…';
+    try {
+      let id;
+      if (editing) { await Panel.requestDo(editing.id, 'edit', body); id = editing.id; } else id = (await Panel.newRequest(body)).request.id;
+      await loadRequests();
+      pick = { kind: 'req', id };
+      render();
+    } catch (err) {
+      result.className = 'result err';
+      result.textContent = err.message;
+    }
+  });
+  pane.replaceChildren(h('div', { className: 'pane-head' }, h('h1', { textContent: editing ? `Edit ${editing.name}` : 'Get a new name' })), result,
+    h('section', { className: 'card-box' }, h('div', { className: 'body' }, form)));
+  sync();
+  check();
+  if (!editing) {
+    // Arriving from the website's "Claim" flow: everything is pre-filled.
+    const q = new URLSearchParams(location.search);
+    if (q.get('name')) name.value = q.get('name');
+    if (q.get('provider') && D.providers.some((p) => p.label === q.get('provider'))) prov.value = q.get('provider');
+    if (q.get('repo')) repo.value = q.get('repo');
+    if (q.get('target')) target.value = q.get('target');
+    if (q.get('description')) desc.value = q.get('description');
+    sync();
+    check();
+    name.focus();
+  }
+}
+
+// ── Shell ──────────────────────────────────────────────────────
+function render() {
+  renderSide();
+  if (pick.kind === 'new') return renderNew();
+  if (pick.kind === 'req') return renderRequest(pick.id);
+  const n = myTop().find((x) => x.name === pick.id) || myTop()[0];
+  if (!n) {
+    $('#pane').replaceChildren(h('div', { className: 'empty-state' }, h('p', { textContent: 'You don\'t have a name yet.' }), h('button', { className: 'btn primary', type: 'button', textContent: 'Get one', onclick: () => { pick = { kind: 'new' }; render(); } })));
+    return;
+  }
+  pick = { kind: 'name', id: n.name };
+  renderSide();
+  renderName(n);
+}
+async function loadRequests() {
+  requests = await Panel.requests().then((d) => d.requests, () => []);
+}
+async function refreshData() {
+  const fresh = await fetch('../data.json', { cache: 'no-cache' }).then((r) => r.json()).catch(() => null);
+  if (!fresh) return;
+  D = fresh;
+  for (const [full, recs] of pending) {
+    const cur = (D.names.find((n) => n.name === full) || {}).records || null;
+    if (JSON.stringify(cur) === JSON.stringify(recs)) pending.delete(full);
+  }
+  if (pick.kind === 'name') render();
+}
+
+$('#ghLogin').addEventListener('click', () => Panel.login($('#keep').checked));
+$('#signOut').addEventListener('click', () => { Panel.logout(); location.reload(); });
+$('#newBtn').addEventListener('click', () => { pick = { kind: 'new' }; render(); });
 
 fetch('../data.json', { cache: 'no-cache' }).then((r) => r.json()).then(async (data) => {
   D = data;
   Panel.setApi(D.panelApi);
   if (Panel.signedIn()) {
-    try { me = await Panel.me(); return show(); } catch { Panel.logout(); }
+    try {
+      me = await Panel.me();
+      $('#signin').hidden = true;
+      $('#app').hidden = false;
+      $('#who').hidden = false;
+      $('#whoName').textContent = `@${me.login}`;
+      if (me.avatar) $('#whoAvatar').src = `${me.avatar}${me.avatar.includes('?') ? '&' : '?'}s=56`;
+      await loadRequests();
+      if (new URLSearchParams(location.search).get('new') !== null || new URLSearchParams(location.search).get('name')) pick = { kind: 'new' };
+      return render();
+    } catch { Panel.logout(); }
   }
   if (!(await Panel.up())) { $('#panelDown').hidden = false; $('#ghLogin').disabled = true; }
 }).catch(() => toast('Couldn\'t load your names', 'Reload the page.', 'err'));
