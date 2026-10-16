@@ -102,6 +102,9 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 | Command | Where | What it does |
 |---|---|---|
 | `/approve` | request issue, PR | Re-checks, clears holds, writes the record, merges, deploys, posts next steps |
+| `/approve force` | request issue, PR | Also overrides the **automated blockers**: limits, reserved names, account age, bot signals, bans, seat cap, hosted-site limits, dead targets. **Never** overrides broken records (bad IPs or hostnames, invalid JSON) or someone else's name (use a transfer). Overridden checks are struck through on the review and logged as forced. Console: *Force approve*. |
+| `/create <name> @user <host> [target\|repo\|template] [force]` | any issue | Make a name for someone: `hosted` (with a template), `github`, `vercel`, `netlify`, `cloudflare`, `render`, `railway`, `fly`, `cname`, `server`. Same checks, and `force` works as above. Console: *Create*. Forcing a **reserved** name hands it to DNSControl, so any hand-made Cloudflare record at that name is replaced. |
+| `/make-repo <repo> @user [template]` | any issue | A private repo in the sites org with no domain, from a template, with the person invited (a seat) and the maintainers team added |
 | `/reject <reason>` | request issue, PR | Closes it with your reason quoted |
 | `/hold <reason>` · `/unhold` | request issue, PR | Pause / resume (label `manual-hold`) |
 | `/takedown <name> <note>` | any issue | Removes a name and everything under it, right now. On a report, the name is optional. |

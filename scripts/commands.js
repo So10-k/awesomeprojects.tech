@@ -27,6 +27,9 @@ const CATALOG = [
   { cmd: '/accept', who: 'new owner', where: 'transfer', usage: '/accept', does: 'Accept a name someone is handing you' },
   // Maintainers
   { cmd: '/approve', who: 'maintainer', where: 'request', usage: '/approve', does: 'Approve and go live now (clears holds)', admin: true },
+  { cmd: '/approve', who: 'maintainer', where: 'request', usage: '/approve force', does: 'Approve and override the automated blockers too (limits, reserved names, account checks, seats). Broken records and other people\'s names still can\'t pass.', admin: true },
+  { cmd: '/create', who: 'maintainer', where: 'issues', usage: '/create <name> @user <host> [target|repo|template] [force]', does: 'Make a name for someone. Host: hosted, github, vercel, netlify, cloudflare, render, railway, fly, cname, server. Add "force" to skip the automated blockers.', admin: true },
+  { cmd: '/make-repo', who: 'maintainer', where: 'issues', usage: '/make-repo <repo> @user [template]', does: 'Make a private repo in the sites org for someone (no domain), from a template', admin: true },
   { cmd: '/reject', who: 'maintainer', where: 'request', usage: '/reject <reason>', does: 'Close a request with a reason', admin: true },
   { cmd: '/hold', who: 'maintainer', where: 'request', usage: '/hold <reason>', does: 'Pause a request', admin: true },
   { cmd: '/unhold', who: 'maintainer', where: 'request', usage: '/unhold', does: 'Resume it', admin: true },
@@ -58,7 +61,7 @@ const CATALOG = [
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats', '/create', '/make-repo']);
 const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check', '/config']);
 
 /** Settings /config may change, and how to read the value. */

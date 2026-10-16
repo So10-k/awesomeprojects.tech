@@ -21,14 +21,16 @@ var records = [
 for (var g = 0; g < GITHUB_PAGES_A.length; g++) records.push(A("@", GITHUB_PAGES_A[g], CF_PROXY_OFF));
 for (var h = 0; h < GITHUB_PAGES_AAAA.length; h++) records.push(AAAA("@", GITHUB_PAGES_AAAA[h], CF_PROXY_OFF));
 
-// Hands off every other reserved name.
+// Hands off every other reserved name, unless a maintainer forced one into domains/.
+var files = glob("./domains/", false, ".json");
+var claimed = {};
+for (var c = 0; c < files.length; c++) claimed[files[c].split("/").pop().replace(/\.json$/, "").split(".").pop()] = true;
 for (var i = 0; i < reserved.length; i++) {
-  if (MANAGED_RESERVED[reserved[i]]) continue;
+  if (MANAGED_RESERVED[reserved[i]] || claimed[reserved[i]]) continue;
   records.push(IGNORE(reserved[i]));
   records.push(IGNORE("*." + reserved[i]));
 }
 
-var files = glob("./domains/", false, ".json");
 for (var f = 0; f < files.length; f++) {
   var name = files[f].split("/").pop().replace(/\.json$/, "");
   var entry = require(files[f]);

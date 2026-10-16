@@ -109,7 +109,7 @@ export const ACTIONS = {
     }),
   },
   // Maintainers
-  approve: { role: 'maintainer', build: (a) => ({ command: '/approve', target: issueNo(a.number) }) },
+  approve: { role: 'maintainer', build: (a) => ({ command: a.force ? '/approve force' : '/approve', target: issueNo(a.number) }) },
   reject: { role: 'maintainer', build: (a) => ({ command: `/reject${opt(a.reason)}`, target: issueNo(a.number) }) },
   hold: { role: 'maintainer', build: (a) => ({ command: `/hold${opt(a.reason)}`, target: issueNo(a.number) }) },
   unhold: { role: 'maintainer', build: (a) => ({ command: '/unhold', target: issueNo(a.number) }) },
@@ -160,6 +160,23 @@ export const ACTIONS = {
       const op = clean(a.op, 10).toLowerCase() || 'add';
       if (!['add', 'remove'].includes(op)) throw new Error('Add or remove.');
       return { command: `/site-collab ${name(a.name)} @${user(a.user)} ${op}` };
+    },
+  },
+  create: {
+    role: 'maintainer',
+    build: (a) => ({
+      create: {
+        name: name(a.name), owner: user(a.owner), provider: clean(a.provider, 60), repo: clean(a.repo, 140),
+        target: clean(a.target, 300), template: clean(a.template, 40), description: clean(a.description, 200), force: !!a.force,
+      },
+    }),
+  },
+  'make-repo': {
+    role: 'maintainer',
+    build: (a) => {
+      const r = clean(a.repo, 100).toLowerCase();
+      if (!/^[a-z0-9._-]{1,100}$/.test(r)) throw new Error('Repo names: letters, numbers, . _ -');
+      return { command: `/make-repo ${r} @${user(a.user)} ${clean(a.template, 40) || 'html'}` };
     },
   },
   'suspend-user': { role: 'maintainer', build: (a) => ({ command: `/suspend-user @${user(a.user)}${opt(a.reason)}` }) },
@@ -297,7 +314,7 @@ async function action(req, env, s) {
   await env.PANEL.put(rk, String(used + 1), { expirationTtl: RATE.windowSec * 2 });
 
   const id = newId();
-  const summary = built.update ? `update ${built.update.name}` : built.records ? `records ${built.records.name}${built.records.records === null ? ' (delete)' : ''}` : `${built.command}${built.target ? ` on #${built.target}` : ''}`;
+  const summary = built.create ? `create ${built.create.name} for @${built.create.owner}${built.create.force ? ' (forced)' : ''}` : built.update ? `update ${built.update.name}` : built.records ? `records ${built.records.name}${built.records.records === null ? ' (delete)' : ''}` : `${built.command}${built.target ? ` on #${built.target}` : ''}`;
   const key = auditKey(now, id);
   const job = { id, actor: s.login, role, action: body.action, summary, state: 'queued', at: now, auditKey: key };
   await env.PANEL.put(`job:${id}`, JSON.stringify(job), { expirationTtl: 7 * 86400 });
@@ -502,9 +519,9 @@ async function requests(req, env, s, url, parts) {
     } else if (decision === 'recheck') {
       await env.DB.prepare(`UPDATE requests SET state = 'checking', updated_at = ?2 WHERE id = ?1`).bind(id, now).run();
       await requestReview(env, row, form);
-    } else if (decision === 'approve') {
+    } else if (decision === 'approve' || decision === 'force-approve') {
       await env.DB.prepare(`UPDATE requests SET state = 'approving', decided_by = ?2, updated_at = ?3 WHERE id = ?1`).bind(id, s.login, now).run();
-      await dispatch(env, { kind: 'approve', request: id, actor: s.login, requester: row.requester, form });
+      await dispatch(env, { kind: 'approve', request: id, actor: s.login, requester: row.requester, form, force: decision === 'force-approve' });
     } else return fail(req, env, 400, 'Unknown decision.');
     await audited(`${decision} request ${row.name}${reason ? `: ${reason}` : ''}`, id);
     return json(req, env, { ok: true });

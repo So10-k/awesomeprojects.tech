@@ -18,7 +18,7 @@ const config = {
 };
 
 /** Review a PR by `author` that applies `files` ({ name: data | null }) on top of `base`. */
-function run({ author = 'alice', profile, base = {}, files = {}, comments = [], labels = [], dns = {}, maintainers = ['boss'], cfg = {}, overrideHolds } = {}) {
+function run({ author = 'alice', profile, base = {}, files = {}, comments = [], labels = [], dns = {}, maintainers = ['boss'], cfg = {}, overrideHolds, overrideAll } = {}) {
   const head = { ...base };
   const changes = [];
   for (const [n, data] of Object.entries(files)) {
@@ -29,7 +29,7 @@ function run({ author = 'alice', profile, base = {}, files = {}, comments = [], 
   }
   return review({
     author, profile: profile === undefined ? person(author) : profile, changes, base, head, comments, labels, dns,
-    reserved: ['www'], config: { ...config, ...cfg }, maintainers, now: NOW, overrideHolds,
+    reserved: ['www'], config: { ...config, ...cfg }, maintainers, now: NOW, overrideHolds, overrideAll, by: 'boss',
   });
 }
 const levels = (r, check) => r.findings.filter((f) => f.check === check).map((f) => f.level);
@@ -145,7 +145,7 @@ test('manual hold, and a maintainer overriding it', () => {
   const r = run({ files: { alice: entry('alice') }, labels: ['manual-hold'], overrideHolds: true });
   assert.equal(r.verdict, 'ready');
   assert.ok(!r.findings.some((f) => f.level === 'hold'), 'no hold rows left under a ready headline');
-  assert.match(r.findings.find((f) => f.check === 'consent').text, /approved by a maintainer/);
+  assert.match(r.findings.find((f) => f.check === 'consent').text, /approved by (a maintainer|@boss)/);
 });
 
 test('consents are read from the first word of comments', () => {
@@ -162,4 +162,21 @@ test('the review comment shows every check', () => {
     assert.ok(md.includes(label), label);
   }
   assert.match(md, /Waiting for:\*\* a maintainer/);
+});
+
+test('force: policy blockers are overridden, broken records and other people\'s names are not', () => {
+  // Too young + bot + over the limit + reserved + dangling target: all forceable.
+  const base = { a1: entry('alice'), a2: entry('alice'), a3: entry('alice') };
+  const young = person('alice', 2, { type: 'Bot' });
+  assert.equal(run({ profile: young, base, files: { www: entry('alice', { CNAME: 'gone.example.com' }) }, dns: { 'gone.example.com': false } }).verdict, 'rejected');
+  const forced = run({ profile: young, base, files: { www: entry('alice', { CNAME: 'gone.example.com' }) }, dns: { 'gone.example.com': false }, overrideAll: true });
+  assert.equal(forced.verdict, 'ready');
+  assert.ok(forced.overridden >= 4);
+  assert.ok(forced.findings.some((f) => /overridden by @boss/.test(f.text)));
+  // Broken records stay blocked.
+  assert.equal(run({ files: { alice: entry('alice', { A: ['10.0.0.1'] }) }, overrideAll: true }).verdict, 'needs-changes');
+  // Someone else's name stays blocked.
+  assert.equal(run({ base: { bob: entry('bob') }, files: { bob: entry('alice') }, overrideAll: true }).verdict, 'rejected');
+  // Banned is forceable (a maintainer decided).
+  assert.equal(run({ files: { alice: entry('alice') }, cfg: { bannedUsers: ['alice'] }, overrideAll: true }).verdict, 'ready');
 });

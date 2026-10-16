@@ -58,6 +58,9 @@ test('sessions: signed, tamper-proof, expiring', async () => {
 test('actions build safe commands and reject junk', () => {
   assert.deepEqual(ACTIONS.ban.build({ user: '@Mallory', reason: 'spam\n/unlock' }), { command: '/ban @Mallory spam /unlock' }, 'newlines can\'t start a second command');
   assert.deepEqual(ACTIONS.approve.build({ number: '41' }), { command: '/approve', target: 41 });
+  assert.deepEqual(ACTIONS.approve.build({ number: 41, force: true }), { command: '/approve force', target: 41 });
+  assert.equal(ACTIONS.create.build({ name: 'Neo', owner: '@Alice', provider: 'hosted', template: 'next', force: 1 }).create.force, true);
+  assert.throws(() => ACTIONS['make-repo'].build({ repo: 'bad name!', user: 'a' }));
   assert.deepEqual(ACTIONS.txt.build({ name: 'alice', label: '_vercel', value: 'a "b" c' }), { command: '/txt alice _vercel "a b c"' });
   assert.deepEqual(ACTIONS.takedown.build({ name: 'evil', reason: 'phish' }), { command: '/takedown evil phish' });
   assert.deepEqual(ACTIONS.takedown.build({ number: 9 }), { command: '/takedown', target: 9 });
