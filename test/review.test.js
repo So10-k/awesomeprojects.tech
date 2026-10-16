@@ -140,8 +140,12 @@ test('dangling targets need changes', () => {
   assert.deepEqual(levels(r, 'target'), ['error']);
 });
 
-test('manual hold', () => {
+test('manual hold, and a maintainer overriding it', () => {
   assert.equal(run({ files: { alice: entry('alice') }, labels: ['manual-hold'] }).verdict, 'on-hold');
+  const r = run({ files: { alice: entry('alice') }, labels: ['manual-hold'], overrideHolds: true });
+  assert.equal(r.verdict, 'ready');
+  assert.ok(!r.findings.some((f) => f.level === 'hold'), 'no hold rows left under a ready headline');
+  assert.match(r.findings.find((f) => f.check === 'consent').text, /approved by a maintainer/);
 });
 
 test('consents are read from the first word of comments', () => {

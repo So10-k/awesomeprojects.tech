@@ -116,11 +116,19 @@ async function reviewPR(number, { overrideHolds = false } = {}) {
 }
 
 async function mergePR(pr, result) {
-  try {
-    await gh.put(`${R_}/pulls/${pr.number}/merge`, { merge_method: 'squash', sha: pr.head.sha });
-  } catch (e) {
-    await reply(pr.number, `⚠️ I couldn't merge this automatically (${e.message}). A maintainer will merge it by hand.`);
-    return false;
+  // Another merge can land on main a moment earlier ("Base branch was modified"): wait and retry.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await gh.put(`${R_}/pulls/${pr.number}/merge`, { merge_method: 'squash', sha: pr.head.sha });
+      break;
+    } catch (e) {
+      if (e.status === 405 && /base branch was modified/i.test(e.message) && attempt < 5) {
+        await new Promise((r) => setTimeout(r, 3000 * attempt));
+        continue;
+      }
+      await reply(pr.number, `⚠️ I couldn't merge this automatically (${e.message}). Comment \`/approve\` to try again, or merge it by hand.`);
+      return false;
+    }
   }
   await deploy();
   if (result) await upsertComment(pr.number, 'review', reviewComment(result, { merged: true }));
