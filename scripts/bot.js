@@ -67,7 +67,7 @@ function mainTree() {
 // ── Pull requests ───────────────────────────────────────────────
 async function reviewPR(number, { overrideHolds = false } = {}) {
   const pr = await gh.get(`${R_}/pulls/${number}`);
-  if (pr.state !== 'open' || pr.base.ref !== 'main') return null;
+  if ((pr.state !== 'open' && !dryRun) || pr.base.ref !== 'main') return null;
 
   fetchRefs('+refs/heads/main:refs/bot/main', `+refs/pull/${number}/head:refs/bot/pr`);
   const mergeBase = git(['merge-base', 'refs/bot/main', 'refs/bot/pr']).trim();
