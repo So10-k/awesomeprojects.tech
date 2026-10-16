@@ -521,6 +521,24 @@ async function botSites(req, env) {
   await env.PANEL.put('sites:snapshot', JSON.stringify(snap));
   return new Response('ok');
 }
+/** The bot's activity lines go to the private audit log; the bot reads them back for the daily digest. */
+async function botActivity(req, env, url) {
+  const h = req.headers.get('Authorization') || '';
+  const secret = String(env.BOT_SECRET || '').trim();
+  if (!secret || !safeEqual(h.trim(), `Bearer ${secret}`)) return new Response('no', { status: 401 });
+  if (!env.DB) return new Response('no db', { status: 503 });
+  if (req.method === 'GET') {
+    const since = Number(url.searchParams.get('since')) || Date.now() - 86400e3;
+    const rows = (await env.DB.prepare(`SELECT at, actor, summary FROM audit WHERE role = 'bot-log' AND at > ?1 ORDER BY at`).bind(since).all()).results || [];
+    return new Response(JSON.stringify({ lines: rows }), { headers: { 'Content-Type': 'application/json' } });
+  }
+  const { line } = await req.json();
+  const text = String(line || '').slice(0, 600);
+  const actor = (text.match(/by @([a-z\d-]+)/i) || [])[1] || 'bot';
+  await auditWrite(env, { id: newId(), at: Date.now(), actor, role: 'bot-log', summary: text, state: 'done' });
+  return new Response('ok');
+}
+
 /** Maintainers see every site; everyone else sees their own. */
 async function sitesView(req, env, s) {
   const snap = JSON.parse((await env.PANEL.get('sites:snapshot')) || '{"sites":[]}');
@@ -614,6 +632,7 @@ export default {
       if (url.pathname === '/bot/result' && req.method === 'POST') return botResult(req, env);
       if (url.pathname === '/bot/request' && req.method === 'POST') return botRequest(req, env);
       if (url.pathname === '/bot/sites' && req.method === 'POST') return botSites(req, env);
+      if (url.pathname === '/bot/activity') return botActivity(req, env, url);
       if (url.pathname.startsWith('/api/')) {
         // State-changing calls must come from the site itself.
         if (req.method === 'POST' && !origins(env).includes(req.headers.get('Origin'))) return fail(req, env, 403, 'Wrong origin.');
