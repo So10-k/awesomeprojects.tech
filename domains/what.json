@@ -1,0 +1,14 @@
+{
+  "owner": {
+    "github": "Happyshot10"
+  },
+  "records": {
+    "CNAME": "awesomeprojects-sites.github.io"
+  },
+  "site": {
+    "provider": "hosted",
+    "repo": "awesomeprojects-sites/what",
+    "status": "active",
+    "template": "docs"
+  }
+}
