@@ -26,6 +26,7 @@ let role = 'none'; // owner | maintainer | none
 let live = { config: {}, reserved: [] };
 let openItems = [];
 let panelReqs = []; // private requests (panel mode)
+let snapshot = { sites: [] }; // the bot's latest look at hosted sites (panel mode)
 let consoleIssue = null;
 
 // ── GitHub API (token mode, and public reads) ──────────────────
@@ -103,6 +104,18 @@ $('#cmdRun').addEventListener('click', async () => {
 });
 
 async function runPanel(spec) {
+  if (spec.bulk) {
+    const waiting = toast(`Running ${spec.bulk.length} actions`, { body: spec.command, ms: 0 });
+    let ok = 0;
+    for (const b of spec.bulk) {
+      const job = await Panel.run(b.action, b.args).catch((e) => ({ state: 'error', message: e.message }));
+      if (job.state === 'done') ok++;
+    }
+    waiting.remove();
+    toast(ok === spec.bulk.length ? 'All done' : `${ok} of ${spec.bulk.length} worked`, { kind: ok === spec.bulk.length ? 'ok' : 'err', ms: 10000 });
+    setTimeout(loadAll, 1500);
+    return;
+  }
   if (spec.request) {
     try {
       await Panel.requestDo(spec.request, 'decide', { decision: spec.decision, reason: spec.reason || '' });
@@ -243,7 +256,8 @@ for (const b of $$('.tabs button')) b.addEventListener('click', () => selectTab(
 async function loadAll() {
   try {
     if (mode === 'panel') {
-      const [q, pr] = await Promise.all([Panel.queue(), Panel.requests({ scope: 'all' }).catch(() => ({ requests: [] }))]);
+      const [q, pr, snap] = await Promise.all([Panel.queue(), Panel.requests({ scope: 'all' }).catch(() => ({ requests: [] })), Panel.sites().catch(() => ({ sites: [] }))]);
+      snapshot = snap || { sites: [] };
       openItems = q.items.map((i) => ({ ...i, labels: i.labels.map((name) => ({ name })) }));
       panelReqs = pr.requests || [];
       live = { config: q.config || {}, reserved: q.reserved || D.reserved };
@@ -426,6 +440,9 @@ function renderPeople(cfg) {
 }
 
 function renderMaint(cfg) {
+  $('#announceNow').textContent = cfg.announcement ? `Showing now: “${cfg.announcement}”` : 'A banner on the website, My domains and here. Nothing showing now.';
+  document.querySelector('.announce')?.remove();
+  if (cfg.announcement) document.body.prepend(el('div', { className: 'announce', role: 'status' }, ['📣 ', cfg.announcement]));
   $('#lockState').textContent = cfg.locked ? `Paused${typeof cfg.locked === 'string' ? `: "${cfg.locked}"` : ''}.` : 'Open: requests are being reviewed.';
   const reserved = live.reserved || D.reserved;
   $('#reservedCount').textContent = `(${reserved.length})`;
@@ -458,11 +475,17 @@ for (const f of $$('form[data-cmd]')) {
       lock: { action: 'lock', args: { reason }, command: `/lock${reason ? ` ${reason}` : ''}` },
       reserve: { action: 'reserve', args: { name: String(v.name).trim().toLowerCase() }, command: `/reserve ${String(v.name).trim().toLowerCase()}` },
       promote: { action: 'promote', args: { user: u }, command: `/promote @${u}` },
+      announce: { action: 'announce', args: { text: String(v.text || '').trim() }, command: `/announce ${String(v.text || '').trim()}` },
     }[f.dataset.cmd];
     propose({ ...spec, target: 'console' });
   });
 }
-for (const b of $$('[data-action]')) b.addEventListener('click', () => propose({ action: b.dataset.action, args: {}, command: `/${b.dataset.action}`, target: 'console' }));
+for (const b of $$('[data-action]')) {
+  b.addEventListener('click', () => {
+    if (b.dataset.action === 'announce-off') return propose({ action: 'announce', args: { text: 'off' }, command: '/announce off', target: 'console' });
+    propose({ action: b.dataset.action, args: {}, command: `/${b.dataset.action}`, target: 'console' });
+  });
+}
 
 // ── Activity ───────────────────────────────────────────────────
 const when = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -570,6 +593,8 @@ async function renderOverview() {
     [top.length, 'names'], [people, 'people'], [hostedN.length, 'hosted sites'],
     [open, 'open requests', open > 0], [st.requests.ready || 0, 'ready to approve', (st.requests.ready || 0) > 0],
     [openItems.filter((i) => labelsOf(i).includes('takedown')).length, 'open reports'], [st.actions7, 'actions this week'],
+    [snapshot.seats ? `${snapshot.seats.used}${snapshot.seats.max ? `/${snapshot.seats.max}` : ''}` : '—', 'enterprise seats used', snapshot.seats && snapshot.seats.max && snapshot.seats.used >= snapshot.seats.max * 0.9],
+    [(snapshot.sites || []).filter((x) => x.deploy && x.deploy.conclusion === 'failure').length, 'failing deploys', (snapshot.sites || []).some((x) => x.deploy && x.deploy.conclusion === 'failure')],
   ];
   $('#statGrid').replaceChildren(...cards.map(([n, label, warn]) => el('div', { className: `stat ${warn ? 'warn' : ''}` }, [el('b', { textContent: String(n) }), el('span', { textContent: label })])));
   // Requests per day (30 bars)
@@ -592,38 +617,108 @@ async function renderOverview() {
 }
 
 // ── Sites (panel mode) ─────────────────────────────────────────
+const agoShort = (iso) => (iso ? ago(iso) : '—');
+const selected = new Set();
 function renderSites() {
-  const sites = D.names.filter((n) => n.host === 'Hosted by us');
-  $('#sitesHelp').textContent = D.sitesOrg ? `Private repos in ${D.sitesOrg}. Locked = owner read-only · suspended = also DNS off · archived = repo archived, access removed.` : 'Hosting isn\'t switched on (set sitesOrg in config.json).';
+  const snapBy = new Map((snapshot.sites || []).map((x) => [x.name, x]));
+  const q = lc(($('#siteFilter') || {}).value || '');
+  const sites = D.names.filter((n) => n.host === 'Hosted by us').filter((n) => !q || [n.name, n.owner, n.status].some((x) => lc(x).includes(q)));
+  $('#sitesHelp').textContent = D.sitesOrg ? `Private repos in ${D.sitesOrg}. Locked/suspended sites are frozen by an org ruleset; suspended and archived ones have no DNS.` : 'Hosting isn\'t switched on (set sitesOrg in config.json).';
+  $('#snapAt').textContent = snapshot.at ? `Checked ${new Date(snapshot.at).toLocaleString()} (daily, or "Run checks now"). Seats: ${snapshot.seats ? `${snapshot.seats.used}${snapshot.seats.max ? `/${snapshot.seats.max}` : ''}` : '?'}` : 'Not checked yet: press "Run checks now".';
   const tbody = $('#sitesTable tbody');
   tbody.replaceChildren();
   for (const n of sites) {
+    const sn = snapBy.get(n.name) || {};
+    const status = sn.status || n.status || 'active';
+    const box = el('input', { type: 'checkbox', checked: selected.has(n.name), ariaLabel: `Select ${n.name}` });
+    box.addEventListener('change', () => { if (box.checked) selected.add(n.name); else selected.delete(n.name); $('#sitesSel').textContent = `${selected.size} selected`; });
     const sel = el('select', { className: 'status-select', ariaLabel: `Status of ${n.name}` });
-    for (const st of ['active', 'locked', 'suspended', 'archived']) sel.append(new Option(st, st, false, st === (n.status || 'active')));
+    for (const st of ['active', 'locked', 'suspended', 'archived']) sel.append(new Option(st, st, false, st === status));
     sel.addEventListener('change', () => {
       const to = sel.value;
-      sel.value = n.status || 'active';
+      sel.value = status;
       propose({ action: 'site', args: { name: n.name, status: to }, command: `/site ${n.name} ${to}`, target: 'console' });
     });
-    const sync = el('button', { className: 'btn', type: 'button', textContent: 'Re-sync' });
-    sync.addEventListener('click', () => propose({ action: 'site-sync', args: { name: n.name }, command: `/site-sync ${n.name}`, target: 'console' }));
-    const access = el('button', { className: 'btn', type: 'button', textContent: 'Access…' });
-    access.addEventListener('click', async () => {
-      const who = await askReason(`Repo access for ${n.name}`, 'GitHub username');
-      if (!who) return;
-      const lvl = await askReason(`Access for @${who.replace(/^@/, '')}`, 'read, write, maintain or none', 'write');
-      if (!lvl) return;
-      propose({ action: 'repo-access', args: { name: n.name, user: who, level: lvl.toLowerCase() }, command: `/repo-access ${n.name} @${who.replace(/^@/, '')} ${lvl.toLowerCase()}`, target: 'console' });
-    });
+    const dep = sn.deploy || {};
+    const depCell = el('td', {}, dep.url ? [el('a', { href: dep.url, target: '_blank', rel: 'noopener', className: dep.conclusion === 'success' ? 'dep-ok' : dep.conclusion === 'failure' ? 'dep-bad' : 'dep-wait', textContent: dep.conclusion || 'running' }), ` ${agoShort(dep.at)}`] : ['—']);
+    const btn = (label, fn) => { const b = el('button', { className: 'btn', type: 'button', textContent: label }); b.addEventListener('click', fn); return b; };
     tbody.append(el('tr', {}, [
+      el('td', {}, [box]),
       el('td', {}, [el('a', { href: `https://${n.name}.${D.domain}`, target: '_blank', rel: 'noopener', textContent: n.name })]),
-      el('td', {}, [el('a', { href: `https://github.com/${n.owner}`, target: '_blank', rel: 'noopener', textContent: `@${n.owner}` })]),
+      el('td', {}, [el('a', { href: `#`, textContent: `@${n.owner}`, onclick: (e) => { e.preventDefault(); selectTab('people'); showProfile(n.owner); } })]),
       el('td', {}, [sel]),
-      el('td', {}, [el('a', { href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: n.repo })]),
-      el('td', {}, [sync, ' ', access]),
+      depCell,
+      el('td', { textContent: sn.https ? '🔒' : sn.at === undefined && !snapshot.at ? '—' : '…' }),
+      el('td', { textContent: sn.sizeMB !== undefined ? `${sn.sizeMB} MB` : '—' }),
+      el('td', { textContent: agoShort(sn.pushedAt) }),
+      el('td', { textContent: `${(sn.collaborators || []).length}${(sn.pendingInvites || []).length ? ` (+${sn.pendingInvites.length} invited)` : ''}` }),
+      el('td', {}, [
+        btn('Redeploy', () => propose({ action: 'redeploy', args: { name: n.name }, command: `/redeploy ${n.name}`, target: 'console' })), ' ',
+        btn('Re-sync', () => propose({ action: 'site-sync', args: { name: n.name }, command: `/site-sync ${n.name}`, target: 'console' })), ' ',
+        el('a', { className: 'btn', href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: 'Repo' }),
+      ]),
     ]));
   }
-  if (!sites.length) tbody.append(el('tr', {}, [el('td', { colSpan: 5, className: 'muted', textContent: 'No hosted sites yet.' })]));
+  if (!sites.length) tbody.append(el('tr', {}, [el('td', { colSpan: 10, className: 'muted', textContent: q ? 'Nothing matches.' : 'No hosted sites yet.' })]));
+  $('#sitesSel').textContent = `${selected.size} selected`;
+}
+document.addEventListener('DOMContentLoaded', () => {});
+$('#siteFilter').addEventListener('input', renderSites);
+$('#selAll').addEventListener('change', (e) => {
+  for (const n of D.names.filter((x) => x.host === 'Hosted by us')) { if (e.target.checked) selected.add(n.name); else selected.delete(n.name); }
+  renderSites();
+});
+$('#bulkApply').addEventListener('click', () => {
+  const to = $('#bulkStatus').value;
+  if (!to || !selected.size) return toast('Pick sites and a status first', { kind: 'err' });
+  const names = [...selected];
+  propose({ bulk: names.map((n) => ({ action: 'site', args: { name: n, status: to } })), command: `/site ${to} × ${names.length} (${names.join(', ')})`, target: 'console' });
+});
+
+// ── People: everything about one person ────────────────────────
+$('#lookup').addEventListener('submit', (e) => { e.preventDefault(); showProfile(new FormData(e.target).get('user')); });
+async function showProfile(raw) {
+  const login = String(raw || '').trim().replace(/^@/, '');
+  const box = $('#profile');
+  if (!login) { box.replaceChildren(); return; }
+  const l = lc(login);
+  const cfg = live.config || {};
+  const names = D.names.filter((n) => lc(n.owner) === l);
+  const sites = (snapshot.sites || []).filter((x) => lc(x.owner) === l || (x.collaborators || []).map(lc).includes(l));
+  const reqs = panelReqs.filter((r) => lc(r.requester) === l);
+  const banned = (cfg.bannedUsers || []).map(lc).includes(l);
+  const limit = Object.entries(cfg.limits || {}).find(([u]) => lc(u) === l);
+  const isMaint = (cfg.maintainers || []).map(lc).includes(l) || l === lc(D.owner);
+  const list = (items, empty) => el('ul', {}, items.length ? items : [el('li', { className: 'muted', textContent: empty })]);
+  const recent = el('ul', {}, [el('li', { className: 'muted', textContent: 'Loading…' })]);
+  const btn = (label, cls, spec) => { const b = el('button', { className: `btn ${cls}`, type: 'button', textContent: label }); b.addEventListener('click', spec); return b; };
+  box.replaceChildren(el('section', { className: 'profile' }, [
+    el('div', { className: 'profile-head' }, [
+      el('img', { src: `https://github.com/${login}.png?size=96`, width: 48, height: 48, alt: '' }),
+      el('h2', {}, [el('a', { href: `https://github.com/${login}`, target: '_blank', rel: 'noopener', textContent: `@${login}` })]),
+      isMaint ? el('span', { className: 'label ready', textContent: l === lc(D.owner) ? 'owner' : 'maintainer' }) : null,
+      banned ? el('span', { className: 'label rejected', textContent: 'banned' }) : null,
+      limit ? el('span', { className: 'label', textContent: `limit ${limit[1]}` }) : null,
+    ]),
+    el('div', { className: 'cols' }, [
+      el('div', {}, [el('h3', { textContent: `Names (${names.length})` }), list(names.map((n) => el('li', { textContent: `${n.name} · ${n.host}${n.status ? ` · ${n.status}` : ''}` })), 'none')]),
+      el('div', {}, [el('h3', { textContent: `Hosted repos (${sites.length})` }), list(sites.map((x) => el('li', {}, [el('a', { href: `https://github.com/${x.repo}`, target: '_blank', rel: 'noopener', textContent: x.repo }), ` · ${x.status}${lc(x.owner) !== l ? ' · collaborator' : ''}`])), 'none')]),
+      el('div', {}, [el('h3', { textContent: `Private requests (${reqs.length})` }), list(reqs.map((r) => el('li', { textContent: `${r.name} · ${r.state}` })), 'none')]),
+      el('div', {}, [el('h3', { textContent: 'Recent actions' }), recent]),
+    ]),
+    el('div', { className: 'card-actions' }, [
+      banned
+        ? btn('Unban', '', () => propose({ action: 'unban', args: { user: login }, command: `/unban @${login}`, target: 'console' }))
+        : btn('Ban…', 'danger', async () => { const r = await askReason(`Ban @${login}`, 'Reason (optional)'); if (r !== null) propose({ action: 'ban', args: { user: login, reason: r }, command: `/ban @${login}${r ? ` ${r}` : ''}`, target: 'console' }); }),
+      btn('Suspend everything…', 'danger', async () => { const r = await askReason(`Suspend @${login}: ban + suspend all their sites`, 'Reason (optional)'); if (r !== null) propose({ action: 'suspend-user', args: { user: login, reason: r }, command: `/suspend-user @${login}${r ? ` ${r}` : ''}`, target: 'console' }); }),
+      btn('Set limit…', '', async () => { const n = await askReason(`Name limit for @${login}`, 'Number of names', String(limit ? limit[1] : cfg.maxPerOwner || 3)); if (n) propose({ action: 'limit', args: { user: login, n: Number(n) }, command: `/limit @${login} ${n}`, target: 'console' }); }),
+      role === 'owner' && !isMaint ? btn('Make maintainer…', '', () => propose({ action: 'promote', args: { user: login }, command: `/promote @${login}`, target: 'console' })) : null,
+    ].filter(Boolean)),
+  ]));
+  try {
+    const { entries } = await Panel.audit({ actor: login, limit: 8 });
+    recent.replaceChildren(...(entries.length ? entries.map((a) => el('li', { textContent: `${when(a.at)} · ${a.summary}` })) : [el('li', { className: 'muted', textContent: 'nothing yet' })]));
+  } catch { recent.replaceChildren(el('li', { className: 'muted', textContent: 'unavailable' })); }
 }
 
 // ── Settings (owner, panel mode) ───────────────────────────────

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{name}}</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 400 1.05rem/1.6 ui-sans-serif, system-ui, sans-serif; background: linear-gradient(160deg, #0b1020, #16123a 55%, #2a0f3d); color: #e6ebff; }
+    main { padding: 2rem; max-width: 40rem; }
+    h1 { font: 800 clamp(2rem, 6vw, 3.4rem)/1.05 ui-monospace, Menlo, monospace; letter-spacing: -0.03em; margin: 0 0 1rem; background: linear-gradient(90deg, #7cf7d4, #7aa8ff 50%, #ff7ad9); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    code { background: rgb(122 168 255 / 0.12); padding: 0.1em 0.35em; border-radius: 5px; }
+    a { color: #7aa8ff; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{{name}}</h1>
+    <p>This is <b>{{host}}</b>, by <a href="https://github.com/{{owner}}">@{{owner}}</a>. It's live!</p>
+    <p>Edit <code>index.html</code> and push: the new version is up in about a minute.</p>
+  </main>
+</body>
+</html>

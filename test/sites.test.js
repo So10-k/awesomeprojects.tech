@@ -38,7 +38,11 @@ test('requests: "Host it for me"', () => {
   const form = { Subdomain: 'neon', 'Where should it point?': 'Host it for me (we make you a private repo)', Description: 'Neon' };
   const r = P.buildRequest(form, 'alice', { sitesOrg: 'awesomeprojects-sites' });
   assert.deepEqual(r.problems, []);
-  assert.deepEqual(r.entry.site, { provider: 'hosted', repo: 'awesomeprojects-sites/neon', status: 'active' });
+  assert.deepEqual(r.entry.site, { provider: 'hosted', repo: 'awesomeprojects-sites/neon', status: 'active', template: 'html' });
+  assert.equal(P.buildRequest({ ...form, Template: 'Next.js' }, 'alice', { sitesOrg: 'o' }).entry.site.template, 'next');
+  assert.equal(P.buildRequest({ ...form, Template: 'vite-react' }, 'alice', { sitesOrg: 'o' }).entry.site.template, 'vite-react');
+  assert.equal(P.buildRequest({ ...form, Template: 'nonsense' }, 'alice', { sitesOrg: 'o' }).entry.site.template, 'html');
+  assert.deepEqual(R.checkEntry('neon', { ...r.entry }), []);
   assert.ok(P.buildRequest(form, 'alice', {}).problems.length, 'off until an org is configured');
   assert.match(P.setupGuide({ provider: 'hosted', name: 'neon', repo: 'awesomeprojects-sites/neon', sourceRepo: 's/r' }), /invitations/);
 });
@@ -55,4 +59,38 @@ test('repo setup', () => {
   assert.equal(rs.bypass_actors[0].actor_type, 'OrganizationAdmin', 'the bot (an org owner) can still manage workflows');
   assert.equal(S.ORG_SETTINGS.default_repository_permission, 'none');
   assert.ok(S.actionsPolicy('So10-k/awesomeprojects.tech').selected.patterns_allowed.includes('So10-k/awesomeprojects.tech/.github/workflows/*'));
+});
+
+test('templates, rulesets, ops decisions, roles', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  for (const t of S.TEMPLATES) assert.ok(fs.existsSync(path.join(__dirname, '..', 'templates', t.id)), `templates/${t.id}`);
+  assert.equal(S.fillTemplate('{{name}} at {{host}} by @{{owner}} {{ style }}', { name: 'a', host: 'a.x', owner: 'o' }), 'a at a.x by @o {{ style }}');
+  const push = S.workflowRuleset({ maxFileSizeMB: 500, blockedExtensions: ['.exe', 'zip'] });
+  assert.equal(push.rules.find((r) => r.type === 'max_file_size').parameters.max_file_size, 100, 'capped at GitHub\'s 100 MB');
+  assert.deepEqual(push.rules.find((r) => r.type === 'file_extension_restriction').parameters.restricted_file_extensions, ['*.exe', '*.zip']);
+  const frozen = S.frozenRuleset();
+  assert.deepEqual(frozen.conditions.repository_property.include[0].property_values, ['locked', 'suspended']);
+  assert.ok(frozen.rules.some((r) => r.type === 'update'));
+  assert.deepEqual(S.PROPERTIES.find((p) => p.property_name === 'ap_status').allowed_values, S.STATUSES);
+  const day = 86400e3;
+  const old = new Date(Date.now() - 200 * day).toISOString();
+  assert.equal(S.inactivity({ pushedAt: old, status: 'active', warnDays: 180 }), 'warn');
+  assert.equal(S.inactivity({ pushedAt: old, status: 'active', warnDays: 180, warnedAt: 'x' }), 'none');
+  assert.equal(S.inactivity({ pushedAt: old, status: 'active', warnDays: 180, lockDays: 190 }), 'lock');
+  assert.equal(S.inactivity({ pushedAt: old, status: 'locked', warnDays: 1, lockDays: 1 }), 'none', 'only active sites');
+  assert.equal(S.seatsLeft({ used: 48, max: 50 }), 2);
+  assert.equal(S.seatsLeft({ used: 99, max: 0 }), Infinity, '0 = no cap');
+  assert.equal(S.httpsReady({ https_enforced: false, https_certificate: { state: 'approved' } }), true);
+  assert.equal(S.httpsReady({ https_enforced: true, https_certificate: { state: 'approved' } }), false);
+  // Custom roles keep only permissions GitHub offers.
+  const roles = S.repoRoles(['view_dependabot_alerts', 'close_issue', 'bogus_one']);
+  const owner = roles.find((r) => r.name === 'ap-site-owner');
+  assert.equal(owner.base_role, 'write');
+  assert.ok(owner.permissions.every((p) => ['view_dependabot_alerts', 'close_issue'].includes(p)));
+  assert.equal(roles.find((r) => r.name === 'ap-site-locked').base_role, 'triage');
+  assert.equal(S.ownerRole('active', ['ap-site-owner']), 'ap-site-owner');
+  assert.equal(S.ownerRole('locked', ['ap-site-locked']), 'ap-site-locked');
+  assert.equal(S.ownerRole('locked', []), 'pull', 'falls back to built-in roles');
+  assert.equal(S.ownerRole('archived', ['ap-site-owner']), null);
 });

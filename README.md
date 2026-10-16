@@ -72,7 +72,7 @@ Once a maintainer approves it, the bot writes your record, DNS goes live in abou
 
 ## 🏠 Or let us host it
 
-Pick **"Host it for me"** and you get a private repo in our org with a starter page that's already live at `yourname.awesomeprojects.tech`. Push HTML, or a Next.js / Vite / Astro / SvelteKit project, and it's rebuilt and live a minute later. Manage your records, and see your repo, at **[My domains](https://awesomeprojects.tech/me/)**.
+Pick **"Host it for me"** and choose a starter: **Plain HTML, Next.js, Vite + React, Astro or Docs**. You get a private repo in our org, already live at `yourname.awesomeprojects.tech`. Push HTML, or a Next.js / Vite / Astro / SvelteKit project, and it's rebuilt and live a minute later. At **[My domains](https://awesomeprojects.tech/me/)** you can see your deploys, redeploy, invite a collaborator or two, and manage your DNS records.
 
 ## 🛠️ Host your repo
 

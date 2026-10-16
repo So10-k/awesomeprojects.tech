@@ -43,6 +43,12 @@ const CATALOG = [
   { cmd: '/site', who: 'maintainer', where: 'issues', usage: '/site <name> <active|locked|suspended|archived>', does: 'Change a hosted site\'s status: locked = owner read-only, suspended = also DNS off, archived = repo archived', admin: true },
   { cmd: '/site-sync', who: 'maintainer', where: 'issues', usage: '/site-sync <name>', does: 'Re-apply the standard repo setup (settings, workflow, Pages, access)', admin: true },
   { cmd: '/repo-access', who: 'maintainer', where: 'issues', usage: '/repo-access <name> @user <read|write|maintain|none>', does: 'Give someone access to a hosted site\'s repo (uses a seat)', admin: true },
+  { cmd: '/redeploy', who: 'owner', where: 'issues', usage: '/redeploy <name>', does: 'Rebuild and redeploy your hosted site now' },
+  { cmd: '/site-collab', who: 'owner', where: 'issues', usage: '/site-collab <name> @user <add|remove>', does: 'Add or remove a collaborator on your hosted repo (limited per site)' },
+  { cmd: '/suspend-user', who: 'maintainer', where: 'issues', usage: '/suspend-user @user <reason>', does: 'Ban an account and suspend every site it hosts', admin: true },
+  { cmd: '/announce', who: 'maintainer', where: 'issues', usage: '/announce <text|off>', does: 'Show a banner on the website and dashboards', admin: true },
+  { cmd: '/ops', who: 'maintainer', where: 'any', usage: '/ops', does: 'Run the daily site checks now (HTTPS, deploys, size, inactivity, seats)', admin: true },
+  { cmd: '/seats', who: 'maintainer', where: 'any', usage: '/seats', does: 'How many enterprise seats hosted sites use', admin: true },
   { cmd: '/config', who: 'owner', where: 'issues', usage: '/config <setting> <value>', does: 'Change a bot setting (limits, holds, auto-merge…) (owner only)', admin: true, owner: true },
   { cmd: '/org-setup', who: 'owner', where: 'issues', usage: '/org-setup', does: 'Apply the org\'s safe defaults, rulesets, Actions policy and maintainers team (owner only)', admin: true, owner: true },
   { cmd: '/bot-check', who: 'owner', where: 'issues', usage: '/bot-check', does: 'Check the bot account\'s token and org role (owner only)', admin: true, owner: true },
@@ -52,7 +58,7 @@ const CATALOG = [
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats']);
 const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check', '/config']);
 
 /** Settings /config may change, and how to read the value. */
@@ -66,6 +72,16 @@ const SETTINGS = {
   autoMergeMinAccountAgeDays: { type: 'int', min: 0, max: 3650, help: 'minimum account age for auto-merge' },
   consentTimeoutDays: { type: 'int', min: 1, max: 365, help: 'days before a maintainer may stand in for an owner' },
   holdNamesContaining: { type: 'list', help: 'comma-separated words that put a name on hold' },
+  maxSeats: { type: 'int', min: 0, max: 100000, help: 'hosted-site collaborators (enterprise seats) before new hosted approvals hold' },
+  hostedPerOwner: { type: 'int', min: 0, max: 50, help: 'hosted sites per person' },
+  hostedMinAccountAgeDays: { type: 'int', min: 0, max: 3650, help: 'minimum account age for a hosted site' },
+  maxRepoSizeMB: { type: 'int', min: 1, max: 100000, help: 'a hosted repo bigger than this gets locked' },
+  maxFileSizeMB: { type: 'int', min: 1, max: 100, help: 'largest file allowed in a push to a hosted repo' },
+  blockedExtensions: { type: 'list', help: 'file types blocked in hosted repos (comma-separated, e.g. .exe, .zip)' },
+  inactivityWarnDays: { type: 'int', min: 0, max: 3650, help: 'warn owners after this many days without a push (0 = never)' },
+  inactivityLockDays: { type: 'int', min: 0, max: 3650, help: 'lock sites after this many days without a push (0 = never)' },
+  maxCollaboratorsPerSite: { type: 'int', min: 0, max: 50, help: 'extra people an owner may add to their hosted repo' },
+  staleRequestDays: { type: 'int', min: 1, max: 365, help: 'close private requests that need changes after this many quiet days' },
 };
 const READ_ONLY = new Set(['/help', '/available', '/whois', '/mine', '/verify', '/stats']);
 
@@ -232,6 +248,11 @@ function adminEdit(cmd, args, { config, reserved, entries, owner }) {
       }
       c[key] = value;
       return { config: c, message: `⚙️ \`${key}\` = \`${Array.isArray(value) ? value.join(', ') : value}\`` };
+    }
+    case '/announce': {
+      const text = args.join(' ').trim();
+      c.announcement = ['off', 'none', 'clear', ''].includes(lc(text)) ? '' : text.slice(0, 280);
+      return { config: c, message: c.announcement ? `📣 Announcement: ${c.announcement}` : '📣 Announcement cleared' };
     }
     case '/lock':
       c.locked = args.join(' ') || true;

@@ -48,6 +48,7 @@ const Panel = (() => {
     queue: () => call('/api/queue'),
     audit: (q = {}) => call(`/api/audit?${new URLSearchParams({ limit: 200, ...q })}`),
     stats: () => call('/api/stats'),
+    sites: () => call('/api/sites'),
     requests: (q = {}) => call(`/api/requests?${new URLSearchParams(q)}`),
     request: (id) => call(`/api/requests/${encodeURIComponent(id)}`),
     newRequest: (form) => call('/api/requests', { method: 'POST', body: form }),

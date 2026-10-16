@@ -73,3 +73,6 @@
   .rec-form { grid-template-columns: 1fr 1fr; }
   .records .n { white-space: normal; }
 }
+.sub-h { font: 600 0.8rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0.6rem 0 0; }
+.inline { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.inline input { font: 400 0.92rem var(--mono); color: var(--text); background: rgb(11 16 32 / 0.8); border: 1px solid var(--line); border-radius: 9px; padding: 0.5rem 0.7rem; flex: 1 1 180px; }

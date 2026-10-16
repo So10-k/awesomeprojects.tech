@@ -114,15 +114,50 @@ function starterFiles({ name, owner, domain = R.DOMAIN, sourceRepo }) {
   ];
 }
 
-/** Org-level rules: site owners can't change workflows (so they can't run arbitrary Actions on our minutes). */
-function workflowRuleset() {
+/** Custom repository properties on every site repo (org feature): rulesets target them. */
+const PROPERTIES = [
+  { property_name: 'ap_status', value_type: 'single_select', allowed_values: STATUSES, required: true, default_value: 'active', description: 'awesomeprojects.tech site status (managed by the bot)' },
+  { property_name: 'ap_owner', value_type: 'string', description: 'awesomeprojects.tech site owner (GitHub login)' },
+  { property_name: 'ap_name', value_type: 'string', description: 'awesomeprojects.tech subdomain' },
+  { property_name: 'ap_template', value_type: 'string', description: 'awesomeprojects.tech starter template' },
+];
+const propertyValues = ({ status, owner, name, template }) => [
+  { property_name: 'ap_status', value: status },
+  { property_name: 'ap_owner', value: owner },
+  { property_name: 'ap_name', value: name },
+  ...(template ? [{ property_name: 'ap_template', value: template }] : []),
+];
+const ADMIN_BYPASS = [{ actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' }];
+
+/** Push rules for every site repo: no workflow edits (no arbitrary Actions on our minutes), size and file-type limits. */
+function workflowRuleset(cfg = {}) {
+  const ext = (cfg.blockedExtensions || []).map((e) => (String(e).startsWith('.') ? `*${e}` : `*.${e}`));
   return {
     name: 'awesomeprojects: managed workflows',
     target: 'push',
     enforcement: 'active',
     conditions: { repository_name: { include: ['~ALL'], exclude: [] } },
-    bypass_actors: [{ actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' }],
-    rules: [{ type: 'file_path_restriction', parameters: { restricted_file_paths: ['.github/workflows/**', '.github/actions/**'] } }],
+    bypass_actors: ADMIN_BYPASS,
+    rules: [
+      { type: 'file_path_restriction', parameters: { restricted_file_paths: ['.github/workflows/**', '.github/actions/**'] } },
+      { type: 'max_file_size', parameters: { max_file_size: Math.min(100, Math.max(1, cfg.maxFileSizeMB || 25)) } },
+      ...(ext.length ? [{ type: 'file_extension_restriction', parameters: { restricted_file_extensions: ext } }] : []),
+    ],
+  };
+}
+
+/** Locked and suspended sites: GitHub itself refuses every push and branch change (not just a lower permission). */
+function frozenRuleset() {
+  return {
+    name: 'awesomeprojects: frozen sites',
+    target: 'branch',
+    enforcement: 'active',
+    conditions: {
+      ref_name: { include: ['~ALL'], exclude: [] },
+      repository_property: { include: [{ name: 'ap_status', property_values: ['locked', 'suspended'], source: 'custom' }], exclude: [] },
+    },
+    bypass_actors: ADMIN_BYPASS,
+    rules: [{ type: 'update' }, { type: 'creation' }, { type: 'deletion' }, { type: 'non_fast_forward' }],
   };
 }
 function branchRuleset() {
@@ -131,7 +166,7 @@ function branchRuleset() {
     target: 'branch',
     enforcement: 'active',
     conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] }, repository_name: { include: ['~ALL'], exclude: [] } },
-    bypass_actors: [{ actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' }],
+    bypass_actors: ADMIN_BYPASS,
     rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
   };
 }
@@ -167,6 +202,70 @@ function canTransition(from, to, { isOwner }) {
   return { ok: true };
 }
 
+// ── Templates ─────────────────────────────────────────────────
+/** Starters for hosted sites. Files live in templates/<id>/ (with {{name}}, {{host}}, {{owner}}). */
+const TEMPLATES = [
+  { id: 'html', label: 'Plain HTML', blurb: 'One page you edit by hand' },
+  { id: 'next', label: 'Next.js', blurb: 'React with the App Router (static export)' },
+  { id: 'vite-react', label: 'Vite + React', blurb: 'A fast single-page app' },
+  { id: 'astro', label: 'Astro', blurb: 'Content sites and blogs' },
+  { id: 'docs', label: 'Docs (VitePress)', blurb: 'Documentation from Markdown' },
+];
+const fillTemplate = (text, vars) => text.replace(/\{\{(name|host|owner|year)\}\}/g, (_, k) => vars[k] ?? '');
+
+// ── Ops decisions (the daily run) ─────────────────────────────
+/** What to do about a site nobody has pushed to in a while. */
+function inactivity({ pushedAt, now = Date.now(), status, warnDays = 0, lockDays = 0, warnedAt = null }) {
+  if (status !== 'active' || !pushedAt) return 'none';
+  const days = (now - Date.parse(pushedAt)) / 86400e3;
+  if (lockDays > 0 && days >= lockDays) return 'lock';
+  if (warnDays > 0 && days >= warnDays && !warnedAt) return 'warn';
+  return 'none';
+}
+/** Can another hosted collaborator be added? */
+function seatsLeft({ used, max }) {
+  if (!max) return Infinity;
+  return Math.max(0, max - used);
+}
+/** HTTPS: enforce once GitHub's certificate is ready. */
+const httpsReady = (pages) => !!pages && !pages.https_enforced && !!pages.https_certificate && ['approved', 'issued'].includes(pages.https_certificate.state);
+
+// ── Custom roles (Enterprise Cloud) ───────────────────────────
+/**
+ * Repository roles for site repos. GitHub only lets a custom role ADD to a base role, so each is
+ * a base role plus extras; extras GitHub doesn't offer are dropped (see repoRoles).
+ *   ap-site-owner         write + read security alerts: build their site, see what's wrong with it
+ *   ap-site-collaborator  write: helpers the owner invited
+ *   ap-site-locked        triage: a locked/suspended owner can still answer our issues, but not push
+ */
+const REPO_ROLES = [
+  { name: 'ap-site-owner', description: 'awesomeprojects.tech: owner of a hosted site', base_role: 'write', want: ['view_dependabot_alerts', 'read_code_scanning', 'view_secret_scanning_alerts', 'close_issue', 'reopen_issue', 'manage_topics'] },
+  { name: 'ap-site-collaborator', description: 'awesomeprojects.tech: collaborator on a hosted site', base_role: 'write', want: [] },
+  { name: 'ap-site-locked', description: 'awesomeprojects.tech: owner of a locked or suspended site (no pushes)', base_role: 'triage', want: ['view_dependabot_alerts'] },
+];
+/** Organization role for the maintainers team: read-only insight into the org, nothing destructive. */
+const ORG_ROLE = {
+  name: 'ap-maintainer',
+  description: 'awesomeprojects.tech maintainers: org insights (audit log, Actions usage, roles), no admin powers',
+  want: ['read_audit_logs', 'read_organization_actions_usage_metrics', 'read_organization_custom_repo_role', 'read_organization_custom_org_role', 'read_organization_custom_properties'],
+};
+function repoRoles(available = []) {
+  const ok = new Set(available);
+  return REPO_ROLES.map(({ want, ...r }) => ({ ...r, permissions: want.filter((p) => ok.has(p)) }));
+}
+function orgRole(available = []) {
+  const ok = new Set(available);
+  const { want, ...r } = ORG_ROLE;
+  return { ...r, permissions: want.filter((p) => ok.has(p)) };
+}
+/** The role an owner gets for a status: our custom role if it exists, else GitHub's built-in. */
+function ownerRole(status, haveRoles = []) {
+  const custom = { active: 'ap-site-owner', locked: 'ap-site-locked', suspended: 'ap-site-locked' }[status];
+  if (!custom) return null;
+  return haveRoles.includes(custom) ? custom : OWNER_PERMISSION[status];
+}
+const collaboratorRole = (haveRoles = []) => (haveRoles.includes('ap-site-collaborator') ? 'ap-site-collaborator' : 'push');
+
 /** "/repo-access" levels → GitHub permissions. */
 const ACCESS = { read: 'pull', write: 'push', maintain: 'maintain', none: null };
 
@@ -181,7 +280,8 @@ function hostedEntry({ name, owner, org, description }) {
 }
 
 module.exports = {
-  STATUSES, OWNER_PERMISSION, DNS_ON, TEAM, TOPIC, ACCESS, ORG_SETTINGS,
-  isHosted, statusOf, dnsEnabled, checkStatus, repoSettings, deployWorkflow, starterFiles,
-  workflowRuleset, branchRuleset, actionsPolicy, canTransition, hostedEntry,
+  STATUSES, OWNER_PERMISSION, DNS_ON, TEAM, TOPIC, ACCESS, ORG_SETTINGS, PROPERTIES, TEMPLATES,
+  isHosted, statusOf, dnsEnabled, checkStatus, repoSettings, deployWorkflow, starterFiles, propertyValues, fillTemplate,
+  workflowRuleset, branchRuleset, frozenRuleset, actionsPolicy, canTransition, hostedEntry, inactivity, seatsLeft, httpsReady,
+  REPO_ROLES, ORG_ROLE, repoRoles, orgRole, ownerRole, collaboratorRole,
 };

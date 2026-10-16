@@ -40,5 +40,28 @@
   "autoMergeMinAccountAgeDays": 180,
   "closeNeedsChangesAfterDays": 14,
   "consentTimeoutDays": 30,
-  "locked": false
+  "locked": false,
+  "announcement": "",
+  "maxSeats": 50,
+  "hostedPerOwner": 1,
+  "hostedMinAccountAgeDays": 30,
+  "maxRepoSizeMB": 500,
+  "maxFileSizeMB": 25,
+  "blockedExtensions": [
+    ".exe",
+    ".dll",
+    ".msi",
+    ".dmg",
+    ".apk",
+    ".scr",
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".jar",
+    ".iso"
+  ],
+  "inactivityWarnDays": 180,
+  "inactivityLockDays": 0,
+  "maxCollaboratorsPerSite": 2,
+  "staleRequestDays": 14
 }
