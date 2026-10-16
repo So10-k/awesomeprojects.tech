@@ -3,6 +3,7 @@
 The bot does the checking. You make the calls it can't: approve, hold, reject, take down.
 Everything is a comment, so it all works from the GitHub mobile app.
 
+- [The console](#the-console)
 - [Your daily routine](#your-daily-routine)
 - [Command reference](#command-reference)
 - [Request issues](#request-issues)
@@ -19,6 +20,26 @@ Everything is a comment, so it all works from the GitHub mobile app.
 - [Emergencies](#emergencies)
 - [How it's built](#how-its-built)
 - [One-time setup](#one-time-setup)
+
+---
+
+## The console
+
+**[awesomeprojects.tech/admin](https://awesomeprojects.tech/admin/)** is a dashboard for all of this:
+
+| Tab | What's there |
+|---|---|
+| **Queue** | Requests and PRs in three lanes (ready · waiting on someone · needs changes), each with the bot's review one click away, and buttons for approve / hold / unhold / reject / recheck |
+| **Reports** | Takedown reports: take down or dismiss |
+| **Names** | Every name with *Verify* and *Take down* |
+| **People** | Ban / unban, per-person limits |
+| **Maintenance** | Pause / resume requests, deploy, health check, reserved names |
+| **Owner** *(owner only)* | Promote / demote maintainers, links to the settings the console can't change |
+| **Activity** | The bot activity log |
+
+**How it works.** There's no server: you sign in with a **fine-grained token** (the page links to GitHub with the permissions pre-filled: this repo only, *Issues* and *Pull requests* read & write, *Discussions* read). It stays in your browser. Every button shows the exact command first (`➜ /ban @x phishing · on #31 as @you`) and posts it **as you** when you press *Post*: on the request itself, or on the pinned **🛠️ Admin console** issue for global actions. The bot does the work, replies, and logs it; the console shows the reply.
+
+**Security.** The page only hides what you can't use; the bot enforces it. Maintainer commands from non-maintainers are ignored, and `/promote` and `/demote` only work for the owner. Treat the token like a password: give it a short expiry, and revoke it in GitHub → Settings → Developer settings if it's ever exposed.
 
 ---
 
@@ -49,6 +70,7 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 | `/lock <reason>` · `/unlock` | any issue | Pauses new requests (requesters see your reason; nothing is lost, they're re-checked after `/unlock` + `/recheck`) |
 | `/deploy` | anywhere | Re-runs the DNS deploy and rebuilds the website |
 | `/health` | anywhere | Runs the dangling-name check now |
+| `/promote @user` · `/demote @user` | any issue | **Owner only.** Edits `config.json → maintainers` |
 | `/help` | anywhere | Everything, including the user commands |
 
 **A good place to run admin commands:** open one issue titled "Admin console", pin it, and run `/ban`, `/reserve`, `/lock`… there. Its history is your audit trail.

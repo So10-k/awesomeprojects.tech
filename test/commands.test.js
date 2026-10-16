@@ -77,6 +77,12 @@ test('admin edits', () => {
   assert.equal(C.adminEdit('/unlock', [], { config: { ...config, locked: true }, reserved: [] }).config.locked, false);
   assert.ok(C.adminEdit('/unlock', [], { config, reserved: [] }).error);
   assert.deepEqual(config.bannedUsers, [], 'never mutates the input');
+  const pro = C.adminEdit('/promote', ['@Carol'], { config: { ...config, maintainers: [] }, reserved: [] });
+  assert.deepEqual(pro.config.maintainers, ['carol']);
+  assert.ok(C.adminEdit('/promote', ['carol'], { config: pro.config, reserved: [] }).error, 'already one');
+  assert.deepEqual(C.adminEdit('/demote', ['carol'], { config: pro.config, reserved: [] }).config.maintainers, []);
+  assert.match(C.adminEdit('/demote', ['boss'], { config: pro.config, reserved: [], owner: 'Boss' }).error, /owner/);
+  assert.ok(C.OWNER_ONLY.has('/promote') && C.ADMIN_ONLY.has('/demote'));
 });
 
 test('request comments', () => {

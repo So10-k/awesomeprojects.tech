@@ -31,7 +31,8 @@ function table(findings) {
     const fs = findings.filter((f) => f.check === check);
     if (!fs.length) return null;
     const worst = fs.reduce((a, f) => (RANK[f.level] > RANK[a.level] ? f : a));
-    const shown = worst.level === 'pass' ? fs : fs.filter((f) => f.level !== 'pass');
+    // Problems hide the ✅ lines; an ℹ️ note sits alongside them.
+    const shown = worst.level === 'pass' || worst.level === 'info' ? fs : fs.filter((f) => f.level !== 'pass');
     return `| ${ICON[worst.level]} | **${label}** | ${shown.map((f) => cell(f.text)).join('<br>')} |`;
   }).filter(Boolean).join('\n');
 }
