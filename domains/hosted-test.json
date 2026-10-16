@@ -9,6 +9,6 @@
   "site": {
     "provider": "hosted",
     "repo": "awesomeprojects-sites/hosted-test",
-    "status": "active"
+    "status": "locked"
   }
 }
