@@ -22,6 +22,7 @@ body:
     attributes:
       label: Where should it point?
       options:
+        - Host it for me (we make you a private repo)
         - My GitHub repo (free hosting on GitHub Pages)
         - Vercel
         - Netlify

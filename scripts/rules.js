@@ -8,7 +8,8 @@ const MAX_PER_OWNER = 3; // top-level names per GitHub account (maintainers exem
 const MAX_DEPTH = 4; // labels in a name, e.g. selector._domainkey.alice = 3
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'MX'];
 const TOP_KEYS = ['$schema', 'owner', 'description', 'repo', 'records', 'site'];
-const PROVIDERS = ['github-pages', 'vercel', 'netlify', 'cloudflare-pages', 'render', 'railway', 'fly', 'cname', 'server'];
+const PROVIDERS = ['hosted', 'github-pages', 'vercel', 'netlify', 'cloudflare-pages', 'render', 'railway', 'fly', 'cname', 'server'];
+const SITE_STATUSES = ['active', 'locked', 'suspended', 'archived'];
 const REPO = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\/[\w.-]{1,100}$/i;
 const OWNER_KEYS = ['github', 'email', 'discord'];
 
@@ -190,13 +191,16 @@ function checkEntry(name, data) {
 function checkSite(site, records) {
   if (!site || typeof site !== 'object' || Array.isArray(site)) return ['"site" must be an object'];
   const errors = [];
-  for (const k of Object.keys(site)) if (!['provider', 'repo'].includes(k)) errors.push(`unknown site field "${k}"`);
+  for (const k of Object.keys(site)) if (!['provider', 'repo', 'status'].includes(k)) errors.push(`unknown site field "${k}"`);
   if (!PROVIDERS.includes(site.provider)) errors.push(`"site.provider" must be one of: ${PROVIDERS.join(', ')}`);
   if (site.repo !== undefined && (typeof site.repo !== 'string' || !REPO.test(site.repo))) errors.push('"site.repo" must look like owner/repo');
-  if (site.provider === 'github-pages') {
-    if (!site.repo) errors.push('"site.repo" is required for github-pages');
+  if (site.status !== undefined && (site.provider !== 'hosted' || !SITE_STATUSES.includes(site.status))) {
+    errors.push(site.provider !== 'hosted' ? '"site.status" is only for hosted sites' : `"site.status" must be one of: ${SITE_STATUSES.join(', ')}`);
+  }
+  if (site.provider === 'github-pages' || site.provider === 'hosted') {
+    if (!site.repo) errors.push(`"site.repo" is required for ${site.provider}`);
     else if (records && typeof records.CNAME === 'string' && lc(records.CNAME).replace(/\.$/, '') !== `${lc(site.repo.split('/')[0])}.github.io`) {
-      errors.push(`a github-pages site must have "CNAME": "${lc(site.repo.split('/')[0])}.github.io"`);
+      errors.push(`a ${site.provider} site must have "CNAME": "${lc(site.repo.split('/')[0])}.github.io"`);
     }
   }
   return errors;
@@ -252,7 +256,7 @@ function family(entries, name) {
 }
 
 module.exports = {
-  DOMAIN, MAX_PER_OWNER, RECORD_TYPES, PROVIDERS, REPO,
+  DOMAIN, MAX_PER_OWNER, RECORD_TYPES, PROVIDERS, SITE_STATUSES, REPO,
   nameFromFile, baseOf, ownerOf, namesOwnedBy, family, limitFor,
   checkName, checkEntry, checkRecords, checkTarget, checkTree, checkSite,
   isPublicIPv4, isPublicIPv6,

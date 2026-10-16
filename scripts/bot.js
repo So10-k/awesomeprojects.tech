@@ -23,6 +23,7 @@ const Q = require('./requests');
 const P = require('./providers');
 const F = require('./frameworks');
 const C = require('./commands');
+const S = require('./sites');
 const { github, git, readTree, diff, checkTargets, verifySite } = require('./lib');
 
 const root = path.join(__dirname, '..');
@@ -35,6 +36,9 @@ const repoUrl = `https://github.com/${repo}`;
 const maintainers = [owner, ...(config.maintainers || [])].map((s) => s.toLowerCase());
 const dryRun = !!process.env.DRY_RUN;
 const gh = github(process.env.GITHUB_TOKEN, { dryRun });
+// The bot account's token: only for the sites org (creating, configuring, locking and archiving repos).
+const ghBot = process.env.BOT_PAT ? github(String(process.env.BOT_PAT).trim(), { dryRun }) : null;
+const ORG = config.sitesOrg || '';
 const runUrl = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
 
@@ -238,6 +242,7 @@ async function mergePR(pr, result) {
     }
   }
   await deploy();
+  await reconcileSites().catch((e) => console.warn(`sites: ${e.message}`));
   if (result) await upsertComment(pr.number, 'review', reviewComment(result, { merged: true }));
   return true;
 }
@@ -317,7 +322,7 @@ async function onRequest(issue, { comment, cmd } = {}) {
   const admin = comment ? isAdmin(by, comment.author_association) : false;
   const approving = admin && cmd === '/approve';
   const labels = issue.labels.map((l) => l.name);
-  const built = P.buildRequest(Q.parseForm(issue.body), author);
+  const built = P.buildRequest(Q.parseForm(issue.body), author, { sitesOrg: ORG });
   const { name } = built;
   const say = (result, opts) => upsertComment(issue.number, 'request', requestComment(result, { name, domain: R.DOMAIN, ...opts }));
 
@@ -599,8 +604,45 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
       const { pr, merged } = await botChange({ title: `${cmd} ${rest}`.trim().slice(0, 80), body: `\`${cmd} ${rest}\` by @${by}${number ? ` in #${number}` : ''}.`, changes, tag: `admin-${cmd.slice(1)}-${Date.now().toString(36)}` });
       if (!merged) return `I opened #${pr.number} but couldn't merge it.`;
       await activityLog(`${edit.message} · by @${by} → #${pr.number}`);
-      return `${edit.message} (#${pr.number}).`;
+      let extra = '';
+      if ((cmd === '/promote' || cmd === '/demote') && ORG && ghBot) {
+        extra = await syncTeam(edit.config.maintainers).then((t) => `\n\n✅ ${t}`, (e) => `\n\n⚠️ couldn't update the ${ORG} team: ${e.message}`);
+      }
+      return `${edit.message} (#${pr.number}).${extra}`;
     }
+    case '/site': {
+      if (kind === 'discussion') return undefined;
+      const name = Q.cleanName(args[0] || '');
+      const status = lc(args[1]);
+      if (!name || !status) return 'Usage: `/site <name> <active|locked|suspended|archived>`';
+      return setSiteStatus(name, status, by);
+    }
+    case '/site-sync': {
+      if (kind === 'discussion') return undefined;
+      needOrg();
+      const name = Q.cleanName(args[0] || '');
+      const d = mainTree().entries[name];
+      if (!d || !S.isHosted(d)) return `\`${name}\` isn't a hosted site.`;
+      const res = await provisionSite(name, d, { rewriteWorkflow: true });
+      await activityLog(`🔄 **Re-synced** [${res.full}](https://github.com/${res.full}) · by @${by}`);
+      return `🔄 [${res.full}](https://github.com/${res.full}) is back to standard:\n\n${res.lines.join('\n')}`;
+    }
+    case '/repo-access': {
+      if (kind === 'discussion') return undefined;
+      const name = Q.cleanName(args[0] || '');
+      const u = String(args[1] || '').replace(/^@/, '');
+      if (!name || !u || !args[2]) return 'Usage: `/repo-access <name> @user <read|write|maintain|none>`';
+      return repoAccessCmd(name, u, lc(args[2]), by);
+    }
+    case '/org-setup': {
+      if (kind === 'discussion') return undefined;
+      const out = await orgSetup();
+      await activityLog(`🏗️ **Org setup** ${ORG} · by @${by}`);
+      return out;
+    }
+    case '/bot-check':
+      if (kind === 'discussion') return undefined;
+      return botCheck();
     case '/deploy':
       await deploy();
       await activityLog(`🚀 **Deploy** started · by @${by}`);
@@ -688,6 +730,189 @@ async function health() {
   return dead.length;
 }
 
+// ── Hosted sites: repos in the sites org ───────────────────────
+function needOrg() {
+  if (!ORG) throw new Error('`sitesOrg` isn\'t set in config.json.');
+  if (!ghBot) throw new Error('The `BOT_PAT` secret isn\'t set.');
+}
+const ok = (t) => `✅ ${t}`;
+const warn = (t) => `⚠️ ${t}`;
+async function step(lines, label, fn) {
+  try { const r = await fn(); lines.push(ok(r || label)); } catch (e) { lines.push(warn(`${label}: ${String(e.message).slice(0, 200)}`)); }
+}
+
+/** Is the bot's token what we think? (owner command) */
+async function botCheck() {
+  needOrg();
+  const res = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${String(process.env.BOT_PAT).trim()}`, 'User-Agent': 'awesomeprojects-bot' } });
+  if (!res.ok) return `❌ GitHub rejected \`BOT_PAT\` (${res.status}). Create a new token and set it again.`;
+  const me = await res.json();
+  const scopes = (res.headers.get('x-oauth-scopes') || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const want = ['repo', 'workflow', 'admin:org'];
+  const missing = want.filter((w) => !scopes.includes(w) && !(w === 'admin:org' && scopes.includes('write:org')));
+  const extra = scopes.filter((x) => ['delete_repo', 'admin:enterprise', 'site_admin'].includes(x));
+  const m = await ghBot.get(`/user/memberships/orgs/${ORG}`).catch(() => null);
+  return [
+    `### 🤖 Bot check`,
+    '',
+    '| | |',
+    '|---|---|',
+    `| **Account** | @${me.login} |`,
+    `| **Scopes** | ${scopes.map((x) => `\`${x}\``).join(' ') || '(fine-grained token)'} |`,
+    `| **Missing** | ${missing.length ? missing.map((x) => `❌ \`${x}\``).join(' ') : '✅ none'} |`,
+    `| **Riskier than needed** | ${extra.length ? extra.map((x) => `⚠️ \`${x}\``).join(' ') : '✅ no'} |`,
+    `| **In ${ORG}** | ${m ? `${m.role === 'admin' ? '✅ owner' : `⚠️ ${m.role}`} (${m.state})` : '❌ not a member'} |`,
+  ].join('\n');
+}
+
+/** The maintainers team = config maintainers (it gives them access to every site repo). */
+async function syncTeam(maintainersList) {
+  needOrg();
+  const slug = S.TEAM.slug;
+  await ghBot.get(`/orgs/${ORG}/teams/${slug}`).catch(() => ghBot.post(`/orgs/${ORG}/teams`, { name: S.TEAM.name, privacy: 'closed', description: 'awesomeprojects.tech maintainers: maintain access to every site repo' }));
+  const want = new Set((maintainersList || []).map(lc));
+  const have = new Set((await ghBot.all(`/orgs/${ORG}/teams/${slug}/members`).catch(() => [])).map((u) => lc(u.login)));
+  const botLogin = lc((await ghBot.get('/user')).login);
+  const changes = [];
+  for (const u of want) if (!have.has(u)) { await ghBot.put(`/orgs/${ORG}/teams/${slug}/memberships/${u}`, { role: 'member' }); changes.push(`+@${u}`); }
+  for (const u of have) if (!want.has(u) && u !== botLogin) { await ghBot.del(`/orgs/${ORG}/teams/${slug}/memberships/${u}`); changes.push(`−@${u}`); }
+  return changes.length ? `maintainers team: ${changes.join(' ')}` : 'maintainers team already in sync';
+}
+
+/** Owner command: safe org defaults, rulesets, Actions allow-list, maintainers team. */
+async function orgSetup() {
+  needOrg();
+  const lines = [];
+  await step(lines, 'org defaults (no default access, members can\'t create repos or Pages)', async () => { await ghBot.patch(`/orgs/${ORG}`, S.ORG_SETTINGS); });
+  await step(lines, 'Actions: only GitHub\'s actions and our build workflow', async () => {
+    const pol = S.actionsPolicy(repo);
+    await ghBot.put(`/orgs/${ORG}/actions/permissions`, pol.permissions);
+    await ghBot.put(`/orgs/${ORG}/actions/permissions/selected-actions`, pol.selected);
+  });
+  for (const rs of [S.workflowRuleset(), S.branchRuleset()]) {
+    await step(lines, `ruleset “${rs.name}”`, async () => {
+      const existing = (await ghBot.get(`/orgs/${ORG}/rulesets`)).find((x) => x.name === rs.name);
+      if (existing) await ghBot.put(`/orgs/${ORG}/rulesets/${existing.id}`, rs);
+      else await ghBot.post(`/orgs/${ORG}/rulesets`, rs);
+    });
+  }
+  await step(lines, 'maintainers team', () => syncTeam(config.maintainers));
+  return `### 🏗️ ${ORG} setup\n\n${lines.join('\n')}`;
+}
+
+/** Owner access for a status (write, read, or none). */
+async function applyAccess(full, user, status) {
+  const perm = S.OWNER_PERMISSION[status];
+  if (perm) return ghBot.put(`/repos/${full}/collaborators/${user}`, { permission: perm });
+  await ghBot.del(`/repos/${full}/collaborators/${user}`).catch(() => {});
+  for (const inv of await ghBot.all(`/repos/${full}/invitations`).catch(() => [])) {
+    if (lc(inv.invitee && inv.invitee.login) === lc(user)) await ghBot.del(`/repos/${full}/invitations/${inv.id}`).catch(() => {});
+  }
+}
+
+/** Create (or bring back to standard) a hosted site's repo. Idempotent. */
+async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
+  needOrg();
+  const full = entry.site.repo;
+  const repoName = full.split('/')[1];
+  const owner = entry.owner.github;
+  const status = S.statusOf(entry);
+  const lines = [];
+  let existing = await ghBot.get(`/repos/${full}`).catch(() => null);
+  const created = !existing;
+  if (created) {
+    existing = await ghBot.post(`/orgs/${ORG}/repos`, { name: repoName, ...S.repoSettings({ name, owner }), auto_init: true });
+    lines.push(ok(`created [${full}](https://github.com/${full})`));
+  } else {
+    if (existing.archived && status !== 'archived') await ghBot.patch(`/repos/${full}`, { archived: false });
+    await step(lines, 'repo settings', async () => { await ghBot.patch(`/repos/${full}`, S.repoSettings({ name, owner })); });
+  }
+  await step(lines, 'topic', async () => { await ghBot.put(`/repos/${full}/topics`, { names: [S.TOPIC] }); });
+  // Starter files only on a new repo; the workflow also when re-syncing.
+  for (const f of S.starterFiles({ name, owner, sourceRepo: repo })) {
+    const isWorkflow = f.path.startsWith('.github/workflows/');
+    if (!created && !(isWorkflow && rewriteWorkflow)) continue;
+    await step(lines, f.path, async () => {
+      const cur = await ghBot.get(`/repos/${full}/contents/${f.path}`).catch(() => null);
+      if (cur && Buffer.from(cur.content || '', 'base64').toString('utf8') === f.content) return `${f.path} already up to date`;
+      await ghBot.put(`/repos/${full}/contents/${f.path}`, {
+        message: created ? 'Start your site' : `Update ${f.path} (managed by awesomeprojects.tech)`,
+        content: Buffer.from(f.content).toString('base64'),
+        ...(cur ? { sha: cur.sha } : {}),
+      });
+    });
+  }
+  await step(lines, `Pages on ${name}.${R.DOMAIN}`, async () => {
+    const pages = await ghBot.get(`/repos/${full}/pages`).catch(() => null);
+    if (!pages) await ghBot.post(`/repos/${full}/pages`, { build_type: 'workflow' });
+    await ghBot.put(`/repos/${full}/pages`, { build_type: 'workflow', cname: `${name}.${R.DOMAIN}`, public: true });
+  });
+  await step(lines, 'maintainers team access', async () => { await ghBot.put(`/orgs/${ORG}/teams/${S.TEAM.slug}/repos/${full}`, { permission: S.TEAM.permission }); });
+  await step(lines, `@${owner}: ${S.OWNER_PERMISSION[status] || 'no'} access (${status})`, async () => { await applyAccess(full, owner, status); });
+  if (status === 'archived') await step(lines, 'archived', async () => { await ghBot.patch(`/repos/${full}`, { archived: true }); });
+  return { created, full, lines };
+}
+
+/** After merges: make every hosted entry's repo exist, and archive repos whose name is gone. */
+async function reconcileSites() {
+  if (!ORG || !ghBot) return;
+  const { entries } = mainTree();
+  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d));
+  const repos = await ghBot.all(`/orgs/${ORG}/repos?type=all`);
+  const byName = new Map(repos.map((r) => [lc(r.full_name), r]));
+  for (const [name, d] of hosted) {
+    const r = byName.get(lc(d.site.repo));
+    if (!r) {
+      const res = await provisionSite(name, d);
+      console.log(`sites: provisioned ${res.full}\n  ${res.lines.join('\n  ')}`);
+      await activityLog(`🏗️ **Created** [${res.full}](https://github.com/${res.full}) for @${d.owner.github}`);
+    } else if (r.archived !== (S.statusOf(d) === 'archived')) {
+      await provisionSite(name, d);
+    }
+  }
+  const live = new Set(hosted.map(([, d]) => lc(d.site.repo)));
+  for (const r of repos) {
+    if (!(r.topics || []).includes(S.TOPIC) || r.archived || live.has(lc(r.full_name))) continue;
+    for (const c of await ghBot.all(`/repos/${r.full_name}/collaborators?affiliation=outside`).catch(() => [])) await ghBot.del(`/repos/${r.full_name}/collaborators/${c.login}`).catch(() => {});
+    await ghBot.patch(`/repos/${r.full_name}`, { archived: true });
+    await activityLog(`🗄️ **Archived** [${r.full_name}](${r.html_url}): its name was removed`);
+  }
+}
+
+async function setSiteStatus(name, status, by) {
+  needOrg();
+  const { entries } = mainTree();
+  const d = entries[name];
+  if (!d) return `\`${name}\` isn't registered.`;
+  if (!S.isHosted(d)) return `\`${name}\` isn't hosted by us (it points at ${C.hostOf(d)}).`;
+  const from = S.statusOf(d);
+  const can = S.canTransition(from, status, { isOwner: lc(by) === lc(owner) });
+  if (!can.ok) return can.why;
+  const entry = { ...d, site: { ...d.site, status } };
+  const { pr, merged } = await botChange({
+    title: `${name}: ${from} → ${status}`, body: `\`/site ${name} ${status}\` by @${by}.`,
+    changes: [{ file: `domains/${name}.json`, content: JSON.stringify(entry, null, 2) + '\n' }], tag: `site-${name}-${Date.now().toString(36)}`,
+  });
+  if (!merged) return `I opened #${pr.number} but couldn't merge it.`;
+  const res = await provisionSite(name, entry);
+  const what = { active: 'active again: the owner can push', locked: 'locked: the owner is read-only, the site stays up', suspended: 'suspended: the owner is read-only and DNS is off', archived: 'archived: access removed, repo archived, DNS off' }[status];
+  await activityLog(`🔐 **${name}** ${from} → **${status}** · by @${by} → #${pr.number}`);
+  return `🔐 \`${name}\` is now **${what}** (#${pr.number}).\n\n${res.lines.join('\n')}`;
+}
+
+async function repoAccessCmd(name, user, level, by) {
+  needOrg();
+  const { entries } = mainTree();
+  const d = entries[name];
+  if (!d || !S.isHosted(d)) return `\`${name}\` isn't a hosted site.`;
+  if (!(level in S.ACCESS)) return `Access must be one of: ${Object.keys(S.ACCESS).join(', ')}.`;
+  const full = d.site.repo;
+  if (S.ACCESS[level]) await ghBot.put(`/repos/${full}/collaborators/${user}`, { permission: S.ACCESS[level] });
+  else await applyAccess(full, user, 'archived');
+  await activityLog(`🔑 **Repo access** [${full}](https://github.com/${full}) · @${user}: ${level} · by @${by}`);
+  return `🔑 @${user} now has **${level}** access to [${full}](https://github.com/${full})${S.ACCESS[level] ? ' (an invite if they aren\'t in yet; this uses a seat)' : ''}.`;
+}
+
 // ── Panel actions (repository_dispatch from api.awesomeprojects.tech) ──
 /** Tell the panel how it went. `job` is the dispatch payload (id, actor, at, summary). */
 async function reportResult(job, { ok, message, link }) {
@@ -717,7 +942,7 @@ async function reportResult(job, { ok, message, link }) {
 async function selfUpdate(u, actor) {
   const built = P.buildRequest({
     Subdomain: u.name, 'Where should it point?': u.provider, 'GitHub repository': u.repo || '', Target: u.target || '', Description: u.description || '',
-  }, actor);
+  }, actor, { sitesOrg: ORG });
   if (built.problems.length) return { ok: false, message: built.problems.join(' ') };
   const { entries } = mainTree();
   const name = built.name;
@@ -799,6 +1024,7 @@ async function main() {
   const [mode, num] = (process.env.TARGET || process.argv.slice(2).join(' ')).trim().split(/\s+/);
   if (mode === 'pr') return reviewPR(Number(num));
   if (mode === 'health') return health();
+  if (mode === 'bot-check') return console.log(await botCheck());
   if (mode === 'issue') return onIssue(await gh.get(`${R_}/issues/${num}`));
 
   const event = process.env.GITHUB_EVENT_NAME;

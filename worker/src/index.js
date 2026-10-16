@@ -112,7 +112,27 @@ export const ACTIONS = {
   unlock: { role: 'maintainer', build: () => ({ command: '/unlock' }) },
   deploy: { role: 'maintainer', build: () => ({ command: '/deploy' }) },
   health: { role: 'maintainer', build: () => ({ command: '/health' }) },
+  // Hosted sites
+  site: {
+    role: 'maintainer',
+    build: (a) => {
+      const st = clean(a.status, 20).toLowerCase();
+      if (!['active', 'locked', 'suspended', 'archived'].includes(st)) throw new Error('Status must be active, locked, suspended or archived.');
+      return { command: `/site ${name(a.name)} ${st}` };
+    },
+  },
+  'site-sync': { role: 'maintainer', build: (a) => ({ command: `/site-sync ${name(a.name)}` }) },
+  'repo-access': {
+    role: 'maintainer',
+    build: (a) => {
+      const lvl = clean(a.level, 20).toLowerCase();
+      if (!['read', 'write', 'maintain', 'none'].includes(lvl)) throw new Error('Access must be read, write, maintain or none.');
+      return { command: `/repo-access ${name(a.name)} @${user(a.user)} ${lvl}` };
+    },
+  },
   // Owner
+  'org-setup': { role: 'owner', build: () => ({ command: '/org-setup' }) },
+  'bot-check': { role: 'owner', build: () => ({ command: '/bot-check' }) },
   promote: { role: 'owner', build: (a) => ({ command: `/promote @${user(a.user)}` }) },
   demote: { role: 'owner', build: (a) => ({ command: `/demote @${user(a.user)}` }) },
 };

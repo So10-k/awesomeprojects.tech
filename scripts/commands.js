@@ -40,14 +40,19 @@ const CATALOG = [
   { cmd: '/lock', who: 'maintainer', where: 'issues', usage: '/lock <reason>', does: 'Pause all new requests (shown to requesters)', admin: true },
   { cmd: '/unlock', who: 'maintainer', where: 'issues', usage: '/unlock', does: 'Resume requests', admin: true },
   { cmd: '/deploy', who: 'maintainer', where: 'any', usage: '/deploy', does: 'Push DNS and rebuild the website now', admin: true },
+  { cmd: '/site', who: 'maintainer', where: 'issues', usage: '/site <name> <active|locked|suspended|archived>', does: 'Change a hosted site\'s status: locked = owner read-only, suspended = also DNS off, archived = repo archived', admin: true },
+  { cmd: '/site-sync', who: 'maintainer', where: 'issues', usage: '/site-sync <name>', does: 'Re-apply the standard repo setup (settings, workflow, Pages, access)', admin: true },
+  { cmd: '/repo-access', who: 'maintainer', where: 'issues', usage: '/repo-access <name> @user <read|write|maintain|none>', does: 'Give someone access to a hosted site\'s repo (uses a seat)', admin: true },
+  { cmd: '/org-setup', who: 'owner', where: 'issues', usage: '/org-setup', does: 'Apply the org\'s safe defaults, rulesets, Actions policy and maintainers team (owner only)', admin: true, owner: true },
+  { cmd: '/bot-check', who: 'owner', where: 'issues', usage: '/bot-check', does: 'Check the bot account\'s token and org role (owner only)', admin: true, owner: true },
   { cmd: '/promote', who: 'owner', where: 'issues', usage: '/promote @user', does: 'Make someone a maintainer (owner only)', admin: true, owner: true },
   { cmd: '/demote', who: 'owner', where: 'issues', usage: '/demote @user', does: 'Remove a maintainer (owner only)', admin: true, owner: true },
   { cmd: '/health', who: 'maintainer', where: 'any', usage: '/health', does: 'Run the dangling-name check now', admin: true },
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote']);
-const OWNER_ONLY = new Set(['/promote', '/demote']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check']);
+const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check']);
 const READ_ONLY = new Set(['/help', '/available', '/whois', '/mine', '/verify', '/stats']);
 
 /** First line of a comment → { cmd, args, rest } or null. Quotes group words: /txt a _x "b c". */
@@ -84,7 +89,7 @@ const fmtRecords = (r = {}) => Object.entries(r).map(([t, v]) => {
 
 const PROVIDER_NAMES = {
   'github-pages': 'GitHub Pages', vercel: 'Vercel', netlify: 'Netlify', 'cloudflare-pages': 'Cloudflare Pages',
-  render: 'Render', railway: 'Railway', fly: 'Fly.io', cname: 'CNAME', server: 'Own server',
+  render: 'Render', railway: 'Railway', fly: 'Fly.io', cname: 'CNAME', server: 'Own server', hosted: 'Hosted by us',
 };
 const hostOf = (d) => (d && d.site && PROVIDER_NAMES[d.site.provider]) || (d && d.records && Object.keys(d.records)[0]) || '?';
 
