@@ -1,0 +1,13 @@
+{
+  "owner": {
+    "github": "So10-k"
+  },
+  "description": "End-to-end test of the request flow (removed right after)",
+  "records": {
+    "CNAME": "so10-k.github.io"
+  },
+  "site": {
+    "provider": "github-pages",
+    "repo": "So10-k/awesomeprojects.tech"
+  }
+}
