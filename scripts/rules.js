@@ -7,7 +7,7 @@ const DOMAIN = 'awesomeprojects.tech';
 const MAX_PER_OWNER = 3; // top-level names per GitHub account (maintainers exempt)
 const MAX_DEPTH = 4; // labels in a name, e.g. selector._domainkey.alice = 3
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'MX'];
-const TOP_KEYS = ['$schema', 'owner', 'description', 'repo', 'records', 'site'];
+const TOP_KEYS = ['$schema', 'owner', 'description', 'repo', 'records', 'site', 'forced'];
 const PROVIDERS = ['hosted', 'github-pages', 'vercel', 'netlify', 'cloudflare-pages', 'render', 'railway', 'fly', 'cname', 'server'];
 const SITE_STATUSES = ['active', 'locked', 'suspended', 'archived'];
 const REPO = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\/[\w.-]{1,100}$/i;
@@ -182,6 +182,7 @@ function checkEntry(name, data) {
   if (data.repo !== undefined && (typeof data.repo !== 'string' || !/^https:\/\//.test(data.repo))) {
     errors.push('"repo" must be an https:// URL');
   }
+  if (data.forced !== undefined && (typeof data.forced !== 'string' || !GITHUB_USER.test(data.forced))) errors.push('"forced" must be the maintainer who forced it');
   if (data.site !== undefined) errors.push(...checkSite(data.site, data.records));
   errors.push(...checkRecords(data.records, name));
   return errors;
@@ -221,12 +222,14 @@ function checkTree(entries, { reserved = [], maintainers = [], maxPerOwner = MAX
   const perOwner = {};
 
   for (const [name, data] of Object.entries(entries)) {
-    add(name, checkName(name, reserved));
+    // A maintainer forced it: reserved names and the per-person limit don't apply to this name.
+    const forced = data && typeof data.forced === 'string';
+    add(name, checkName(name, forced ? [] : reserved));
     add(name, checkEntry(name, data));
     const base = baseOf(name);
     if (base !== name) {
       if (!entries[base]) add(name, [`"${name}" needs "${base}.json" to exist`]);
-    } else if (ownerOf(data)) {
+    } else if (ownerOf(data) && !forced) {
       (perOwner[ownerOf(data)] ||= []).push(name);
     }
   }

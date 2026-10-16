@@ -180,3 +180,11 @@ test('force: policy blockers are overridden, broken records and other people\'s 
   // Banned is forceable (a maintainer decided).
   assert.equal(run({ files: { alice: entry('alice') }, cfg: { bannedUsers: ['alice'] }, overrideAll: true }).verdict, 'ready');
 });
+
+test('only maintainers can mark a name forced', () => {
+  const forcedEntry = { ...entry('alice'), forced: 'alice' };
+  const r = run({ files: { www: forcedEntry } });
+  assert.equal(r.verdict, 'needs-changes');
+  assert.ok(r.findings.some((f) => /only maintainers can set/.test(f.text)));
+  assert.equal(run({ author: 'boss', files: { www: { ...entry('boss'), forced: 'boss' } } }).verdict, 'ready');
+});

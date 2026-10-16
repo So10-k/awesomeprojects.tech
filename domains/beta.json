@@ -10,5 +10,6 @@
     "repo": "awesomeprojects-sites/beta",
     "status": "active",
     "template": "astro"
-  }
+  },
+  "forced": "so10-k"
 }
