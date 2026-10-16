@@ -853,11 +853,19 @@ async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
       });
     });
   }
+  let pagesNew = false;
   await step(lines, `Pages on ${name}.${R.DOMAIN}`, async () => {
     const pages = await ghBot.get(`/repos/${full}/pages`).catch(() => null);
-    if (!pages) await ghBot.post(`/repos/${full}/pages`, { build_type: 'workflow' });
+    if (!pages) { await ghBot.post(`/repos/${full}/pages`, { build_type: 'workflow' }); pagesNew = true; }
     await ghBot.put(`/repos/${full}/pages`, { build_type: 'workflow', cname: `${name}.${R.DOMAIN}`, public: true });
   });
+  // The starter commit's deploy may have run before Pages existed: start one now.
+  if ((created || pagesNew || rewriteWorkflow) && status !== 'archived') {
+    await step(lines, 'first deploy started', async () => {
+      await new Promise((r) => setTimeout(r, 3000));
+      await ghBot.post(`/repos/${full}/actions/workflows/deploy.yml/dispatches`, { ref: 'main' });
+    });
+  }
   await step(lines, 'maintainers team access', async () => { await ghBot.put(`/orgs/${ORG}/teams/${S.TEAM.slug}/repos/${full}`, { permission: S.TEAM.permission }); });
   await step(lines, `@${owner}: ${S.OWNER_PERMISSION[status] || 'no'} access (${status})`, async () => { await applyAccess(full, owner, status); });
   if (status === 'archived') await step(lines, 'archived', async () => { await ghBot.patch(`/repos/${full}`, { archived: true }); });
