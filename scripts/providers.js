@@ -9,6 +9,7 @@ const lc = (s) => String(s || '').trim().toLowerCase();
 
 /** Order = order in the request form. `label` must match the form's dropdown exactly. */
 const PROVIDERS = [
+  { id: 'hosted', label: 'Host it for me (we make you a private repo)', input: 'none' },
   { id: 'github-pages', label: 'My GitHub repo (free hosting on GitHub Pages)', input: 'repo' },
   { id: 'vercel', label: 'Vercel', input: 'none' },
   { id: 'netlify', label: 'Netlify', input: 'target', suffix: '.netlify.app', hint: 'your Netlify site name, e.g. my-site' },
@@ -41,7 +42,7 @@ function cleanHost(s) {
  * form: { Subdomain, 'Where should it point?', 'GitHub repository', Target, Description }
  * returns { name, provider, entry, problems }
  */
-function buildRequest(form, author) {
+function buildRequest(form, author, { sitesOrg } = {}) {
   const { cleanName } = require('./requests');
   const problems = [];
   const name = cleanName(form['Subdomain'] || '');
@@ -56,6 +57,13 @@ function buildRequest(form, author) {
     const repo = cleanRepo(form['GitHub repository']);
     if (!repo) problems.push('Enter your GitHub repository as `owner/repo`, e.g. `alice/portfolio`.');
     else { records = { CNAME: `${lc(repo.split('/')[0])}.github.io` }; site.repo = repo; }
+  } else if (provider.id === 'hosted') {
+    if (!sitesOrg) problems.push('Hosting with us isn\'t switched on yet. Pick another option for now.');
+    else if (name.includes('.')) problems.push('Hosted sites need a top-level name.');
+    else {
+      records = { CNAME: `${lc(sitesOrg)}.github.io` };
+      site = { provider: 'hosted', repo: `${sitesOrg}/${name}`, status: 'active' };
+    }
   } else if (provider.id === 'vercel') {
     records = { CNAME: 'cname.vercel-dns.com' };
   } else if (provider.input === 'target') {
@@ -112,6 +120,12 @@ function setupGuide({ provider, name, repo, branch = 'main', sourceRepo, domain 
   const host = `${name}.${domain}`;
   const p = typeof provider === 'string' ? byLabelOrId(provider) : provider;
   switch (p && p.id) {
+    case 'hosted':
+      return [
+        `**1. Accept your invite** to [${repo}](https://github.com/${repo}) (check your email or [github.com/${repo}/invitations](https://github.com/${repo}/invitations)).`,
+        `**2. Edit and push.** It already has a starter page, and it's live at **https://${host}** a minute after each push. Next.js, Vite, Astro and more are detected automatically.`,
+        `**3. Manage your name** (records, status) at [awesomeprojects.tech/me](https://awesomeprojects.tech/me/), and check it with \`/verify ${name}\`.`,
+      ].join('\n\n');
     case 'github-pages': {
       const file = encodeURIComponent('.github/workflows/awesomeprojects.yml');
       const value = encodeURIComponent(pagesWorkflow(sourceRepo));

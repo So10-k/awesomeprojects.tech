@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "What to run: pr <number> | issue <number> | health"
+        description: "What to run: pr <number> | issue <number> | health | bot-check"
         required: true
         default: health
 
@@ -58,3 +58,4 @@ jobs:
           TARGET: ${{ inputs.target }}
           PANEL_API: https://api.awesomeprojects.tech
           PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
+          BOT_PAT: ${{ secrets.BOT_PAT }} # the bot account: only used for the sites org

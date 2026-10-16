@@ -31,8 +31,11 @@ for (var i = 0; i < reserved.length; i++) {
 var files = glob("./domains/", false, ".json");
 for (var f = 0; f < files.length; f++) {
   var name = files[f].split("/").pop().replace(/\.json$/, "");
-  var r = require(files[f]).records;
+  var entry = require(files[f]);
+  var r = entry.records;
   var t, k;
+  // Hosted sites that are suspended or archived publish nothing (so nobody can take the name over).
+  if (entry.site && entry.site.provider === "hosted" && (entry.site.status === "suspended" || entry.site.status === "archived")) continue;
 
   if (r.CNAME) records.push(CNAME(name, r.CNAME.replace(/\.$/, "") + ".", CF_PROXY_OFF));
   t = r.A || [];
