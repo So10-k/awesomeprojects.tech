@@ -120,7 +120,7 @@ function workflowRuleset() {
     name: 'awesomeprojects: managed workflows',
     target: 'push',
     enforcement: 'active',
-    conditions: { repository_name: { include: ['~ALL'], exclude: [], protected: true } },
+    conditions: { repository_name: { include: ['~ALL'], exclude: [] } },
     bypass_actors: [{ actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' }],
     rules: [{ type: 'file_path_restriction', parameters: { restricted_file_paths: ['.github/workflows/**', '.github/actions/**'] } }],
   };
@@ -130,7 +130,7 @@ function branchRuleset() {
     name: 'awesomeprojects: protect main',
     target: 'branch',
     enforcement: 'active',
-    conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] }, repository_name: { include: ['~ALL'], exclude: [], protected: true } },
+    conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] }, repository_name: { include: ['~ALL'], exclude: [] } },
     bypass_actors: [{ actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' }],
     rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
   };
