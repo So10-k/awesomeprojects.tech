@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   test:
+    # The bot's own PRs are validated by the bot and merged within seconds: no run, no failure email.
+    if: ${{ !startsWith(github.head_ref, 'bot/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

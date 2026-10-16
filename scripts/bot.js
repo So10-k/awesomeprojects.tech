@@ -87,9 +87,27 @@ const mainFile = (f) => {
 
 // ── Activity log (a Discussion) ─────────────────────────────────
 const LOG_TITLE = '📜 Bot activity log';
+/**
+ * Every change is recorded in the private audit log (the console's Activity tab). The public
+ * discussion only gets one digest a day (see ops), so watchers aren't emailed for every action.
+ * Without the panel server, lines go straight to the discussion as before.
+ */
 async function activityLog(line) {
   console.log(`[log] ${line}`);
   if (dryRun) return;
+  if (process.env.PANEL_API && process.env.PANEL_BOT_SECRET) {
+    try {
+      const res = await fetch(`${process.env.PANEL_API}/bot/activity`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${String(process.env.PANEL_BOT_SECRET).trim()}`, 'Content-Type': 'application/json', 'User-Agent': 'awesomeprojects-bot' },
+        body: JSON.stringify({ line }),
+      });
+      if (res.ok) return;
+    } catch { /* fall through to the discussion */ }
+  }
+  return postToLog(line);
+}
+async function postToLog(line) {
   try {
     const [o, n] = repo.split('/');
     const d = await gh.graphql(`query($o:String!,$n:String!){repository(owner:$o,name:$n){id hasDiscussionsEnabled
@@ -1139,6 +1157,19 @@ async function repoAccessCmd(name, user, level, by) {
   return `🔑 @${user} now has **${level}** access to [${full}](https://github.com/${full})${S.ACCESS[level] ? ' (an invite if they aren\'t in yet; this uses a seat)' : ''}.`;
 }
 
+/** One comment a day on the public activity log: everything that changed in the last 24 hours. */
+async function publicDigest(opsLine) {
+  let lines = [];
+  try {
+    const res = await fetch(`${process.env.PANEL_API}/bot/activity?since=${Date.now() - 86400e3}`, { headers: { Authorization: `Bearer ${String(process.env.PANEL_BOT_SECRET || '').trim()}`, 'User-Agent': 'awesomeprojects-bot' } });
+    if (res.ok) lines = (await res.json()).lines || [];
+  } catch { /* no panel: nothing buffered */ }
+  if (!lines.length) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const shown = lines.slice(-60).map((l) => `- ${l.summary}`).join('\n');
+  await postToLog(`### ${day} · ${lines.length} change${lines.length === 1 ? '' : 's'}\n\n${shown}${lines.length > 60 ? `\n- …and ${lines.length - 60} more (see the console's Activity tab)` : ''}\n\n${opsLine}`);
+}
+
 // ── Daily ops ──────────────────────────────────────────────────
 /** Open (or keep) one issue with `label` in a site repo, assigned to its owner. */
 async function siteIssue(full, owner, label, title, body) {
@@ -1224,7 +1255,8 @@ async function ops({ by = 'schedule' } = {}) {
   const snapshot = { at: Date.now(), org: ORG, seats: { used: seats.used, max: seats.max }, sites };
   await panelPost('/bot/sites', snapshot);
   const digest = `📋 **Daily ops** (${by}) · ${sites.length} hosted site${sites.length === 1 ? '' : 's'} · ${failing} failing · seats ${seats.used}${seats.max ? `/${seats.max}` : ''}${acts.length ? `\n${acts.map((a) => `- ${a}`).join('\n')}` : ''}`;
-  if (acts.length || by !== 'schedule' || new Date().getUTCDay() === 1) await activityLog(digest);
+  if (acts.length) await activityLog(digest);
+  if (by === 'schedule') await publicDigest(digest);
   if (acts.length || (seats.max && seats.used >= seats.max * 0.9)) await notify(digest.replace(/\*\*/g, '**'));
   return digest;
 }
