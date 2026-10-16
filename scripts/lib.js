@@ -27,7 +27,9 @@ function github(token, { dryRun = false } = {}) {
     const text = await res.text();
     const data = text ? JSON.parse(text) : null;
     if (!res.ok) {
-      const err = new Error(`${method} ${path}: ${res.status} ${data && data.message}`);
+      const detail = data && Array.isArray(data.errors) && data.errors.length
+        ? ` (${data.errors.map((e) => (typeof e === 'string' ? e : e.message || e.code || JSON.stringify(e))).join('; ')})` : '';
+      const err = new Error(`${method} ${path}: ${res.status} ${data && data.message}${detail}`);
       err.status = res.status;
       throw err;
     }
