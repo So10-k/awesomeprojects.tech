@@ -3,6 +3,7 @@
 'use strict';
 
 const R = require('./rules');
+const S = require('./sites');
 
 const DAY = 86400000;
 const lc = (s) => String(s || '').toLowerCase();
@@ -211,6 +212,11 @@ function review(input) {
       for (const mx of Array.isArray(r.MX) ? r.MX : []) targets.push(typeof mx === 'string' ? mx : mx && mx.host);
       for (const t of targets.filter(Boolean)) {
         const h = t.toLowerCase().replace(/\.$/, '');
+        // Hosted by us: the github.io org or Cloudflare Pages project is created on approve.
+        if (S.isPendingHostedTarget(n, now_, h)) {
+          add('target', 'pass', `\`${h}\` will be set up when this is approved`);
+          continue;
+        }
         if (dns[h] === false) add('target', 'error', `\`${h}\` doesn't exist yet. Set up your site first so the name doesn't point at nothing.`);
         else if (dns[h] === true) add('target', 'pass', `\`${h}\` resolves`);
       }

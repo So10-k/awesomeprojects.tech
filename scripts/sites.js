@@ -94,6 +94,14 @@ jobs:
 `;
 }
 const onCloudflare = (d) => !!(d && d.site && d.site.provider === 'hosted' && d.site.platform === 'cloudflare');
+/** CNAME we create ourselves on approve (github.io org or Cloudflare Pages project) — may not resolve yet. */
+function isPendingHostedTarget(name, entry, host) {
+  if (!isHosted(entry) || !host) return false;
+  const h = lc(host).replace(/\.$/, '');
+  if (onCloudflare(entry)) return h === `${cfProject(name)}.pages.dev`;
+  const org = String((entry.site && entry.site.repo) || '').split('/')[0];
+  return !!org && h === `${lc(org)}.github.io`;
+}
 
 /** Files a new site repo starts with. */
 function starterFiles({ name, owner, domain = R.DOMAIN, sourceRepo }) {
@@ -314,5 +322,6 @@ module.exports = {
   STATUSES, OWNER_PERMISSION, DNS_ON, TEAM, TOPIC, ACCESS, ORG_SETTINGS, PROPERTIES, TEMPLATES,
   isHosted, statusOf, dnsEnabled, checkStatus, repoSettings, deployWorkflow, starterFiles, propertyValues, fillTemplate,
   workflowRuleset, branchRuleset, frozenRuleset, actionsPolicy, canTransition, hostedEntry, inactivity, seatsLeft, httpsReady,
+  isPendingHostedTarget,
   REPO_ROLES, ORG_ROLE, repoRoles, orgRole, ownerRole, collaboratorRole, cfProject, deployWorkflowCf, onCloudflare,
 };
