@@ -18,12 +18,12 @@ GitHub only supports partner identity providers. A custom one like ours is allow
 
 | Repo | Visibility | Holds |
 |---|---|---|
-| `So10-k/awesomeprojects.tech` | **Public** | `domains/`, DNS, request forms, marketing site, thin bot/panel runners |
-| `apjs-hosted-sites/platform` (`config.platformRepo`) | **Private** (EMU) | Bot scripts, panel Worker, templates, `cf-pages-site.yml` / site-build |
+| `So10-k/awesomeprojects.tech` | **Public** | `domains/`, DNS, request forms, marketing site, thin bot/panel runners, domain `scripts/` for validate/site build |
+| `apjs-hosted-sites/platform` (`config.platformRepo`) | **Private** (EMU) | Bot, panel Worker, templates, unit tests, `cf-pages-site.yml` / site-build |
 
-Site repos call reusable workflows in **platform** (same org → `secrets: inherit` works). The public bot workflow checks out platform with `BOT_PAT` and runs it against this registry's `domains/`.
+Site repos call reusable workflows in **platform** (same org → `secrets: inherit` works). The public bot/panel workflows check out platform with `BOT_PAT`. Platform is the source of truth for ops code — edit there, not in this registry.
 
-Bootstrap once: Actions → **Bootstrap platform repo** → *Run workflow*. Then `/site-sync` existing sites so their `deploy.yml` points at `apjs-hosted-sites/platform`.
+After bootstrap: `/site-sync` existing hosted sites so their `deploy.yml` points at `apjs-hosted-sites/platform`.
 
 ---
 
