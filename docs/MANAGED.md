@@ -113,7 +113,7 @@ gh secret set CLOUDFLARE_PAGES_TOKEN -R So10-k/awesomeprojects.tech
 gh secret set CLOUDFLARE_ACCOUNT_ID -R So10-k/awesomeprojects.tech --body 2f8365ea25e7fd8c95ba7da82046b81c
 ```
 
-Site owners can't read the org secrets. Each site's deploy workflow uses `secrets: inherit` into the reusable workflow in **`platform`** (same org). Set `BOT_PAT`, `CLOUDFLARE_PAGES_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID` as **org** secrets on the managed org (needed both to pass Cloudflare into deploy and so the build job can clone private `platform` for `site-build.js`). Prefer a fine-grained read-only PAT later if you want to narrow that. The build job still never sees the Cloudflare token; only the publish job does. The deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
+Site owners can't read the org secrets. Each site's deploy workflow uses `secrets: inherit` into the reusable workflow in **`platform`** (same org). Set `CLOUDFLARE_PAGES_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as **org** secrets on the managed org. The build job never sees them: it loads `site-build.js` as a composite action from platform (GitHub fetches that action; a PAT clone fails SAML SSO). Only the publish job gets the Cloudflare token. The deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
 
 If a site was created before that workflow shape, comment `/site-sync <name>` so the bot rewrites `.github/workflows/deploy.yml`.
 
