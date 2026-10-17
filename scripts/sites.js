@@ -74,6 +74,8 @@ function cfProject(name) {
 }
 /** The workflow for sites in the managed-user enterprise: build without secrets, publish to Cloudflare Pages. */
 function deployWorkflowCf(sourceRepo, project) {
+  // Pass secrets by name: `secrets: inherit` only works inside the same org/enterprise, and site
+  // repos live in the managed org while this reusable workflow lives in the main repo.
   return `# Managed by awesomeprojects.tech: changes to .github/workflows are blocked for site owners.
 name: Deploy
 on:
@@ -90,7 +92,9 @@ jobs:
     uses: ${sourceRepo}/.github/workflows/cf-pages-site.yml@main
     with:
       project: ${project}
-    secrets: inherit
+    secrets:
+      CLOUDFLARE_PAGES_TOKEN: \${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 `;
 }
 const onCloudflare = (d) => !!(d && d.site && d.site.provider === 'hosted' && d.site.platform === 'cloudflare');

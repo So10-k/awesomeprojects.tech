@@ -101,7 +101,9 @@ gh secret set CLOUDFLARE_PAGES_TOKEN -R So10-k/awesomeprojects.tech
 gh secret set CLOUDFLARE_ACCOUNT_ID -R So10-k/awesomeprojects.tech --body 2f8365ea25e7fd8c95ba7da82046b81c
 ```
 
-Site owners can't read the org secrets. The build job has no secrets, the deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
+Site owners can't read the org secrets. Each site's deploy workflow passes `CLOUDFLARE_PAGES_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` **by name** into the reusable workflow in this repo (`secrets: inherit` does not work across orgs). The build job still has no secrets; only the publish job gets the token. The deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
+
+If a site was created before that workflow shape, comment `/site-sync <name>` so the bot rewrites `.github/workflows/deploy.yml`.
 
 ### 7. Check, then set up the org
 
