@@ -90,6 +90,8 @@ jobs:
         run: |
           ent=$(node -e "process.stdout.write(String((require('../config.json').emu||{}).enterprise||'').replace(/[^a-z0-9-]/gi,''))")
           sed -i "s/^EMU_ENTERPRISE = .*/EMU_ENTERPRISE = \"$ent\"/" wrangler.toml
+          code=$(node -e "process.stdout.write(String((require('../config.json').emu||{}).shortcode||'').replace(/[^a-z0-9]/gi,''))")
+          sed -i "s/^EMU_SHORTCODE = .*/EMU_SHORTCODE = \"$code\"/" wrangler.toml
           echo "EMU enterprise: ${ent:-off}"
 
       - name: Deploy
