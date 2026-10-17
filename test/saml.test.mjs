@@ -73,7 +73,7 @@ globalThis.fetch = async (url) => {
   if (u.includes('/contents/config.json')) return res({ content: Buffer.from('{"maintainers":[]}').toString('base64') });
   return new Response('{}', { status: 404 });
 };
-const env = () => ({ REPO: 'boss/x', SITE_ORIGIN: 'https://awesomeprojects.tech', SESSION_SECRET: 's', BOT_SECRET: 'b', GITHUB_CLIENT_ID: 'c', GITHUB_CLIENT_SECRET: 'cs', EMU_ENTERPRISE: ENT, SAML_ISSUER: 'https://api.awesomeprojects.tech/saml', SAML_PRIVATE_KEY: privateKey, SAML_CERT: cert, PANEL: kv(), DB: d1() });
+const env = () => ({ REPO: 'boss/x', SITE_ORIGIN: 'https://awesomeprojects.tech', SESSION_SECRET: 's', BOT_SECRET: 'b', GITHUB_CLIENT_ID: 'c', GITHUB_CLIENT_SECRET: 'cs', EMU_ENTERPRISE: ENT, EMU_SHORTCODE: 'apjs', SAML_ISSUER: 'https://api.awesomeprojects.tech/saml', SAML_PRIVATE_KEY: privateKey, SAML_CERT: cert, PANEL: kv(), DB: d1() });
 const go = (e, p, init = {}) => worker.fetch(new Request(`https://api.awesomeprojects.tech${p}`, init), e);
 
 async function ssoRoundTrip(e, requestXml) {
@@ -116,6 +116,10 @@ test('sign-in: the repo owner can run GitHub\'s SAML test before anyone is provi
   assert.equal(r.status, 200);
   const xml = Buffer.from((await r.text()).match(/name="SAMLResponse" value="([^"]+)"/)[1], 'base64').toString('utf8');
   assert.match(xml, />boss<\/saml:NameID>/);
+  ghUser = { login: 'apjs_admin', id: 8 };
+  assert.equal((await ssoRoundTrip(e, gitHubRequest())).status, 200, 'the setup user, in the setup user\'s browser');
+  ghUser = { login: 'other_admin', id: 9 };
+  assert.equal((await ssoRoundTrip(e, gitHubRequest())).status, 403, 'another enterprise\'s setup user');
   ghUser = { login: 'Alice', id: 42, name: 'Alice A' };
 });
 
