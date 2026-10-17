@@ -10,7 +10,7 @@ const P = require('./providers');
 const F = require('./frameworks');
 const C = require('./commands');
 
-const root = path.join(__dirname, '..');
+const root = process.env.REPO_ROOT || path.join(__dirname, '..');
 const out = path.join(root, process.argv[2] || '_site');
 const read = (f) => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
 

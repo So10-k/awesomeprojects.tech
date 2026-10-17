@@ -64,7 +64,7 @@ Everything is a comment, so it all works from the GitHub mobile app.
   | `archived` | removed | DNS off, repo archived | done with it |
 
   Change it from the console's **Sites** tab or with `/site`. Only the owner can bring back an archived site.
-- **Templates:** Plain HTML, Next.js, Vite + React, Astro or Docs (VitePress), from `templates/`, created in one commit. Each one is test-built through the real deploy pipeline.
+- **Templates:** Plain HTML, Next.js, Vite + React, Astro or Docs (VitePress), from `templates/` in **`apjs-hosted-sites/platform`**, created in one commit. Each one is test-built through the real deploy pipeline.
 - **Custom properties** on every site repo (`ap_status`, `ap_owner`, `ap_name`, `ap_template`), and org rulesets that target them:
   - **frozen sites:** `ap_status` locked or suspended means GitHub refuses every push, branch creation and deletion
   - **managed workflows:** no edits to `.github/workflows/**`, a maximum file size (`maxFileSizeMB`), and blocked file types (`blockedExtensions`)

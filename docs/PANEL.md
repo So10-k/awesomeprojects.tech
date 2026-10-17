@@ -1,6 +1,6 @@
 # The panel server (`api.awesomeprojects.tech`)
 
-A small Cloudflare Worker (`worker/`) behind **Sign in with GitHub** on the [console](https://awesomeprojects.tech/admin/) and [My domains](https://awesomeprojects.tech/me/).
+A small Cloudflare Worker (in private `apjs-hosted-sites/platform` → `worker/`) behind **Sign in with GitHub** on the [console](https://awesomeprojects.tech/admin/) and [My domains](https://awesomeprojects.tech/me/). The public registry only has a thin **Panel server** workflow that checks out platform and deploys.
 
 ```mermaid
 flowchart LR
@@ -82,7 +82,7 @@ It creates the KV namespace, deploys the Worker on `api.awesomeprojects.tech` (C
 
 ## Changing things later
 
-- **Code:** edit `worker/src/index.js`; merging to `main` redeploys. Tests: `test/worker.test.mjs` (`npm test`).
+- **Code:** edit `worker/src/index.js` in **`apjs-hosted-sites/platform`**, then run **Panel server** (workflow_dispatch) on the public registry to redeploy. Tests: `npm test` in platform.
 - **Rotating a secret:** set it again with `gh secret set …`, then re-run *Panel server*. Rotating `PANEL_SESSION_SECRET` signs everyone out.
 - **Turning it off:** Cloudflare → Workers → `awesomeprojects-panel` → disable, or delete it. The console falls back to token mode on its own.
 - **Local dev:** `cd worker && npx wrangler dev --local --var SESSION_SECRET:dev …` (the `EXTRA_ORIGINS` var already allows `http://localhost:5191`).

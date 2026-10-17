@@ -51,25 +51,12 @@ jobs:
           fetch-depth: 0
 
       - name: Private platform (bot scripts)
-        id: platform
-        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: apjs-hosted-sites/platform
           ref: main
           path: .platform
           token: ${{ secrets.BOT_PAT }}
-
-      - name: Fall back to scripts in this repo
-        if: steps.platform.outcome != 'success'
-        run: |
-          echo "::notice::Platform checkout failed; using scripts from this repo until bootstrap finishes."
-          rm -rf .platform
-          mkdir -p .platform
-          cp -a scripts .platform/
-          [ -d worker ] && cp -a worker .platform/
-          [ -d templates ] && cp -a templates .platform/
-          [ -d test ] && cp -a test .platform/
 
       - uses: actions/setup-node@v4
         with:

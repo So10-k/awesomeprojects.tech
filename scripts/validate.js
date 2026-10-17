@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const R = require('./rules');
 
-const root = path.join(__dirname, '..');
+const root = process.env.REPO_ROOT || path.join(__dirname, '..');
 const dir = path.join(root, 'domains');
 const read = (f) => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
 const reserved = read('reserved.json');
