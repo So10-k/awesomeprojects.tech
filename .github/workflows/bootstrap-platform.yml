@@ -1,0 +1,23 @@
+name: Bootstrap platform repo
+
+# Creates/updates the private apjs-hosted-sites/platform repo from this registry
+# (bot, worker, templates, reusable site-build workflows). Run once after merge,
+# then again whenever you want to re-sync before stripping public copies.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish platform
+        env:
+          BOT_PAT: ${{ secrets.BOT_PAT }}
+        run: node scripts/publish-platform.js

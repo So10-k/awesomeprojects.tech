@@ -14,6 +14,17 @@ When this is on, people don't join hosted site repos with their own GitHub accou
 
 GitHub only supports partner identity providers. A custom one like ours is allowed (it implements SAML 2.0 and SCIM 2.0), but GitHub Support won't help debug it.
 
+### Public registry vs private platform
+
+| Repo | Visibility | Holds |
+|---|---|---|
+| `So10-k/awesomeprojects.tech` | **Public** | `domains/`, DNS, request forms, marketing site, thin bot/panel runners |
+| `apjs-hosted-sites/platform` (`config.platformRepo`) | **Private** (EMU) | Bot scripts, panel Worker, templates, `cf-pages-site.yml` / site-build |
+
+Site repos call reusable workflows in **platform** (same org → `secrets: inherit` works). The public bot workflow checks out platform with `BOT_PAT` and runs it against this registry's `domains/`.
+
+Bootstrap once: Actions → **Bootstrap platform repo** → *Run workflow*. Then `/site-sync` existing sites so their `deploy.yml` points at `apjs-hosted-sites/platform`.
+
 ---
 
 ## Setting it up (owner, once)
@@ -81,10 +92,11 @@ After SAML is required, only a **provisioned** enterprise owner can create organ
 1. On any issue, comment `/emu-create @So10-k` (or **My domains → Get my enterprise account**). You should get something like `so10-k_apjs`.
 2. Sign in at `https://github.com/enterprises/<slug>/sso` **as that managed account** (confirm with your normal GitHub account when our sign-in asks).
 3. Create the org you named in `config.json` (**Enterprise → Organizations → New organization**). You (the managed owner) are the org owner; the setup user will never appear in the member list — that's normal.
-4. As that managed owner, create a classic PAT with `repo`, `workflow`, `admin:org` (no expiry) and save it as `BOT_PAT`:
+4. As that managed owner, create a classic PAT with `repo`, `workflow`, `admin:org` (no expiry) and save it as `BOT_PAT` on the public registry **and** as an org secret (site deploys inherit it to clone private `platform`):
 
 ```bash
 gh secret set BOT_PAT -R So10-k/awesomeprojects.tech
+gh secret set BOT_PAT --org <managed org> --visibility all
 ```
 
 5. Still as the managed owner (personal `So10-k` can't see the org), set the Cloudflare org secrets:
@@ -101,7 +113,7 @@ gh secret set CLOUDFLARE_PAGES_TOKEN -R So10-k/awesomeprojects.tech
 gh secret set CLOUDFLARE_ACCOUNT_ID -R So10-k/awesomeprojects.tech --body 2f8365ea25e7fd8c95ba7da82046b81c
 ```
 
-Site owners can't read the org secrets. Each site's deploy workflow passes `CLOUDFLARE_PAGES_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` **by name** into the reusable workflow in this repo (`secrets: inherit` does not work across orgs). The build job still has no secrets; only the publish job gets the token. The deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
+Site owners can't read the org secrets. Each site's deploy workflow uses `secrets: inherit` into the reusable workflow in **`platform`** (same org). Set `BOT_PAT`, `CLOUDFLARE_PAGES_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID` as **org** secrets on the managed org (needed both to pass Cloudflare into deploy and so the build job can clone private `platform` for `site-build.js`). Prefer a fine-grained read-only PAT later if you want to narrow that. The build job still never sees the Cloudflare token; only the publish job does. The deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
 
 If a site was created before that workflow shape, comment `/site-sync <name>` so the bot rewrites `.github/workflows/deploy.yml`.
 

@@ -44,7 +44,7 @@ function repoSettings({ name, domain = R.DOMAIN, owner }) {
 }
 
 /** The workflow every site repo runs (it may only be changed by the bot / org admins). */
-function deployWorkflow(sourceRepo) {
+function deployWorkflow(platformRepo) {
   return `# Managed by awesomeprojects.tech: changes to .github/workflows are blocked for site owners.
 name: Deploy
 on:
@@ -60,7 +60,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   site:
-    uses: ${sourceRepo}/.github/workflows/pages-site.yml@main
+    uses: ${platformRepo}/.github/workflows/pages-site.yml@main
+    secrets: inherit
 `;
 }
 
@@ -73,9 +74,8 @@ function cfProject(name) {
   return `ap-${n.slice(0, 48)}-${h.toString(36).slice(0, 6)}`;
 }
 /** The workflow for sites in the managed-user enterprise: build without secrets, publish to Cloudflare Pages. */
-function deployWorkflowCf(sourceRepo, project) {
-  // Pass secrets by name: `secrets: inherit` only works inside the same org/enterprise, and site
-  // repos live in the managed org while this reusable workflow lives in the main repo.
+function deployWorkflowCf(platformRepo, project) {
+  // Prefer the private platform repo in the managed org so `secrets: inherit` works (same org).
   return `# Managed by awesomeprojects.tech: changes to .github/workflows are blocked for site owners.
 name: Deploy
 on:
@@ -89,12 +89,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   site:
-    uses: ${sourceRepo}/.github/workflows/cf-pages-site.yml@main
+    uses: ${platformRepo}/.github/workflows/cf-pages-site.yml@main
     with:
       project: ${project}
-    secrets:
-      CLOUDFLARE_PAGES_TOKEN: \${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    secrets: inherit
 `;
 }
 const onCloudflare = (d) => !!(d && d.site && d.site.provider === 'hosted' && d.site.platform === 'cloudflare');

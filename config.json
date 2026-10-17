@@ -68,5 +68,6 @@
     "enterprise": "awesome-projects",
     "org": "apjs-hosted-sites",
     "shortcode": "apjs"
-  }
+  },
+  "platformRepo": "apjs-hosted-sites/platform"
 }
