@@ -19,6 +19,8 @@
 //      GITHUB_CLIENT_SECRET, DISPATCH_TOKEN, SESSION_SECRET, BOT_SECRET; KV binding PANEL
 //      (jobs, rate limits); D1 binding DB (requests, notes, audit: strongly consistent).
 
+import { buildResponse, parseAuthnRequest, metadata, postForm } from './saml.js';
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 const SESSION_HOURS = 12;
@@ -153,6 +155,10 @@ export const ACTIONS = {
       return { command: `/repo-access ${name(a.name)} @${user(a.user)} ${lvl}` };
     },
   },
+  'emu-account': { role: 'user', build: () => ({ emu: { op: 'provision' } }) },
+  'emu-suspend': { role: 'maintainer', build: (a) => ({ command: `/emu-suspend @${user(a.user)}` }) },
+  'emu-restore': { role: 'maintainer', build: (a) => ({ command: `/emu-restore @${user(a.user)}` }) },
+  'emu-create': { role: 'maintainer', build: (a) => ({ command: `/emu-create @${user(a.user)}` }) },
   redeploy: { role: 'user', build: (a) => ({ command: `/redeploy ${name(a.name)}` }) },
   'site-collab': {
     role: 'user',
@@ -244,6 +250,86 @@ async function config(env, now = Date.now()) {
   configCache = { at: now, value: await repoJson(env, 'config.json') };
   return configCache.value;
 }
+// ── SAML identity provider for the managed-user enterprise ─────
+const samlIssuer = (env, url) => env.SAML_ISSUER || `${url.origin}/saml`;
+const spEntity = (env) => `https://github.com/enterprises/${env.EMU_ENTERPRISE}`;
+const spAcs = (env) => `${spEntity(env)}/saml/consume`;
+function page(title, body, status = 200) {
+  return new Response(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:system-ui;background:#0b1020;color:#e6ebff;display:grid;place-items:center;min-height:100vh;margin:0"><main style="max-width:34rem;padding:2rem">
+<h1 style="font-size:1.4rem">${title}</h1>${body}</main></body></html>`, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+/** GitHub sends people here to sign in (HTTP-Redirect or HTTP-POST binding). */
+async function samlSso(req, env, url) {
+  if (!env.EMU_ENTERPRISE || !env.SAML_PRIVATE_KEY || !env.SAML_CERT) return page('Not set up yet', '<p>Enterprise sign-in isn\'t switched on.</p>', 503);
+  let samlRequest = url.searchParams.get('SAMLRequest');
+  let relayState = url.searchParams.get('RelayState') || '';
+  let deflated = true;
+  if (req.method === 'POST') {
+    const form = await req.formData();
+    samlRequest = form.get('SAMLRequest');
+    relayState = form.get('RelayState') || '';
+    deflated = false;
+  }
+  let ar = { id: undefined, acs: spAcs(env), issuer: spEntity(env) };
+  if (samlRequest) {
+    try { ar = await parseAuthnRequest(samlRequest, { deflated }); } catch { return page('Bad sign-in request', '<p>Start again from GitHub.</p>', 400); }
+  }
+  // Only ever answer our own enterprise.
+  if (ar.issuer && ar.issuer !== spEntity(env)) return page('Unknown service', '<p>This sign-in is only for our GitHub enterprise.</p>', 400);
+  if (ar.acs && ar.acs !== spAcs(env)) return page('Unknown service', '<p>Unexpected return address.</p>', 400);
+  const samlState = { id: ar.id || null, relay: String(relayState).slice(0, 1000) };
+  return login(req, env, new URL(`${url.origin}/auth/login?return=/me/`), { saml: samlState });
+}
+
+/** After GitHub OAuth told us who this is: answer GitHub's SAML request for their managed account. */
+async function samlFinish(env, saml, me) {
+  if (!env.DB) return page('Not set up yet', '<p>Accounts aren\'t switched on.</p>', 503);
+  const idn = await env.DB.prepare('SELECT * FROM identities WHERE personal_id = ?1').bind(me.id).first();
+  if (!idn || idn.status !== 'active') {
+    const why = !idn ? 'You don\'t have an enterprise account yet.' : idn.status === 'suspended' ? 'Your enterprise account is suspended.' : 'Your enterprise account isn\'t ready yet.';
+    return page(why, `<p>Signed in as <b>@${me.login}</b>. ${idn && idn.status === 'suspended' ? 'Contact a maintainer.' : `Get one at <a style="color:#7aa8ff" href="${env.SITE_ORIGIN}/me/">My domains</a>, then come back.`}</p>`, 403);
+  }
+  const { xml } = await buildResponse({
+    nameId: idn.user_name, acs: spAcs(env), audience: spEntity(env), issuer: env.SAML_ISSUER || 'https://api.awesomeprojects.tech/saml',
+    inResponseTo: saml.id || undefined, attributes: { full_name: [me.name || me.login] },
+    privateKey: env.SAML_PRIVATE_KEY, cert: env.SAML_CERT,
+  });
+  await auditWrite(env, { id: newId(), at: Date.now(), actor: me.login, role: 'user', summary: `enterprise sign-in as ${idn.managed_login || idn.user_name}`, state: 'done' });
+  return new Response(postForm({ acs: spAcs(env), samlResponse: btoa(unescape(encodeURIComponent(xml))), relayState: saml.relay }), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+/** The bot reports a managed account it created or changed. */
+async function botIdentity(req, env) {
+  const h = req.headers.get('Authorization') || '';
+  const secret = String(env.BOT_SECRET || '').trim();
+  if (!secret || !safeEqual(h.trim(), `Bearer ${secret}`)) return new Response('no', { status: 401 });
+  const b = await req.json();
+  const now = Date.now();
+  await env.DB.prepare(`INSERT INTO identities (personal_id, personal_login, user_name, managed_login, scim_id, status, note, created_at, updated_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+    ON CONFLICT(personal_id) DO UPDATE SET personal_login = excluded.personal_login, user_name = excluded.user_name, managed_login = COALESCE(excluded.managed_login, managed_login),
+      scim_id = COALESCE(excluded.scim_id, scim_id), status = excluded.status, note = excluded.note, updated_at = excluded.updated_at`)
+    .bind(Number(b.personal_id), String(b.personal_login), String(b.user_name), b.managed_login || null, b.scim_id || null, String(b.status), b.note || null, now).run();
+  return new Response('ok');
+}
+/** Your managed account (or, for maintainers, anyone's / everyone's). */
+async function identityView(req, env, s, url) {
+  if (!env.DB) return json(req, env, { identity: null, enabled: false });
+  const enabled = !!(env.EMU_ENTERPRISE && env.SAML_CERT);
+  const who = clean(url.searchParams.get('login'), 40).replace(/^@/, '');
+  if (url.searchParams.get('all') === '1' || who) {
+    if (RANK[await roleOf(s.login, env)] < RANK.maintainer) return fail(req, env, 403, 'Maintainers only.');
+    const rows = who
+      ? (await env.DB.prepare('SELECT * FROM identities WHERE lower(personal_login) = lower(?1)').bind(who).all()).results
+      : (await env.DB.prepare('SELECT * FROM identities ORDER BY updated_at DESC LIMIT 500').all()).results;
+    return json(req, env, { identities: rows || [], enabled, enterprise: env.EMU_ENTERPRISE || null });
+  }
+  const idn = await env.DB.prepare('SELECT * FROM identities WHERE personal_id = ?1').bind(s.id).first();
+  return json(req, env, { identity: idn || null, enabled, enterprise: env.EMU_ENTERPRISE || null, signIn: env.EMU_ENTERPRISE ? `https://github.com/enterprises/${env.EMU_ENTERPRISE}/sso` : null });
+}
+
 /** Tests only: forget cached config. */
 export { sweep };
 export function resetCaches() { configCache = { at: 0, value: null }; queueCache = { at: 0, value: null }; }
@@ -265,10 +351,10 @@ const newId = () => b64url(crypto.getRandomValues(new Uint8Array(12)));
 const auditKey = (now, id) => `audit:${String(1e13 - now).padStart(13, '0')}:${id}`;
 
 // ── Routes ──────────────────────────────────────────────────────
-async function login(req, env, url) {
+async function login(req, env, url, extra = {}) {
   const ret = url.searchParams.get('return') || '/me/';
   if (!ret.startsWith('/') || ret.startsWith('//')) return new Response('bad return path', { status: 400 });
-  const state = await sign({ r: ret, n: newId(), exp: Date.now() + 10 * 60 * 1000 }, env.SESSION_SECRET);
+  const state = await sign({ r: ret, n: newId(), exp: Date.now() + 10 * 60 * 1000, ...extra }, env.SESSION_SECRET);
   const to = new URL('https://github.com/login/oauth/authorize');
   to.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
   to.searchParams.set('redirect_uri', `${url.origin}/auth/callback`);
@@ -292,6 +378,7 @@ async function callback(req, env, url) {
   }).then((r) => r.json());
   // We only needed to know who you are: GitHub's token isn't kept.
   if (!me || !me.login) return new Response('Couldn\'t read your GitHub profile.', { status: 400 });
+  if (st.saml) return samlFinish(env, st.saml, me);
   const s = await sign({ login: me.login, id: me.id, avatar: me.avatar_url, exp: Date.now() + SESSION_HOURS * 3600e3 }, env.SESSION_SECRET);
   return Response.redirect(`${env.SITE_ORIGIN}${st.r}#session=${encodeURIComponent(s)}`, 302);
 }
@@ -314,7 +401,7 @@ async function action(req, env, s) {
   await env.PANEL.put(rk, String(used + 1), { expirationTtl: RATE.windowSec * 2 });
 
   const id = newId();
-  const summary = built.create ? `create ${built.create.name} for @${built.create.owner}${built.create.force ? ' (forced)' : ''}` : built.update ? `update ${built.update.name}` : built.records ? `records ${built.records.name}${built.records.records === null ? ' (delete)' : ''}` : `${built.command}${built.target ? ` on #${built.target}` : ''}`;
+  const summary = built.emu ? 'get my enterprise account' : built.create ? `create ${built.create.name} for @${built.create.owner}${built.create.force ? ' (forced)' : ''}` : built.update ? `update ${built.update.name}` : built.records ? `records ${built.records.name}${built.records.records === null ? ' (delete)' : ''}` : `${built.command}${built.target ? ` on #${built.target}` : ''}`;
   const key = auditKey(now, id);
   const job = { id, actor: s.login, role, action: body.action, summary, state: 'queued', at: now, auditKey: key };
   await env.PANEL.put(`job:${id}`, JSON.stringify(job), { expirationTtl: 7 * 86400 });
@@ -325,7 +412,7 @@ async function action(req, env, s) {
     headers: { 'Content-Type': 'application/json' },
     // at + summary come back with the result, so reporting never needs to read KV (which is only
     // eventually consistent between Cloudflare locations: the bot's report lands somewhere else).
-    body: JSON.stringify({ event_type: 'panel', client_payload: { id, actor: s.login, at: now, summary, ...built } }),
+    body: JSON.stringify({ event_type: 'panel', client_payload: { id, actor: s.login, actorId: s.id, at: now, summary, ...built } }),
   });
   if (!r.ok) {
     const msg = `GitHub refused the action (${r.status}).`;
@@ -650,6 +737,12 @@ export default {
       if (url.pathname === '/bot/request' && req.method === 'POST') return botRequest(req, env);
       if (url.pathname === '/bot/sites' && req.method === 'POST') return botSites(req, env);
       if (url.pathname === '/bot/activity') return botActivity(req, env, url);
+      if (url.pathname === '/bot/identity' && req.method === 'POST') return botIdentity(req, env);
+      if (url.pathname === '/saml/sso' && (req.method === 'GET' || req.method === 'POST')) return samlSso(req, env, url);
+      if (url.pathname === '/saml/metadata' && req.method === 'GET') {
+        if (!env.SAML_CERT) return new Response('not set up', { status: 503 });
+        return new Response(metadata({ issuer: env.SAML_ISSUER || 'https://api.awesomeprojects.tech/saml', ssoUrl: `${url.origin}/saml/sso`, cert: env.SAML_CERT }), { headers: { 'Content-Type': 'application/samlmetadata+xml' } });
+      }
       if (url.pathname.startsWith('/api/')) {
         // State-changing calls must come from the site itself.
         if (req.method === 'POST' && !origins(env).includes(req.headers.get('Origin'))) return fail(req, env, 403, 'Wrong origin.');
@@ -662,6 +755,7 @@ export default {
         if (url.pathname === '/api/audit' && req.method === 'GET') return audit(req, env, s, url);
         if (url.pathname === '/api/stats' && req.method === 'GET') return stats(req, env, s);
         if (url.pathname === '/api/sites' && req.method === 'GET') return sitesView(req, env, s);
+        if (url.pathname === '/api/identity' && req.method === 'GET') return identityView(req, env, s, url);
         if (url.pathname === '/api/requests' || url.pathname.startsWith('/api/requests/')) return requests(req, env, s, url, url.pathname.split('/'));
       }
       return fail(req, env, 404, 'Not found.');
