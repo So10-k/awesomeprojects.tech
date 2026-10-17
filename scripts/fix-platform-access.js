@@ -116,8 +116,9 @@ async function retargetWorkflow(name) {
     if (!wf.text.includes('secrets.BOT_PAT') && !wf.text.includes('secrets.BOT_PAT'.replace('secrets.', ''))) {
       /* checked below */
     }
-    if (wf.text.includes('${{ secrets.BOT_PAT }}')) ok('cf-pages-site.yml checks out scripts with BOT_PAT');
-    else bad('cf-pages-site.yml does not use secrets.BOT_PAT to clone platform scripts');
+    if (wf.text.includes('actions/site-build@main')) ok('cf-pages-site.yml loads scripts via the site-build action');
+    else if (wf.text.includes('${{ secrets.BOT_PAT }}')) ok('cf-pages-site.yml still clones with BOT_PAT (will be replaced)');
+    else bad('cf-pages-site.yml has neither the site-build action nor a BOT_PAT checkout');
   }
 
   let access;
@@ -159,7 +160,7 @@ async function retargetWorkflow(name) {
   await retargetWorkflow('cf-pages-site.yml');
   await retargetWorkflow('pages-site.yml');
   const sitesJs = await file(platformRepo, 'scripts/sites.js');
-  if (!sitesJs.text.includes('.github/actions/*')) {
+  if (!/patterns_allowed:.*\.github\/actions/.test(sitesJs.text)) {
     const from = 'patterns_allowed: [`${sourceRepo}/.github/workflows/*`, \'oven-sh/setup-bun@*\']';
     const to = 'patterns_allowed: [`${sourceRepo}/.github/workflows/*`, `${sourceRepo}/.github/actions/*`, \'oven-sh/setup-bun@*\']';
     if (!sitesJs.text.includes(from)) bad('could not update scripts/sites.js actions allow-list');
@@ -168,7 +169,6 @@ async function retargetWorkflow(name) {
       ok('sites.js allow-list includes platform actions');
     }
   } else ok('sites.js already allows platform actions');
-  void actionsPattern;
 
   const sites = ['justaquicktest'];
   for (const name of sites) {
