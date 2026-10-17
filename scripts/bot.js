@@ -26,7 +26,9 @@ const C = require('./commands');
 const S = require('./sites');
 const { github, git, readTree, diff, checkTargets, verifySite } = require('./lib');
 
-const root = path.join(__dirname, '..');
+// REPO_ROOT = public registry (domains/, config.json). PLATFORM_ROOT = private platform (templates/, scripts/).
+const root = process.env.REPO_ROOT || path.join(__dirname, '..');
+const platformRoot = process.env.PLATFORM_ROOT || root;
 const readJson = (f) => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
 const config = readJson('config.json');
 const reserved = readJson('reserved.json');
@@ -44,6 +46,8 @@ const ORG = config.sitesOrg || '';
 const EMU = config.emu || {};
 const ghEmu = process.env.EMU_ADMIN_TOKEN ? github(String(process.env.EMU_ADMIN_TOKEN).trim(), { dryRun }) : null;
 const emuHostingOn = !!(EMU.org && ghEmu && ghBot);
+// Reusable workflows + site-build live here (private, same org as managed sites when possible).
+const platformRepo = String(config.platformRepo || (EMU.org ? `${EMU.org}/platform` : repo) || repo);
 const runUrl = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
 
@@ -387,7 +391,7 @@ async function onRequest(issue, { comment, cmd, force = false } = {}) {
     tag: `request-${issue.number}`,
   });
   if (!merged) return say(result, { entry: built.entry, plan: rc.plan });
-  const guide = P.setupGuide({ provider: built.provider, name, repo: built.entry.site && built.entry.site.repo, branch: rc.branch, sourceRepo: repo });
+  const guide = P.setupGuide({ provider: built.provider, name, repo: built.entry.site && built.entry.site.repo, branch: rc.branch, sourceRepo: platformRepo });
   await say(result, { live: true, guide, prUrl: pr.html_url });
   await setLabels(issue.number, result.labels, ['live'], [...MANAGED, 'live']);
   await activityLog(`✅ **${exists ? 'Updated' : 'Added'}** \`${name}.${R.DOMAIN}\` for @${author} · ${approving ? `${forcing ? `force-approved (${result.overridden} overridden)` : 'approved'} by @${by}` : 'auto-approved'} · #${issue.number} → #${pr.number}`);
@@ -1046,7 +1050,7 @@ async function orgSetupFor(api, org, { managed }) {
   const mine = (d) => S.isHosted(d) && lc(orgOf(d.site.repo)) === lc(org);
   await step(lines, 'org defaults (no default access, members can\'t create repos or Pages)', async () => { await api.patch(`/orgs/${org}`, S.ORG_SETTINGS); });
   await step(lines, 'Actions: only GitHub\'s actions and our build workflow', async () => {
-    const pol = S.actionsPolicy(repo);
+    const pol = S.actionsPolicy(platformRepo);
     await api.put(`/orgs/${org}/actions/permissions`, pol.permissions);
     await api.put(`/orgs/${org}/actions/permissions/selected-actions`, pol.selected);
   });
@@ -1144,7 +1148,7 @@ async function setProperties(name, entry) {
 
 /** Template files for a new site, filled in, plus the managed workflow and build config. */
 function siteFiles({ name, owner, template, cloudflare = false }) {
-  const dir = path.join(root, 'templates', template || 'html');
+  const dir = path.join(platformRoot, 'templates', template || 'html');
   const vars = { name, host: `${name}.${R.DOMAIN}`, owner, year: String(new Date().getFullYear()) };
   const files = [];
   const walk = (d) => {
@@ -1155,8 +1159,8 @@ function siteFiles({ name, owner, template, cloudflare = false }) {
     }
   };
   if (fs.existsSync(dir)) walk(dir);
-  else files.push(...S.starterFiles({ name, owner, sourceRepo: repo }).filter((f) => !f.path.startsWith('.github/')));
-  files.push({ path: '.github/workflows/deploy.yml', content: cloudflare ? S.deployWorkflowCf(repo, S.cfProject(name)) : S.deployWorkflow(repo) });
+  else files.push(...S.starterFiles({ name, owner, sourceRepo: platformRepo }).filter((f) => !f.path.startsWith('.github/')));
+  files.push({ path: '.github/workflows/deploy.yml', content: cloudflare ? S.deployWorkflowCf(platformRepo, S.cfProject(name)) : S.deployWorkflow(platformRepo) });
   if (!files.some((f) => f.path === 'awesomeprojects.json')) files.push({ path: 'awesomeprojects.json', content: JSON.stringify({ framework: 'auto' }, null, 2) + '\n' });
   return files;
 }
@@ -1215,7 +1219,7 @@ async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
     });
   }
   // On re-sync, put the managed workflow back.
-  const managedWorkflow = cf ? S.deployWorkflowCf(repo, S.cfProject(name)) : S.deployWorkflow(repo);
+  const managedWorkflow = cf ? S.deployWorkflowCf(platformRepo, S.cfProject(name)) : S.deployWorkflow(platformRepo);
   for (const f of rewriteWorkflow ? [{ path: '.github/workflows/deploy.yml', content: managedWorkflow }] : []) {
     await step(lines, f.path, async () => {
       const cur = await api.get(`/repos/${full}/contents/${f.path}`).catch(() => null);
@@ -1568,7 +1572,7 @@ async function createFor({ name, owner: who, provider, repo: srcRepo = '', targe
   });
   if (!merged) return { ok: false, message: `I opened #${pr.number} but couldn't merge it.`, link: pr.html_url };
   await activityLog(`🎁 **Created** \`${built.name}.${R.DOMAIN}\` for @${profile.login} · ${C.hostOf(built.entry)}${force ? ` · forced (${ev.result.overridden} overridden)` : ''} · by @${by} → #${pr.number}`);
-  const guide = P.setupGuide({ provider: p, name: built.name, repo: built.entry.site && built.entry.site.repo, branch: ev.rc.branch, sourceRepo: repo });
+  const guide = P.setupGuide({ provider: p, name: built.name, repo: built.entry.site && built.entry.site.repo, branch: ev.rc.branch, sourceRepo: platformRepo });
   return { ok: true, message: `🎁 \`${built.name}.${R.DOMAIN}\` is live for @${profile.login}${S.isHosted(built.entry) ? `, with [${built.entry.site.repo}](https://github.com/${built.entry.site.repo}) (they're invited)` : ''}.\n\nSend them these steps:\n\n${guide}`, link: pr.html_url };
 }
 
@@ -1643,7 +1647,7 @@ async function selfUpdate(u, actor) {
   });
   if (!merged) return { ok: false, message: `I opened #${pr.number} but couldn't merge it. A maintainer will.`, link: pr.html_url };
   await activityLog(`✏️ **Updated** \`${name}\` → ${C.fmtRecords(entry.records)} · by @${actor} (panel) → #${pr.number}`);
-  const guide = P.setupGuide({ provider: built.provider, name, repo: entry.site && entry.site.repo, branch: rc.branch, sourceRepo: repo });
+  const guide = P.setupGuide({ provider: built.provider, name, repo: entry.site && entry.site.repo, branch: rc.branch, sourceRepo: platformRepo });
   return { ok: true, message: `✅ \`${name}.${R.DOMAIN}\` now points at ${C.fmtRecords(entry.records)}. DNS updates in a minute.\n\n${guide}`, link: pr.html_url };
 }
 
@@ -1691,7 +1695,7 @@ async function onPanelRequest(p) {
     tag: `preq-${p.request}`,
   });
   if (!merged) return panelPost('/bot/request', { request: p.request, kind: 'failed', verdict: 'ready', message: `I opened ${pr.html_url} but couldn't merge it. A maintainer will.` });
-  const guide = P.setupGuide({ provider: built.provider, name: built.name, repo: built.entry.site && built.entry.site.repo, branch: ev.rc.branch, sourceRepo: repo });
+  const guide = P.setupGuide({ provider: built.provider, name: built.name, repo: built.entry.site && built.entry.site.repo, branch: ev.rc.branch, sourceRepo: platformRepo });
   await activityLog(`✅ **${ev.exists ? 'Updated' : 'Added'}** \`${built.name}.${R.DOMAIN}\` for @${author} · approved by @${p.actor} (panel) → #${pr.number}`);
   return panelPost('/bot/request', { request: p.request, kind: 'live', result: { pr: pr.html_url, guide }, message: `🎉 **${built.name}.${R.DOMAIN} is live!** DNS updates in a minute.\n\n${guide}` });
 }

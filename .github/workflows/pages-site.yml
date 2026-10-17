@@ -5,7 +5,7 @@ name: awesomeprojects.tech site build
 #
 #   jobs:
 #     site:
-#       uses: So10-k/awesomeprojects.tech/.github/workflows/pages-site.yml@main
+#       uses: apjs-hosted-sites/platform/.github/workflows/pages-site.yml@main
 #
 # Detects Next.js (static export), Nuxt, SvelteKit, Astro, Gatsby, Docusaurus, VitePress,
 # Eleventy, Create React App, Vite, any `npm run build`, or plain HTML. Override anything
@@ -17,6 +17,9 @@ on:
         description: Project folder, if it isn't the repo root
         type: string
         default: ""
+    secrets:
+      BOT_PAT:
+        required: true
 
 jobs:
   build:
@@ -27,11 +30,12 @@ jobs:
       - name: Get the build scripts
         uses: actions/checkout@v4
         with:
-          repository: So10-k/awesomeprojects.tech
+          repository: apjs-hosted-sites/platform
           ref: main
           path: .awesomeprojects
           sparse-checkout: scripts
           persist-credentials: false
+          token: ${{ secrets.BOT_PAT }}
 
       - name: Detect
         id: plan

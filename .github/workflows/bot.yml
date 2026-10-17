@@ -1,11 +1,9 @@
 name: Subdomain bot
 
-# Request issues, PR reviews, /commands (issues, PRs, Discussions), transfers, takedowns,
-# the activity log, and the weekly health check.
+# Thin runner on the public registry. Heavy code lives in apjs-hosted-sites/platform (private).
+# Events stay here because issues/PRs/domains are public.
 #
-# Safety: this runs main's code with a write token, so it must NEVER check out or run a PR's code.
-# scripts/bot.js only reads PR files as git objects + JSON.parse. Never interpolate PR/issue text
-# into `run:` lines here.
+# Safety: never check out or run a PR's code. scripts/bot.js only reads PR files as git objects.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -16,10 +14,10 @@ on:
   discussion_comment:
     types: [created]
   repository_dispatch:
-    types: [panel] # actions from the panel (api.awesomeprojects.tech)
+    types: [panel]
   schedule:
-    - cron: "17 9 * * 1" # Mondays: dangling-name health check
-    - cron: "41 6 * * *" # daily: hosted-site ops
+    - cron: "17 9 * * 1"
+    - cron: "41 6 * * *"
   workflow_dispatch:
     inputs:
       target:
@@ -28,12 +26,12 @@ on:
         default: health
 
 permissions:
-  contents: write # bot-made transfer/takedown branches
+  contents: write
   pull-requests: write
   issues: write
   statuses: write
-  actions: write # start a deploy after merging
-  discussions: write # the activity log, and answering commands in Discussions
+  actions: write
+  discussions: write
 
 concurrency:
   group: bot-${{ github.event.pull_request.number || github.event.issue.number || github.event.discussion.number || github.event.client_payload.target || github.run_id }}
@@ -46,21 +44,48 @@ jobs:
       (startsWith(github.event.comment.body, '/') && github.event.comment.user.type != 'Bot')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Public registry (domains, config)
+        uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Private platform (bot scripts)
+        id: platform
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: apjs-hosted-sites/platform
+          ref: main
+          path: .platform
+          token: ${{ secrets.BOT_PAT }}
+
+      - name: Fall back to scripts in this repo
+        if: steps.platform.outcome != 'success'
+        run: |
+          echo "::notice::Platform checkout failed; using scripts from this repo until bootstrap finishes."
+          rm -rf .platform
+          mkdir -p .platform
+          cp -a scripts .platform/
+          [ -d worker ] && cp -a worker .platform/
+          [ -d templates ] && cp -a templates .platform/
+          [ -d test ] && cp -a test .platform/
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/bot.js
+
+      - name: Run bot
+        run: node "$PLATFORM_ROOT/scripts/bot.js"
         env:
+          REPO_ROOT: ${{ github.workspace }}
+          PLATFORM_ROOT: ${{ github.workspace }}/.platform
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET: ${{ inputs.target }}
           PANEL_API: https://api.awesomeprojects.tech
           PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
-          BOT_PAT: ${{ secrets.BOT_PAT }} # provisioned owner of the managed org (and/or classic sitesOrg); setup user can't join orgs
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }} # optional notifications
-          EMU_ADMIN_TOKEN: ${{ secrets.EMU_ADMIN_TOKEN }} # setup user: SCIM only
-          CLOUDFLARE_PAGES_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }} # Pages projects for managed-enterprise sites
+          BOT_PAT: ${{ secrets.BOT_PAT }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          EMU_ADMIN_TOKEN: ${{ secrets.EMU_ADMIN_TOKEN }}
+          CLOUDFLARE_PAGES_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -104,8 +104,7 @@ test('managed-enterprise hosting: Cloudflare Pages entries', () => {
   assert.ok(R.checkEntry('neon', { ...r.entry, records: { CNAME: 'evil.pages.dev' } }).length, 'must be its own project');
   assert.ok(S.onCloudflare(r.entry));
   assert.equal(S.cfProject('a'.repeat(63)).length <= 58, true);
-  assert.match(S.deployWorkflowCf('So10-k/awesomeprojects.tech', 'ap-neon'), /cf-pages-site\.yml@main[\s\S]*project: ap-neon[\s\S]*CLOUDFLARE_PAGES_TOKEN: \$\{\{ secrets\.CLOUDFLARE_PAGES_TOKEN \}\}/);
-  assert.ok(!S.deployWorkflowCf('So10-k/awesomeprojects.tech', 'ap-neon').includes('secrets: inherit'), 'cross-org inherit does not pass org secrets');
+  assert.match(S.deployWorkflowCf('apjs-hosted-sites/platform', 'ap-neon'), /apjs-hosted-sites\/platform\/\.github\/workflows\/cf-pages-site\.yml@main[\s\S]*project: ap-neon[\s\S]*secrets: inherit/);
   // EMU-only (no classic sitesOrg): still hosts on Cloudflare.
   const only = P.buildRequest({ Subdomain: 'neon', 'Where should it point?': 'hosted', Template: 'html' }, 'alice', { emuOrg: 'ap-sites' });
   assert.deepEqual(only.problems, []);

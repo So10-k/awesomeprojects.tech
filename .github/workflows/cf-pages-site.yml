@@ -16,6 +16,9 @@ on:
         required: true
       CLOUDFLARE_ACCOUNT_ID:
         required: true
+      # Read-only (or BOT_PAT): site GITHUB_TOKEN cannot clone private platform.
+      BOT_PAT:
+        required: true
 
 jobs:
   build:
@@ -27,11 +30,13 @@ jobs:
       - name: Get the build scripts
         uses: actions/checkout@v4
         with:
-          repository: So10-k/awesomeprojects.tech
+          # This workflow lives in the private platform repo (same org as site repos).
+          repository: apjs-hosted-sites/platform
           ref: main
           path: .awesomeprojects
           sparse-checkout: scripts
           persist-credentials: false
+          token: ${{ secrets.BOT_PAT }}
       - id: plan
         run: node .awesomeprojects/scripts/site-build.js plan
       - uses: actions/setup-node@v4
