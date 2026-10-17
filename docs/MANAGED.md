@@ -66,7 +66,7 @@ As the setup user: **Enterprise → Settings → Authentication security → Req
 | Public certificate | the contents of `ap-saml.crt` |
 | Signature / digest | RSA-SHA256 / SHA256 |
 
-Click **Test SAML configuration**. GitHub asks you to authorize the *awesomeprojects.tech* app **as the setup user**: approve it, and don't switch accounts, because switching breaks the test. Before anyone is provisioned, the sign-in will only sign for the setup user (`<shortcode>_admin`) or the repo owner, and neither matches a managed account. Then save, and store the SSO recovery codes somewhere safe.
+Click **Test SAML configuration** while signed in to github.com as the repo owner or the setup user, and approve the *awesomeprojects.tech* app. The response's NameID is always the setup user (`<shortcode>_admin`), which is the only account GitHub's test will accept. Then save, and store the SSO recovery codes somewhere safe.
 
 Still on that page (as the setup user): under **Open SCIM Configuration**, enable **Enable open SCIM configuration**. Without that checkbox, every SCIM call returns `403 … must use Azure AD, Okta, or Ping Federate` — GitHub's way of saying "partner IdP only", until you turn open SCIM on for a custom IdP like ours.
 
