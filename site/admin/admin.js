@@ -625,7 +625,11 @@ function renderSites() {
   const snapBy = new Map((snapshot.sites || []).map((x) => [x.name, x]));
   const q = lc(($('#siteFilter') || {}).value || '');
   const sites = D.names.filter((n) => n.host === 'Hosted by us').filter((n) => !q || [n.name, n.owner, n.status].some((x) => lc(x).includes(q)));
-  $('#sitesHelp').textContent = D.sitesOrg ? `Private repos in ${D.sitesOrg}. Locked/suspended sites are frozen by an org ruleset; suspended and archived ones have no DNS.` : 'Hosting isn\'t switched on (set sitesOrg in config.json).';
+  $('#sitesHelp').textContent = D.emuOrg
+    ? `Private repos in ${D.emuOrg} (managed accounts, Cloudflare Pages). Locked/suspended sites are frozen by an org ruleset; suspended and archived ones have no DNS.`
+    : D.sitesOrg
+      ? `Private repos in ${D.sitesOrg}. Locked/suspended sites are frozen by an org ruleset; suspended and archived ones have no DNS.`
+      : 'Hosting isn\'t switched on (set emu.org or sitesOrg in config.json).';
   $('#snapAt').textContent = snapshot.at ? `Checked ${new Date(snapshot.at).toLocaleString()} (daily, or "Run checks now"). Seats: ${snapshot.seats ? `${snapshot.seats.used}${snapshot.seats.max ? `/${snapshot.seats.max}` : ''}` : '?'}` : 'Not checked yet: press "Run checks now".';
   const tbody = $('#sitesTable tbody');
   tbody.replaceChildren();

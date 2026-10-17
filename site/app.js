@@ -155,6 +155,10 @@ function compute() {
     return { ok: true, type: 'CNAME', value: `${owner(repo)}.github.io.`, form: { repo } };
   }
   if (p.id === 'hosted') {
+    if (D.emuOrg) {
+      const n = (current || 'yourname').toLowerCase();
+      return { ok: true, type: 'CNAME', value: `ap-${n}.pages.dev.`, form: { template: $('#tpl').value } };
+    }
     if (!D.sitesOrg) return { ok: false, note: 'hosting isn\'t switched on yet' };
     return { ok: true, type: 'CNAME', value: `${D.sitesOrg.toLowerCase()}.github.io.`, form: { template: $('#tpl').value } };
   }

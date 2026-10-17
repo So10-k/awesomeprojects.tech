@@ -785,12 +785,14 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
     case '/seats': {
       if (kind === 'discussion') return undefined;
       const st = await seatUsage();
-      return `### 💺 Seats in ${ORG || '(no sites org)'}\n\n**${st.used}**${st.max ? ` of ${st.max}` : ''} outside collaborators on hosted sites${st.people.length ? `: ${st.people.map((p) => `@${p}`).join(', ')}` : ''}.`;
+      const where = [ORG && `classic \`${ORG}\``, EMU.org && `managed \`${EMU.org}\``].filter(Boolean).join(' + ') || '(no hosting org)';
+      return `### 💺 Seats (${where})\n\n**${st.used}**${st.max ? ` of ${st.max}` : ''} seats on hosted sites${st.people.length ? `: ${st.people.map((p) => `@${p}`).join(', ')}` : ''}.`;
     }
     case '/org-setup': {
       if (kind === 'discussion') return undefined;
       const out = await orgSetup();
-      await activityLog(`🏗️ **Org setup** ${ORG} · by @${by}`);
+      const which = [ORG, EMU.org].filter(Boolean).join(' + ') || '(none)';
+      await activityLog(`🏗️ **Org setup** ${which} · by @${by}`);
       return out;
     }
     case '/bot-check':
@@ -940,7 +942,16 @@ async function hostingGuards(author, entries, profile) {
 /** Is the bot's token what we think? (owner command) */
 async function botCheck() {
   const emuLine = await emuCheck();
-  if (!ORG || !ghBot) return `### 🤖 Bot check\n\n${emuLine}`;
+  if (!ORG) {
+    return [
+      '### 🤖 Bot check',
+      '',
+      '**Classic sites org:** off (`sitesOrg` is empty — hosting is managed-accounts only).',
+      '',
+      emuLine,
+    ].join('\n');
+  }
+  if (!ghBot) return `### 🤖 Bot check\n\n**Classic sites org:** \`${ORG}\` is set but \`BOT_PAT\` isn't.\n\n${emuLine}`;
   const res = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${String(process.env.BOT_PAT).trim()}`, 'User-Agent': 'awesomeprojects-bot' } });
   if (!res.ok) return `❌ GitHub rejected \`BOT_PAT\` (${res.status}). Create a new token and set it again.`;
   const me = await res.json();

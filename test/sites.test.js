@@ -105,4 +105,9 @@ test('managed-enterprise hosting: Cloudflare Pages entries', () => {
   assert.ok(S.onCloudflare(r.entry));
   assert.equal(S.cfProject('a'.repeat(63)).length <= 58, true);
   assert.match(S.deployWorkflowCf('So10-k/awesomeprojects.tech', 'ap-neon'), /cf-pages-site\.yml@main[\s\S]*project: ap-neon[\s\S]*secrets: inherit/);
+  // EMU-only (no classic sitesOrg): still hosts on Cloudflare.
+  const only = P.buildRequest({ Subdomain: 'neon', 'Where should it point?': 'hosted', Template: 'html' }, 'alice', { emuOrg: 'ap-sites' });
+  assert.deepEqual(only.problems, []);
+  assert.equal(only.entry.site.repo, 'ap-sites/neon');
+  assert.ok(S.onCloudflare(only.entry));
 });
