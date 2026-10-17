@@ -1,0 +1,22 @@
+name: Fix platform workflow access
+
+# Private reusable workflows return "workflow was not found" until the platform
+# repo allows Actions access from the rest of the org. Run once; /org-setup keeps it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Open platform workflows to the org and audit deploy
+        env:
+          BOT_PAT: ${{ secrets.BOT_PAT }}
+        run: node scripts/fix-platform-access.js
