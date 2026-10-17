@@ -51,9 +51,9 @@ Everything is a comment, so it all works from the GitHub mobile app.
 
 ## Hosted sites
 
-"**Host it for me**" names get a private repo in **[awesomeprojects-sites](https://github.com/awesomeprojects-sites)**, created and managed by the bot account (`BOT_PAT`, used only for that org).
+"**Host it for me**" names get a private repo in the **managed org** (`config.json` → `emu.org`, e.g. `apjs-hosted-sites`), created with the setup user's token (`EMU_ADMIN_TOKEN`) and served on **Cloudflare Pages**. Leave `sitesOrg` empty unless you still want a classic GitHub Pages hosting org.
 
-- **On approval** the bot creates `awesomeprojects-sites/<name>` with a starter page, the managed deploy workflow and an `awesomeprojects.json`. It turns on Pages (public) on `<name>.awesomeprojects.tech`, gives the `site-maintainers` team *maintain*, and invites the owner with *write*. That invite uses an enterprise seat.
+- **On approval** the bot creates `<emu.org>/<name>` with a starter page, the Cloudflare deploy workflow and an `awesomeprojects.json`. It provisions a managed account for the owner, gives them write access (no invite to accept), and attaches `<name>.awesomeprojects.tech` to the Pages project.
 - **Status** lives in `domains/<name>.json → site.status` and is applied to the repo:
 
   | Status | Owner | Site / DNS | Use it when |
@@ -71,7 +71,7 @@ Everything is a comment, so it all works from the GitHub mobile app.
   - **protect main:** no force pushes or deletion
 - **Custom roles** (Enterprise): `ap-site-owner` (write + read security alerts), `ap-site-collaborator` (write), `ap-site-locked` (triage: they can answer our issues but not push), and an `ap-maintainer` org role (audit log, Actions usage, read-only) for the maintainers team. Only the permissions GitHub offers are used; `/org-setup` reads the live list.
 - **Security:** Dependabot alerts and secret scanning (push protection) are switched on per repo where the plan allows.
-- **Cost guards:** `maxSeats` (outside collaborators = enterprise seats; new hosted approvals hold at the cap), `hostedPerOwner`, `hostedMinAccountAgeDays`, `maxRepoSizeMB` and `maxCollaboratorsPerSite`. All are in the console's *Settings* tab.
+- **Cost guards:** `maxSeats` (managed accounts + any classic outside collaborators; new hosted approvals hold at the cap), `hostedPerOwner`, `hostedMinAccountAgeDays`, `maxRepoSizeMB` and `maxCollaboratorsPerSite`. All are in the console's *Settings* tab.
 - **Daily ops** (06:41 UTC, or `/ops` / *Run checks now*):
   - turns on HTTPS when the certificate is ready
   - opens a "deploy failed" issue in the site repo, assigned to the owner, and closes it once a deploy succeeds
@@ -81,7 +81,7 @@ Everything is a comment, so it all works from the GitHub mobile app.
 - **Owners manage their own site** in My domains: Redeploy, and collaborators (`/site-collab`), capped per site.
 - **Locked down:** org rulesets block every change to `.github/workflows/**` except by org admins (the bot), and the Actions allow-list only permits GitHub's own actions and our build workflow. Site owners edit content; they can't run arbitrary Actions on the org's minutes. To give a site a different build, edit its workflow as an admin, or `/site-sync` to reset it.
 - **Removing** a hosted name (takedown or `/remove`) archives the repo and removes the owner; nothing is deleted.
-- **The bot token** is a classic PAT on `@appdev7710-netizen` with `repo`, `workflow` and `admin:org`. `/bot-check` shows what it has. Keep it out of every other org.
+- **Tokens:** `EMU_ADMIN_TOKEN` (setup user: SCIM + managed org). `BOT_PAT` is only needed if `sitesOrg` is still set for a classic hosting org. `/bot-check` shows both.
 
 ---
 

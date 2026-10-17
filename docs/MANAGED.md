@@ -4,7 +4,7 @@ When this is on, people don't join hosted site repos with their own GitHub accou
 
 - **Identity provider:** the panel server (`api.awesomeprojects.tech/saml`). It signs people in through GitHub OAuth and answers GitHub with a signed SAML response. It only signs for people the bot has provisioned, and it matches them by their GitHub account **id**, so renaming an account can't take over someone else's.
 - **Provisioning:** the bot calls GitHub's SCIM API with the setup user's token. It creates, suspends, restores and finds accounts.
-- **Hosting:** GitHub Pages sites are always private under managed users, so these sites deploy to **Cloudflare Pages** (`ap-<name>.pages.dev`, with `<name>.awesomeprojects.tech` attached). Sites in the classic sites org keep using GitHub Pages and work exactly as before.
+- **Hosting:** GitHub Pages sites are always private under managed users, so these sites deploy to **Cloudflare Pages** (`ap-<name>.pages.dev`, with `<name>.awesomeprojects.tech` attached). Leave `sitesOrg` empty to host only here; if you still have a classic sites org, those GitHub Pages sites keep working as before.
 
 | Who | What they do |
 |---|---|
@@ -93,9 +93,9 @@ Site owners can't read the org secrets. The build job has no secrets, the deploy
 On any issue in this repo, comment:
 
 - `/bot-check`: the **Managed accounts** table should be all ✅ (setup user, scopes, SCIM, Cloudflare). If SCIM says to enable Open SCIM, go back to step 4.
-- `/org-setup`: applies the same defaults, Actions allow-list, custom properties, rulesets and custom roles to the managed org. The maintainers team stays in the classic org, because maintainers use their own accounts.
+- `/org-setup`: applies the same defaults, Actions allow-list, custom properties, rulesets and custom roles to the managed org (and to `sitesOrg` only if that is still set).
 
-From then on, new hosted requests go to the managed org on Cloudflare Pages. Existing GitHub Pages sites stay where they are.
+From then on, new hosted requests go to the managed org on Cloudflare Pages. To stop using a classic sites org, set `"sitesOrg": ""` in `config.json`.
 
 ---
 
@@ -111,4 +111,4 @@ Every managed user is an enterprise seat, the same as an outside collaborator wa
 
 ## Turning it off
 
-Set `"emu": { "enterprise": "", "org": "", "shortcode": "" }`. New hosted requests go back to the classic sites org. Sites already in the managed org keep running on Cloudflare Pages, but the bot stops managing them until you turn it back on.
+Set `"emu": { "enterprise": "", "org": "", "shortcode": "" }`. New hosted requests need a classic `sitesOrg` again (or hosting is off). Sites already in the managed org keep running on Cloudflare Pages, but the bot stops managing them until you turn it back on.

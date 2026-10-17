@@ -69,6 +69,7 @@ function buildRequest(form, author, { sitesOrg, emuOrg } = {}) {
       site = { provider: 'hosted', platform: 'cloudflare', repo: `${emuOrg}/${name}`, status: 'active', template: tpl.id };
     }
   } else if (provider.id === 'hosted') {
+    // Classic sites org (GitHub Pages). Prefer emuOrg above when managed accounts are on.
     if (!sitesOrg) problems.push('Hosting with us isn\'t switched on yet. Pick another option for now.');
     else if (name.includes('.')) problems.push('Hosted sites need a top-level name.');
     else {
