@@ -59,31 +59,46 @@ Click **Test SAML configuration**. GitHub asks you to authorize the *awesomeproj
 
 Still on that page (as the setup user): under **Open SCIM Configuration**, enable **Enable open SCIM configuration**. Without that checkbox, every SCIM call returns `403 … must use Azure AD, Okta, or Ping Federate` — GitHub's way of saying "partner IdP only", until you turn open SCIM on for a custom IdP like ours.
 
-### 5. The setup user's token
+### 5. Two tokens (setup user ≠ org owner)
 
-Still as the setup user, create a **classic** personal access token with `scim:enterprise`, `admin:org`, `repo` and `workflow`, and no expiry, or put a reminder in your calendar. Then:
+The **setup user can't join organizations**. SCIM and org admin are different accounts:
+
+| Secret | Who | What for |
+|---|---|---|
+| `EMU_ADMIN_TOKEN` | setup user (`<shortcode>_admin`) | SCIM only (`scim:enterprise`) |
+| `BOT_PAT` | your **provisioned** managed account (e.g. `so10-k_apjs`), Owner of the managed org | `/org-setup`, creating site repos, collaborators, org secrets |
+
+As the setup user, create a classic PAT with `scim:enterprise` (no expiry), then:
 
 ```bash
 gh secret set EMU_ADMIN_TOKEN -R So10-k/awesomeprojects.tech
 ```
 
-The `gh` command asks for the value, so it never lands in your shell history.
+### 6. Your managed account, the org, then `BOT_PAT`
 
-### 6. Your own managed account (enterprise owner), then the org
-
-After SAML is required, the setup user can't create organizations in the UI — you need a **provisioned** enterprise owner. The bot makes the repo owner's managed account an enterprise owner automatically.
+After SAML is required, only a **provisioned** enterprise owner can create organizations. The bot makes the repo owner's managed account an enterprise owner automatically.
 
 1. On any issue, comment `/emu-create @So10-k` (or **My domains → Get my enterprise account**). You should get something like `so10-k_apjs`.
 2. Sign in at `https://github.com/enterprises/<slug>/sso` **as that managed account** (confirm with your normal GitHub account when our sign-in asks).
-3. Create the org you named in `config.json` (**Enterprise → Organizations → New organization**).
-4. In Cloudflare, create an API token with **Account → Cloudflare Pages → Edit** only.
-5. The bot needs it, and so does every site repo's deploy (the reusable workflow runs in the managed org):
+3. Create the org you named in `config.json` (**Enterprise → Organizations → New organization**). You (the managed owner) are the org owner; the setup user will never appear in the member list — that's normal.
+4. As that managed owner, create a classic PAT with `repo`, `workflow`, `admin:org` (no expiry) and save it as `BOT_PAT`:
+
+```bash
+gh secret set BOT_PAT -R So10-k/awesomeprojects.tech
+```
+
+5. Still as the managed owner (personal `So10-k` can't see the org), set the Cloudflare org secrets:
+
+```bash
+gh secret set CLOUDFLARE_PAGES_TOKEN --org <managed org> --visibility all
+gh secret set CLOUDFLARE_ACCOUNT_ID --org <managed org> --visibility all --body 2f8365ea25e7fd8c95ba7da82046b81c
+```
+
+6. In this repo (as `So10-k` is fine):
 
 ```bash
 gh secret set CLOUDFLARE_PAGES_TOKEN -R So10-k/awesomeprojects.tech
 gh secret set CLOUDFLARE_ACCOUNT_ID -R So10-k/awesomeprojects.tech --body 2f8365ea25e7fd8c95ba7da82046b81c
-gh secret set CLOUDFLARE_PAGES_TOKEN --org <managed org> --visibility all
-gh secret set CLOUDFLARE_ACCOUNT_ID --org <managed org> --visibility all --body 2f8365ea25e7fd8c95ba7da82046b81c
 ```
 
 Site owners can't read the org secrets. The build job has no secrets, the deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
@@ -92,8 +107,8 @@ Site owners can't read the org secrets. The build job has no secrets, the deploy
 
 On any issue in this repo, comment:
 
-- `/bot-check`: the **Managed accounts** table should be all ✅ (setup user, scopes, SCIM, Cloudflare). If SCIM says to enable Open SCIM, go back to step 4.
-- `/org-setup`: applies the same defaults, Actions allow-list, custom properties, rulesets and custom roles to the managed org (and to `sitesOrg` only if that is still set).
+- `/bot-check`: **BOT_PAT** should be your managed owner of the org; **Managed accounts** should show the setup user + SCIM ✅. If SCIM says to enable Open SCIM, go back to step 4.
+- `/org-setup`: applies defaults, Actions allow-list, custom properties, rulesets and custom roles via `BOT_PAT` (not the setup user).
 
 From then on, new hosted requests go to the managed org on Cloudflare Pages. To stop using a classic sites org, set `"sitesOrg": ""` in `config.json`.
 
