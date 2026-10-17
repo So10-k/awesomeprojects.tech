@@ -972,7 +972,16 @@ async function emuCheck() {
   const me = await res.json();
   const scopes = (res.headers.get('x-oauth-scopes') || '').split(',').map((x) => x.trim());
   const missing = ['scim:enterprise', 'admin:org', 'repo', 'workflow'].filter((x) => !scopes.includes(x));
-  const scim = await ghEmu.get(`/scim/v2/enterprises/${EMU.enterprise}/Users?count=1`).then((r) => `✅ ${r.totalResults} managed account${r.totalResults === 1 ? '' : 's'}`, (e) => `❌ ${String(e.message).slice(0, 120)}`);
+  const scim = await ghEmu.get(`/scim/v2/enterprises/${EMU.enterprise}/Users?count=1`).then(
+    (r) => `✅ ${r.totalResults} managed account${r.totalResults === 1 ? '' : 's'}`,
+    (e) => {
+      const msg = String(e.message || e);
+      if (/Open SCIM|Azure AD, Okta, or Ping/i.test(msg)) {
+        return '❌ enable **Open SCIM configuration** (Enterprise → Identity provider → Single sign-on configuration)';
+      }
+      return `❌ ${msg.slice(0, 120)}`;
+    },
+  );
   const cf = process.env.CLOUDFLARE_PAGES_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID ? '✅ set' : '❌ `CLOUDFLARE_PAGES_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` missing';
   return [
     `**Managed accounts** (enterprise \`${EMU.enterprise}\`, org \`${EMU.org}\`)`,
@@ -1450,6 +1459,9 @@ async function scimFind(userName) {
 async function emuProvision(personalLogin, personalId, by) {
   needEmu();
   const userName = emuUserName(personalLogin);
+  // The repo owner needs enterprise_owner so they can create the managed org after SAML is on
+  // (the setup user can't create orgs in the UI once SSO is required).
+  const role = lc(personalLogin) === lc(owner) ? 'enterprise_owner' : 'user';
   const body = {
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
     externalId: `gh-${personalId}`,
@@ -1458,13 +1470,26 @@ async function emuProvision(personalLogin, personalId, by) {
     displayName: personalLogin,
     name: { givenName: personalLogin, familyName: '-' },
     emails: [{ value: `${userName}@users.awesomeprojects.tech`, type: 'work', primary: true }],
-    roles: [{ value: 'user', primary: false }],
+    roles: [{ value: role, primary: false }],
   };
   let user = await scimFind(userName);
-  if (!user) user = await ghEmu.post(scimPath(), body);
-  else if (user.active === false) user = await ghEmu.patch(scimPath(`/${user.id}`), { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', path: 'active', value: true }] });
+  if (!user) {
+    user = await ghEmu.post(scimPath(), body).catch((e) => {
+      const msg = String(e.message || e);
+      if (/Open SCIM|Azure AD, Okta, or Ping/i.test(msg)) {
+        throw new Error('SCIM is locked until you enable **Open SCIM configuration** (Enterprise → Identity provider → Single sign-on configuration).');
+      }
+      throw e;
+    });
+  } else {
+    const ops = [];
+    if (user.active === false) ops.push({ op: 'replace', path: 'active', value: true });
+    const have = [].concat(user.roles || []).map((r) => (r && r.value) || r);
+    if (role === 'enterprise_owner' && !have.includes('enterprise_owner')) ops.push({ op: 'replace', path: 'roles', value: [{ value: 'enterprise_owner', primary: false }] });
+    if (ops.length) user = await ghEmu.patch(scimPath(`/${user.id}`), { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: ops });
+  }
   const managed = `${userName}_${lc(EMU.shortcode)}`;
-  const lines = [ok(`account \`${managed}\``)];
+  const lines = [ok(`account \`${managed}\`${role === 'enterprise_owner' ? ' (enterprise owner)' : ''}`)];
   if (EMU.org) await step(lines, `member of ${EMU.org}`, async () => { await ghEmu.put(`/orgs/${EMU.org}/memberships/${managed}`, { role: 'member' }); });
   await panelPost('/bot/identity', { personal_id: personalId, personal_login: personalLogin, user_name: userName, managed_login: managed, scim_id: user && user.id, status: 'active' });
   await activityLog(`🪪 **Managed account** \`${managed}\` for @${personalLogin}${by && lc(by) !== lc(personalLogin) ? ` · by @${by}` : ''}`);

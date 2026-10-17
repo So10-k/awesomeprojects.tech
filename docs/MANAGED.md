@@ -57,6 +57,8 @@ As the setup user: **Enterprise → Settings → Authentication security → Req
 
 Click **Test SAML configuration**. GitHub asks you to authorize the *awesomeprojects.tech* app **as the setup user**: approve it, and don't switch accounts, because switching breaks the test. Before anyone is provisioned, the sign-in will only sign for the setup user (`<shortcode>_admin`) or the repo owner, and neither matches a managed account. Then save, and store the SSO recovery codes somewhere safe.
 
+Still on that page (as the setup user): under **Open SCIM Configuration**, enable **Enable open SCIM configuration**. Without that checkbox, every SCIM call returns `403 … must use Azure AD, Okta, or Ping Federate` — GitHub's way of saying "partner IdP only", until you turn open SCIM on for a custom IdP like ours.
+
 ### 5. The setup user's token
 
 Still as the setup user, create a **classic** personal access token with `scim:enterprise`, `admin:org`, `repo` and `workflow`, and no expiry, or put a reminder in your calendar. Then:
@@ -67,11 +69,15 @@ gh secret set EMU_ADMIN_TOKEN -R So10-k/awesomeprojects.tech
 
 The `gh` command asks for the value, so it never lands in your shell history.
 
-### 6. The managed org and Cloudflare Pages
+### 6. Your own managed account (enterprise owner), then the org
 
-1. As the setup user, create the org you named in `config.json` (**Enterprise → Organizations → New organization**).
-2. In Cloudflare, create an API token with **Account → Cloudflare Pages → Edit** only.
-3. The bot needs it, and so does every site repo's deploy (the reusable workflow runs in the managed org):
+After SAML is required, the setup user can't create organizations in the UI — you need a **provisioned** enterprise owner. The bot makes the repo owner's managed account an enterprise owner automatically.
+
+1. On any issue, comment `/emu-create @So10-k` (or **My domains → Get my enterprise account**). You should get something like `so10-k_apjs`.
+2. Sign in at `https://github.com/enterprises/<slug>/sso` **as that managed account** (confirm with your normal GitHub account when our sign-in asks).
+3. Create the org you named in `config.json` (**Enterprise → Organizations → New organization**).
+4. In Cloudflare, create an API token with **Account → Cloudflare Pages → Edit** only.
+5. The bot needs it, and so does every site repo's deploy (the reusable workflow runs in the managed org):
 
 ```bash
 gh secret set CLOUDFLARE_PAGES_TOKEN -R So10-k/awesomeprojects.tech
@@ -86,7 +92,7 @@ Site owners can't read the org secrets. The build job has no secrets, the deploy
 
 On any issue in this repo, comment:
 
-- `/bot-check`: the **Managed accounts** table should be all ✅ (setup user, scopes, SCIM, Cloudflare).
+- `/bot-check`: the **Managed accounts** table should be all ✅ (setup user, scopes, SCIM, Cloudflare). If SCIM says to enable Open SCIM, go back to step 4.
 - `/org-setup`: applies the same defaults, Actions allow-list, custom properties, rulesets and custom roles to the managed org. The maintainers team stays in the classic org, because maintainers use their own accounts.
 
 From then on, new hosted requests go to the managed org on Cloudflare Pages. Existing GitHub Pages sites stay where they are.
