@@ -65,8 +65,8 @@
   "maxCollaboratorsPerSite": 2,
   "staleRequestDays": 14,
   "emu": {
-    "enterprise": "",
-    "org": "",
-    "shortcode": ""
+    "enterprise": "awesome-projects",
+    "org": "Awesome Projects",
+    "shortcode": "apjs"
   }
 }
