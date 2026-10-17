@@ -1,0 +1,16 @@
+{
+  "owner": {
+    "github": "Happyshot10"
+  },
+  "description": "testt",
+  "records": {
+    "CNAME": "ap-justaquicktest.pages.dev"
+  },
+  "site": {
+    "provider": "hosted",
+    "platform": "cloudflare",
+    "repo": "apjs-hosted-sites/justaquicktest",
+    "status": "active",
+    "template": "html"
+  }
+}
