@@ -47,6 +47,61 @@ async function file(repo, p) {
   return { sha: data.sha, text: Buffer.from(data.content || '', 'base64').toString('utf8') };
 }
 
+async function putText(repo, p, text, sha, message) {
+  await gh(`/repos/${repo}/contents/${p}`, {
+    method: 'PUT',
+    body: { message, content: Buffer.from(text).toString('base64'), branch: 'main', ...(sha ? { sha } : {}) },
+  });
+}
+
+const ACTION = '.github/actions/site-build';
+const ACTION_YML = `name: Site build scripts
+description: Drop site-build.js into the caller. GitHub fetches this action; the job token never clones platform.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        mkdir -p .awesomeprojects/scripts
+        cp "$GITHUB_ACTION_PATH/site-build.js" "$GITHUB_ACTION_PATH/frameworks.js" .awesomeprojects/scripts/
+`;
+
+async function publishSiteBuildAction() {
+  const build = await file(platformRepo, 'scripts/site-build.js');
+  const frameworks = await file(platformRepo, 'scripts/frameworks.js');
+  if (build.text.includes("require('./") && !build.text.includes("require('./frameworks')")) {
+    bad(`site-build.js has unexpected local imports`);
+  }
+  const files = {
+    [`${ACTION}/action.yml`]: ACTION_YML,
+    [`${ACTION}/site-build.js`]: build.text,
+    [`${ACTION}/frameworks.js`]: frameworks.text,
+  };
+  for (const [p, text] of Object.entries(files)) {
+    let sha;
+    try { sha = (await file(platformRepo, p)).sha; } catch (e) { if (e.status !== 404) throw e; }
+    await putText(platformRepo, p, text, sha, `Publish ${p} for site builds`);
+  }
+  ok('platform composite action .github/actions/site-build');
+}
+
+async function retargetWorkflow(name) {
+  const wf = await file(platformRepo, `.github/workflows/${name}`);
+  let text = wf.text;
+  const checkout = /- name: Get the build scripts\n(?:.*\n)*?(?= {6}- )/;
+  if (!checkout.test(text)) {
+    if (text.includes('.github/actions/site-build@main')) { ok(`${name} already uses the site-build action`); return; }
+    bad(`${name}: could not find the build-scripts checkout`);
+    return;
+  }
+  text = text.replace(checkout, '- name: Get the build scripts\n        uses: apjs-hosted-sites/platform/.github/actions/site-build@main\n');
+  text = text.replace(/\n      # Read-only \(or BOT_PAT\):[\s\S]*?\n      BOT_PAT:\n        required: true\n/, '\n');
+  text = text.replace(/\n    secrets:\n      BOT_PAT:\n        required: true\n/, '\n');
+  if (text.includes('secrets.BOT_PAT')) bad(`${name} still references secrets.BOT_PAT`);
+  await putText(platformRepo, `.github/workflows/${name}`, text, wf.sha, `${name}: load build scripts via composite action, not a PAT clone`);
+  ok(`${name} no longer clones platform with BOT_PAT`);
+}
+
 (async () => {
   console.log(`platform=${platformRepo} org=${org}`);
 
@@ -81,12 +136,39 @@ async function file(repo, p) {
     else bad(`org secret ${name} missing on ${org}`);
   }
 
-  const pol = await gh(`/orgs/${org}/actions/permissions/selected-actions`).catch((e) => ({ error: e.message }));
-  const patterns = pol.patterns_allowed || [];
-  console.log('actions patterns:', patterns.join(', ') || pol.error || '(none)');
   const need = `${platformRepo}/.github/workflows/*`;
-  if (patterns.includes(need)) ok(`Actions allow-list includes ${need}`);
-  else bad(`Actions allow-list missing ${need} (current: ${patterns.join(', ') || 'none'})`);
+  const before = await gh(`/orgs/${org}/actions/permissions/selected-actions`);
+  const patterns = new Set(before.patterns_allowed || []);
+  console.log('actions patterns before:', [...patterns].join(', ') || '(none)');
+  patterns.add(need);
+  patterns.add(`${platformRepo}/.github/actions/*`);
+  patterns.add('oven-sh/setup-bun@*');
+  await gh(`/orgs/${org}/actions/permissions`, { method: 'PUT', body: { enabled_repositories: 'all', allowed_actions: 'selected' } });
+  await gh(`/orgs/${org}/actions/permissions/selected-actions`, {
+    method: 'PUT',
+    body: { github_owned_allowed: true, verified_allowed: false, patterns_allowed: [...patterns] },
+  });
+  const after = await gh(`/orgs/${org}/actions/permissions/selected-actions`);
+  if ((after.patterns_allowed || []).includes(need)) ok(`Actions allow-list includes ${need}`);
+  else bad(`Actions allow-list still missing ${need}`);
+
+  // The build job must not clone platform with a PAT: EMU SAML rejects a token that
+  // isn't SSO-authorized, and the site's GITHUB_TOKEN can't see a private repo.
+  // GitHub downloads a composite action from platform using the org access grant.
+  await publishSiteBuildAction();
+  await retargetWorkflow('cf-pages-site.yml');
+  await retargetWorkflow('pages-site.yml');
+  const sitesJs = await file(platformRepo, 'scripts/sites.js');
+  if (!sitesJs.text.includes('.github/actions/*')) {
+    const from = 'patterns_allowed: [`${sourceRepo}/.github/workflows/*`, \'oven-sh/setup-bun@*\']';
+    const to = 'patterns_allowed: [`${sourceRepo}/.github/workflows/*`, `${sourceRepo}/.github/actions/*`, \'oven-sh/setup-bun@*\']';
+    if (!sitesJs.text.includes(from)) bad('could not update scripts/sites.js actions allow-list');
+    else {
+      await putText(platformRepo, 'scripts/sites.js', sitesJs.text.replace(from, to), sitesJs.sha, 'Allow platform composite actions in the org Actions policy');
+      ok('sites.js allow-list includes platform actions');
+    }
+  } else ok('sites.js already allows platform actions');
+  void actionsPattern;
 
   const sites = ['justaquicktest'];
   for (const name of sites) {
@@ -109,16 +191,24 @@ async function file(repo, p) {
   const marker = "platform workflows callable by other repos in the org";
   if (bot.text.includes(marker)) ok('org-setup already sets platform Actions access');
   else {
-    const needle = "await step(lines, 'Actions: only GitHub\\'s actions and our build workflow', async () => {\n    const pol = S.actionsPolicy(platformRepo);\n    await api.put(`/orgs/${'${org}'}/actions/permissions`, pol.permissions);\n    await api.put(`/orgs/${'${org}'}/actions/permissions/selected-actions`, pol.selected);\n  });";
-    const insert = `${needle}
-  await step(lines, '${marker}', async () => {
-    if (!platformRepo.startsWith(${'org'} + '/')) return 'platform repo is outside this org, skipped';
-    await api.put(\`/repos/\${platformRepo}/actions/permissions/access\`, { access_level: 'organization' });
-    return platformRepo + ' Actions access: organization';
-  });`;
-    if (!bot.text.includes(needle)) bad('could not find org-setup Actions block to patch');
-    else {
-      const next = bot.text.replace(needle, insert);
+    const start = bot.text.indexOf("await step(lines, 'Actions:");
+    const end = start < 0 ? -1 : bot.text.indexOf('\n  });', start);
+    if (start < 0 || end < 0) {
+      bad('could not find org-setup Actions block to patch');
+      const at = bot.text.indexOf('actionsPolicy');
+      console.log(bot.text.slice(Math.max(0, at - 200), at + 400));
+    } else {
+      const addition = [
+        '',
+        `  await step(lines, '${marker}', async () => {`,
+        "    if (!String(platformRepo).startsWith(org + '/')) return 'platform repo is outside this org, skipped';",
+        '    await api.put(`/repos/${platformRepo}/actions/permissions/access`, { access_level: \'organization\' });',
+        '    const share = S.actionsPolicy(platformRepo);',
+        '    await api.put(`/orgs/${org}/actions/permissions/selected-actions`, share.selected);',
+        "    return platformRepo + ' Actions access: organization';",
+        '  });',
+      ].join('\n');
+      const next = bot.text.slice(0, end + '\n  });'.length) + addition + bot.text.slice(end + '\n  });'.length);
       await gh(`/repos/${platformRepo}/contents/scripts/bot.js`, {
         method: 'PUT',
         body: {
@@ -130,6 +220,24 @@ async function file(repo, p) {
       });
       ok('patched platform scripts/bot.js so /org-setup keeps Actions access open');
     }
+  }
+
+  const since = Date.now() - 60_000;
+  for (const name of sites) {
+    const repo = `${org}/${name}`;
+    let run;
+    for (let i = 0; i < 18; i++) {
+      const runs = await gh(`/repos/${repo}/actions/runs?per_page=5`);
+      run = (runs.workflow_runs || []).find((r) => new Date(r.created_at).getTime() >= since && r.name === 'Deploy');
+      if (run && run.status === 'completed') break;
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
+    if (!run) { bad(`no Deploy run on ${repo}`); continue; }
+    const jobs = await gh(`/repos/${repo}/actions/runs/${run.id}/jobs`);
+    const steps = (jobs.jobs || []).flatMap((j) => (j.steps || []).map((s) => `${j.name}/${s.name}: ${s.conclusion || s.status}`));
+    console.log(`${repo} ${run.status} ${run.conclusion || ''} ${run.html_url}\n  ${steps.join('\n  ')}`);
+    if (run.conclusion === 'success') ok(`${repo} deploy succeeded`);
+    else bad(`${repo} deploy ${run.conclusion || run.status}: ${run.html_url}`);
   }
 
   if (problems.length) {
