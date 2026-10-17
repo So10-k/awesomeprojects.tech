@@ -14,6 +14,7 @@ const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k 
 
 let D = null; // ../data.json
 let snapshot = { sites: [] }; // the bot's latest look at hosted sites
+let ident = { enabled: false, identity: null }; // the managed enterprise account
 let me = null;
 let requests = [];
 let pick = { kind: 'name', id: null }; // name | req | new
@@ -87,6 +88,26 @@ async function run(box, action, args, busy, onDone) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────
+// ── The managed enterprise account ─────────────────────────────
+function identityBox() {
+  if (!ident.enabled) return null;
+  const i = ident.identity;
+  const result = h('div', { className: 'result', hidden: true });
+  const body = h('div', { className: 'body' });
+  if (!i) {
+    const get = h('button', { className: 'btn primary', type: 'button', textContent: 'Get my enterprise account' });
+    get.addEventListener('click', () => run(result, 'emu-account', {}, 'Creating your account…', async () => { ident = await Panel.identity().catch(() => ident); render(); }));
+    body.append(h('p', {}, 'Hosted sites live in our GitHub enterprise. Your enterprise account is created for you and linked to this GitHub account: no new password, you just confirm it\'s you.'), get, result);
+  } else {
+    body.append(
+      h('div', { className: 'facts' }, h('span', { className: 'fact', textContent: `@${i.managed_login || i.user_name}` }), h('span', { className: `pill ${i.status === 'active' ? 'active' : 'suspended'}`, textContent: i.status })),
+      i.status === 'active'
+        ? h('p', {}, 'Sign in to GitHub as your enterprise account any time: ', h('a', { href: ident.signIn, target: '_blank', rel: 'noopener', textContent: 'enterprise sign-in →' }))
+        : h('p', { textContent: 'This account is suspended. Contact a maintainer.' }));
+  }
+  return h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Enterprise account' })), body);
+}
+
 function renderSide() {
   const top = myTop();
   const unlimited = me.role === 'owner' || me.role === 'maintainer';
@@ -217,6 +238,7 @@ function renderName(n) {
   });
 
   fill(pane,
+    identityBox(),
     h('div', { className: 'pane-head' },
       h('div', {}, h('h1', {}, h('a', { href: `https://${host}`, target: '_blank', rel: 'noopener', textContent: host })), facts),
       check),
@@ -429,7 +451,7 @@ function render() {
   if (pick.kind === 'req') return renderRequest(pick.id);
   const n = myTop().find((x) => x.name === pick.id) || myTop()[0];
   if (!n) {
-    $('#pane').replaceChildren(h('div', { className: 'empty-state' }, h('p', { textContent: 'You don\'t have a name yet.' }), h('button', { className: 'btn primary', type: 'button', textContent: 'Get one', onclick: () => { pick = { kind: 'new' }; render(); } })));
+    fill($('#pane'), identityBox(), h('div', { className: 'empty-state' }, h('p', { textContent: 'You don\'t have a name yet.' }), h('button', { className: 'btn primary', type: 'button', textContent: 'Get one', onclick: () => { pick = { kind: 'new' }; render(); } })));
     return;
   }
   pick = { kind: 'name', id: n.name };
@@ -467,6 +489,7 @@ fetch('../data.json', { cache: 'no-cache' }).then((r) => r.json()).then(async (d
       if (me.avatar) $('#whoAvatar').src = `${me.avatar}${me.avatar.includes('?') ? '&' : '?'}s=56`;
       await loadRequests();
       snapshot = await Panel.sites().catch(() => ({ sites: [] }));
+      ident = await Panel.identity().catch(() => ident);
       if (D.announcement) document.body.prepend(h('div', { className: 'announce', role: 'status' }, '📣 ', D.announcement));
       if (new URLSearchParams(location.search).get('new') !== null || new URLSearchParams(location.search).get('name')) pick = { kind: 'new' };
       return render();

@@ -64,6 +64,37 @@ jobs:
 `;
 }
 
+/** Cloudflare Pages project for a name (project names max out at 58 characters). */
+function cfProject(name) {
+  const n = String(name).toLowerCase();
+  if (n.length <= 55) return `ap-${n}`;
+  let h = 0;
+  for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `ap-${n.slice(0, 48)}-${h.toString(36).slice(0, 6)}`;
+}
+/** The workflow for sites in the managed-user enterprise: build without secrets, publish to Cloudflare Pages. */
+function deployWorkflowCf(sourceRepo, project) {
+  return `# Managed by awesomeprojects.tech: changes to .github/workflows are blocked for site owners.
+name: Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+jobs:
+  site:
+    uses: ${sourceRepo}/.github/workflows/cf-pages-site.yml@main
+    with:
+      project: ${project}
+    secrets: inherit
+`;
+}
+const onCloudflare = (d) => !!(d && d.site && d.site.provider === 'hosted' && d.site.platform === 'cloudflare');
+
 /** Files a new site repo starts with. */
 function starterFiles({ name, owner, domain = R.DOMAIN, sourceRepo }) {
   const host = `${name}.${domain}`;
@@ -283,5 +314,5 @@ module.exports = {
   STATUSES, OWNER_PERMISSION, DNS_ON, TEAM, TOPIC, ACCESS, ORG_SETTINGS, PROPERTIES, TEMPLATES,
   isHosted, statusOf, dnsEnabled, checkStatus, repoSettings, deployWorkflow, starterFiles, propertyValues, fillTemplate,
   workflowRuleset, branchRuleset, frozenRuleset, actionsPolicy, canTransition, hostedEntry, inactivity, seatsLeft, httpsReady,
-  REPO_ROLES, ORG_ROLE, repoRoles, orgRole, ownerRole, collaboratorRole,
+  REPO_ROLES, ORG_ROLE, repoRoles, orgRole, ownerRole, collaboratorRole, cfProject, deployWorkflowCf, onCloudflare,
 };

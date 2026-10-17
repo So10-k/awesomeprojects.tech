@@ -94,3 +94,15 @@ test('templates, rulesets, ops decisions, roles', () => {
   assert.equal(S.ownerRole('locked', []), 'pull', 'falls back to built-in roles');
   assert.equal(S.ownerRole('archived', ['ap-site-owner']), null);
 });
+
+test('managed-enterprise hosting: Cloudflare Pages entries', () => {
+  const r = P.buildRequest({ Subdomain: 'neon', 'Where should it point?': 'hosted', Template: 'astro' }, 'alice', { sitesOrg: 'old-org', emuOrg: 'ap-sites' });
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.entry.records, { CNAME: 'ap-neon.pages.dev' });
+  assert.deepEqual(r.entry.site, { provider: 'hosted', platform: 'cloudflare', repo: 'ap-sites/neon', status: 'active', template: 'astro' });
+  assert.deepEqual(R.checkEntry('neon', r.entry), []);
+  assert.ok(R.checkEntry('neon', { ...r.entry, records: { CNAME: 'evil.pages.dev' } }).length, 'must be its own project');
+  assert.ok(S.onCloudflare(r.entry));
+  assert.equal(S.cfProject('a'.repeat(63)).length <= 58, true);
+  assert.match(S.deployWorkflowCf('So10-k/awesomeprojects.tech', 'ap-neon'), /cf-pages-site\.yml@main[\s\S]*project: ap-neon[\s\S]*secrets: inherit/);
+});

@@ -61,3 +61,6 @@ jobs:
           PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
           BOT_PAT: ${{ secrets.BOT_PAT }} # the bot account: only used for the sites org
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }} # optional notifications
+          EMU_ADMIN_TOKEN: ${{ secrets.EMU_ADMIN_TOKEN }} # the managed enterprise's setup user (SCIM + org)
+          CLOUDFLARE_PAGES_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }} # Pages projects for managed-enterprise sites
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

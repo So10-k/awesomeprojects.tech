@@ -52,6 +52,9 @@ const CATALOG = [
   { cmd: '/announce', who: 'maintainer', where: 'issues', usage: '/announce <text|off>', does: 'Show a banner on the website and dashboards', admin: true },
   { cmd: '/ops', who: 'maintainer', where: 'any', usage: '/ops', does: 'Run the daily site checks now (HTTPS, deploys, size, inactivity, seats)', admin: true },
   { cmd: '/seats', who: 'maintainer', where: 'any', usage: '/seats', does: 'How many enterprise seats hosted sites use', admin: true },
+  { cmd: '/emu-create', who: 'maintainer', where: 'issues', usage: '/emu-create @user', does: 'Create a managed enterprise account for someone (they sign in with their GitHub)', admin: true },
+  { cmd: '/emu-suspend', who: 'maintainer', where: 'issues', usage: '/emu-suspend @user', does: 'Suspend someone\'s managed enterprise account', admin: true },
+  { cmd: '/emu-restore', who: 'maintainer', where: 'issues', usage: '/emu-restore @user', does: 'Re-activate a suspended managed account', admin: true },
   { cmd: '/config', who: 'owner', where: 'issues', usage: '/config <setting> <value>', does: 'Change a bot setting (limits, holds, auto-merge…) (owner only)', admin: true, owner: true },
   { cmd: '/org-setup', who: 'owner', where: 'issues', usage: '/org-setup', does: 'Apply the org\'s safe defaults, rulesets, Actions policy and maintainers team (owner only)', admin: true, owner: true },
   { cmd: '/bot-check', who: 'owner', where: 'issues', usage: '/bot-check', does: 'Check the bot account\'s token and org role (owner only)', admin: true, owner: true },
@@ -61,7 +64,7 @@ const CATALOG = [
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats', '/create', '/make-repo']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats', '/create', '/make-repo', '/emu-create', '/emu-suspend', '/emu-restore']);
 const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check', '/config']);
 
 /** Settings /config may change, and how to read the value. */

@@ -191,5 +191,5 @@ No: they'd hand a whole branch of the domain to one server. Records are DNS-only
 ---
 
 <p align="center">
-  <sub>Run by volunteers · <a href="docs/MAINTAINERS.md">Maintainer guide</a> · <a href="https://awesomeprojects.tech/admin/">Console</a> · <a href="docs/HOSTING.md">Hosting guide</a> · <a href="../../discussions">Discussions</a> · DNS by Cloudflare, managed with <a href="https://dnscontrol.org">DNSControl</a></sub>
+  <sub>Run by volunteers · <a href="docs/MAINTAINERS.md">Maintainer guide</a> · <a href="https://awesomeprojects.tech/admin/">Console</a> · <a href="docs/HOSTING.md">Hosting guide</a> · <a href="docs/MANAGED.md">Managed accounts</a> · <a href="../../discussions">Discussions</a> · DNS by Cloudflare, managed with <a href="https://dnscontrol.org">DNSControl</a></sub>
 </p>

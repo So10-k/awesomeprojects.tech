@@ -94,7 +94,7 @@ test('an action is dispatched privately, tracked, and audited', async () => {
   const { id, summary } = await r.json();
   assert.equal(summary, '/approve on #41');
   const sent = dispatched[0].client_payload;
-  assert.deepEqual({ ...sent, at: 0 }, { id, actor: 'mia', at: 0, summary: '/approve on #41', command: '/approve', target: 41 });
+  assert.deepEqual({ ...sent, at: 0 }, { id, actor: 'mia', actorId: 1, at: 0, summary: '/approve on #41', command: '/approve', target: 41 });
   assert.ok(Number.isFinite(sent.at));
   assert.equal((await (await call(e, `/api/status/${id}`, { token: mia })).json()).state, 'queued');
 

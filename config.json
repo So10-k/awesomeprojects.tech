@@ -63,5 +63,10 @@
   "inactivityWarnDays": 180,
   "inactivityLockDays": 0,
   "maxCollaboratorsPerSite": 2,
-  "staleRequestDays": 14
+  "staleRequestDays": 14,
+  "emu": {
+    "enterprise": "",
+    "org": "",
+    "shortcode": ""
+  }
 }

@@ -115,3 +115,7 @@ The bot reads this file when you request a name and shows you the build plan in 
 | **Next.js build fails on an API route** | Static exports can't have them: remove them, or move to Vercel. |
 
 Still stuck? Ask in [Discussions → Q&A](https://github.com/So10-k/awesomeprojects.tech/discussions/categories/q-a).
+
+## Sites we host for you
+
+When managed accounts are on, sites we host live in our managed enterprise and deploy to Cloudflare Pages. You get an enterprise account (`yourname_ap`) and sign in with your GitHub account. See [MANAGED.md](MANAGED.md).
