@@ -59,6 +59,7 @@ jobs:
           ref: main
           path: .platform
           token: ${{ secrets.BOT_PAT }}
+          github-server-url: https://awesome-projects.ghe.com
 
       - name: Use registry config with platform worker
         if: steps.ready.outputs.ok == 'true'
@@ -110,7 +111,9 @@ jobs:
           sed -i "s/^EMU_ENTERPRISE = .*/EMU_ENTERPRISE = \"$ent\"/" wrangler.toml
           code=$(node -e "process.stdout.write(String((require('../config.json').emu||{}).shortcode||'').replace(/[^a-z0-9]/gi,''))")
           sed -i "s/^EMU_SHORTCODE = .*/EMU_SHORTCODE = \"$code\"/" wrangler.toml
-          echo "EMU enterprise: ${ent:-off}"
+          host=$(node -e "process.stdout.write(String((require('../config.json').emu||{}).host||'').replace(/[^a-z0-9.-]/gi,''))")
+          sed -i "s/^EMU_HOST = .*/EMU_HOST = \"$host\"/" wrangler.toml
+          echo "EMU enterprise: ${ent:-off} ${host:-github.com}"
 
       - name: Deploy
         if: steps.ready.outputs.ok == 'true'

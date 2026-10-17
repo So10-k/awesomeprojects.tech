@@ -57,6 +57,7 @@ jobs:
           ref: main
           path: .platform
           token: ${{ secrets.BOT_PAT }}
+          github-server-url: https://awesome-projects.ghe.com
 
       - uses: actions/setup-node@v4
         with:
