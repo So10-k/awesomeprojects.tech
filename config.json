@@ -67,7 +67,8 @@
   "emu": {
     "enterprise": "awesome-projects",
     "org": "apjs-hosted-sites",
-    "shortcode": "apjs"
+    "shortcode": "2mv68l64",
+    "host": "awesome-projects.ghe.com"
   },
   "platformRepo": "apjs-hosted-sites/platform"
 }

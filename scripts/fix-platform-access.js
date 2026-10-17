@@ -11,6 +11,7 @@ const root = path.join(__dirname, '..');
 const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
 const platformRepo = config.platformRepo;
 const org = (config.emu && config.emu.org) || platformRepo.split('/')[0];
+const api = config.emu && config.emu.host ? `https://api.${config.emu.host}` : 'https://api.github.com';
 const token = String(process.env.BOT_PAT || '').trim();
 if (!token) throw new Error('BOT_PAT required');
 
@@ -19,7 +20,7 @@ const ok = (m) => console.log(`✅ ${m}`);
 const bad = (m) => { problems.push(m); console.log(`❌ ${m}`); };
 
 async function gh(pathname, { method = 'GET', body } = {}) {
-  const res = await fetch(`https://api.github.com${pathname}`, {
+  const res = await fetch(`${api}${pathname}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
