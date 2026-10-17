@@ -59,8 +59,8 @@ jobs:
           TARGET: ${{ inputs.target }}
           PANEL_API: https://api.awesomeprojects.tech
           PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
-          BOT_PAT: ${{ secrets.BOT_PAT }} # the bot account: only used for the sites org
+          BOT_PAT: ${{ secrets.BOT_PAT }} # provisioned owner of the managed org (and/or classic sitesOrg); setup user can't join orgs
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }} # optional notifications
-          EMU_ADMIN_TOKEN: ${{ secrets.EMU_ADMIN_TOKEN }} # the managed enterprise's setup user (SCIM + org)
+          EMU_ADMIN_TOKEN: ${{ secrets.EMU_ADMIN_TOKEN }} # setup user: SCIM only
           CLOUDFLARE_PAGES_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }} # Pages projects for managed-enterprise sites
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

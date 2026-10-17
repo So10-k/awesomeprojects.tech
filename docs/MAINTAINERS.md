@@ -81,7 +81,7 @@ Everything is a comment, so it all works from the GitHub mobile app.
 - **Owners manage their own site** in My domains: Redeploy, and collaborators (`/site-collab`), capped per site.
 - **Locked down:** org rulesets block every change to `.github/workflows/**` except by org admins (the bot), and the Actions allow-list only permits GitHub's own actions and our build workflow. Site owners edit content; they can't run arbitrary Actions on the org's minutes. To give a site a different build, edit its workflow as an admin, or `/site-sync` to reset it.
 - **Removing** a hosted name (takedown or `/remove`) archives the repo and removes the owner; nothing is deleted.
-- **Tokens:** `EMU_ADMIN_TOKEN` (setup user: SCIM + managed org). `BOT_PAT` is only needed if `sitesOrg` is still set for a classic hosting org. `/bot-check` shows both.
+- **Tokens:** `EMU_ADMIN_TOKEN` = setup user, **SCIM only** (can't join orgs). `BOT_PAT` = a **provisioned** owner of the managed org (and classic `sitesOrg` if you still have one). `/bot-check` shows both.
 
 ---
 

@@ -36,12 +36,14 @@ const repoUrl = `https://github.com/${repo}`;
 const maintainers = [owner, ...(config.maintainers || [])].map((s) => s.toLowerCase());
 const dryRun = !!process.env.DRY_RUN;
 const gh = github(process.env.GITHUB_TOKEN, { dryRun });
-// The bot account's token: only for the sites org (creating, configuring, locking and archiving repos).
+// Site repos (classic and/or managed org): create, configure, lock, archive. For the managed org this
+// must be a *provisioned* enterprise owner — the setup user can't join orgs.
 const ghBot = process.env.BOT_PAT ? github(String(process.env.BOT_PAT).trim(), { dryRun }) : null;
 const ORG = config.sitesOrg || '';
-// The managed-user (EMU) enterprise: accounts are created through SCIM with the setup user's token.
+// Managed-user enterprise: SCIM only (setup user). Org/repo work uses BOT_PAT above.
 const EMU = config.emu || {};
 const ghEmu = process.env.EMU_ADMIN_TOKEN ? github(String(process.env.EMU_ADMIN_TOKEN).trim(), { dryRun }) : null;
+const emuHostingOn = !!(EMU.org && ghEmu && ghBot);
 const runUrl = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
 
@@ -345,7 +347,7 @@ async function onRequest(issue, { comment, cmd, force = false } = {}) {
   const approving = admin && cmd === '/approve';
   const forcing = approving && force;
   const labels = issue.labels.map((l) => l.name);
-  const built = P.buildRequest(Q.parseForm(issue.body), author, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
+  const built = P.buildRequest(Q.parseForm(issue.body), author, { sitesOrg: ORG, emuOrg: emuHostingOn ? EMU.org : '' });
   const { name } = built;
   const say = (result, opts) => upsertComment(issue.number, 'request', requestComment(result, { name, domain: R.DOMAIN, ...opts }));
 
@@ -898,9 +900,11 @@ function needOrg() {
   if (!ORG) throw new Error('`sitesOrg` isn\'t set in config.json.');
   if (!ghBot) throw new Error('The `BOT_PAT` secret isn\'t set.');
 }
-/** Hosting works if either org is set up (the classic sites org or the managed enterprise). */
+/** Hosting works if either org is set up (classic sites org, or managed org + SCIM + org-owner BOT_PAT). */
 function needHosting() {
-  if ((ORG && ghBot) || (EMU.org && ghEmu)) return;
+  if ((ORG && ghBot) || emuHostingOn) return;
+  if (EMU.org && ghEmu && !ghBot) throw new Error('The `BOT_PAT` secret isn\'t set (needs a provisioned owner of the managed org — the setup user can\'t join orgs).');
+  if (EMU.org && !ghEmu) throw new Error('The `EMU_ADMIN_TOKEN` secret isn\'t set (setup user, SCIM only).');
   needOrg();
 }
 const ok = (t) => `✅ ${t}`;
@@ -913,8 +917,8 @@ async function step(lines, label, fn) {
 async function seatUsage() {
   const people = [
     ...(ORG && ghBot ? (await ghBot.all(`/orgs/${ORG}/outside_collaborators`).catch(() => [])).map((u) => lc(u.login)) : []),
-    // Managed users are seats too (everyone but the setup user).
-    ...(EMU.org && ghEmu ? (await ghEmu.all(`/orgs/${EMU.org}/members`).catch(() => [])).map((u) => lc(u.login)).filter((x) => x !== `${lc(EMU.shortcode)}_admin`) : []),
+    // Managed users are seats too (listed via the org-owner token; setup user isn't in the org).
+    ...(EMU.org && ghBot ? (await ghBot.all(`/orgs/${EMU.org}/members`).catch(() => [])).map((u) => lc(u.login)) : []),
   ];
   return { used: people.length, max: config.maxSeats || 0, people };
 }
@@ -942,37 +946,45 @@ async function hostingGuards(author, entries, profile) {
 /** Is the bot's token what we think? (owner command) */
 async function botCheck() {
   const emuLine = await emuCheck();
-  if (!ORG) {
-    return [
-      '### 🤖 Bot check',
-      '',
-      '**Classic sites org:** off (`sitesOrg` is empty — hosting is managed-accounts only).',
-      '',
-      emuLine,
-    ].join('\n');
+  const lines = ['### 🤖 Bot check', ''];
+  if (!ORG) lines.push('**Classic sites org:** off (`sitesOrg` is empty).', '');
+  if (!ghBot) {
+    lines.push(EMU.org
+      ? '**`BOT_PAT`:** ❌ not set. Use a **provisioned** owner of `' + EMU.org + '` (the setup user can\'t join orgs).'
+      : '**`BOT_PAT`:** ❌ not set.');
+    lines.push('', emuLine);
+    return lines.join('\n');
   }
-  if (!ghBot) return `### 🤖 Bot check\n\n**Classic sites org:** \`${ORG}\` is set but \`BOT_PAT\` isn't.\n\n${emuLine}`;
   const res = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${String(process.env.BOT_PAT).trim()}`, 'User-Agent': 'awesomeprojects-bot' } });
-  if (!res.ok) return `❌ GitHub rejected \`BOT_PAT\` (${res.status}). Create a new token and set it again.`;
+  if (!res.ok) return `❌ GitHub rejected \`BOT_PAT\` (${res.status}). Create a new token and set it again.\n\n${emuLine}`;
   const me = await res.json();
   const scopes = (res.headers.get('x-oauth-scopes') || '').split(',').map((x) => x.trim()).filter(Boolean);
   const want = ['repo', 'workflow', 'admin:org'];
   const missing = want.filter((w) => !scopes.includes(w) && !(w === 'admin:org' && scopes.includes('write:org')));
   const extra = scopes.filter((x) => ['delete_repo', 'admin:enterprise', 'site_admin'].includes(x));
-  const m = await ghBot.get(`/user/memberships/orgs/${ORG}`).catch(() => null);
-  return [
-    `### 🤖 Bot check`,
-    '',
+  const orgRows = [];
+  if (ORG) {
+    const m = await ghBot.get(`/user/memberships/orgs/${ORG}`).catch(() => null);
+    orgRows.push(`| **In ${ORG}** | ${m ? `${m.role === 'admin' ? '✅ owner' : `⚠️ ${m.role}`} (${m.state})` : '❌ not a member'} |`);
+  }
+  if (EMU.org) {
+    const m = await ghBot.get(`/user/memberships/orgs/${EMU.org}`).catch(() => null);
+    const managed = EMU.shortcode && String(me.login).toLowerCase().endsWith(`_${lc(EMU.shortcode)}`);
+    orgRows.push(`| **In ${EMU.org}** | ${m ? `${m.role === 'admin' ? '✅ owner' : `⚠️ ${m.role}`} (${m.state})` : '❌ not a member'} |`);
+    orgRows.push(`| **Managed login** | ${managed ? '✅' : '⚠️ expected a provisioned `*_'+lc(EMU.shortcode)+'` account (setup user can\'t own the org)'} |`);
+  }
+  lines.push(
     '| | |',
     '|---|---|',
-    `| **Account** | @${me.login} |`,
+    `| **BOT_PAT account** | @${me.login} |`,
     `| **Scopes** | ${scopes.map((x) => `\`${x}\``).join(' ') || '(fine-grained token)'} |`,
     `| **Missing** | ${missing.length ? missing.map((x) => `❌ \`${x}\``).join(' ') : '✅ none'} |`,
     `| **Riskier than needed** | ${extra.length ? extra.map((x) => `⚠️ \`${x}\``).join(' ') : '✅ no'} |`,
-    `| **In ${ORG}** | ${m ? `${m.role === 'admin' ? '✅ owner' : `⚠️ ${m.role}`} (${m.state})` : '❌ not a member'} |`,
+    ...orgRows,
     '',
     emuLine,
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 /** The managed enterprise's setup-user token: right account, right scopes, SCIM reachable. */
 async function emuCheck() {
@@ -1025,7 +1037,8 @@ async function orgSetup() {
   needHosting();
   const out = [];
   if (ORG && ghBot) out.push(await orgSetupFor(ghBot, ORG, { managed: false }));
-  if (EMU.org && ghEmu) out.push(await orgSetupFor(ghEmu, EMU.org, { managed: true }));
+  // Managed org: BOT_PAT (provisioned owner). Setup user / EMU_ADMIN_TOKEN cannot join orgs.
+  if (EMU.org && ghBot) out.push(await orgSetupFor(ghBot, EMU.org, { managed: true }));
   return out.join('\n\n');
 }
 async function orgSetupFor(api, org, { managed }) {
@@ -1238,12 +1251,12 @@ async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
 
 /** After merges: make every hosted entry's repo exist, and archive repos whose name is gone. */
 async function reconcileSites() {
-  if ((!ORG || !ghBot) && (!EMU.org || !ghEmu)) return;
+  if ((!ORG || !ghBot) && !emuHostingOn) return;
   const { entries } = mainTree();
-  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d) && (isEmuRepo(d.site.repo) ? ghEmu : ghBot));
+  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d) && ghBot && (!isEmuRepo(d.site.repo) || emuHostingOn));
   const repos = [
     ...(ORG && ghBot ? await ghBot.all(`/orgs/${ORG}/repos?type=all`) : []),
-    ...(EMU.org && ghEmu ? await ghEmu.all(`/orgs/${EMU.org}/repos?type=all`).catch(() => []) : []),
+    ...(EMU.org && ghBot ? await ghBot.all(`/orgs/${EMU.org}/repos?type=all`).catch(() => []) : []),
   ];
   const byName = new Map(repos.map((r) => [lc(r.full_name), r]));
   for (const [name, d] of hosted) {
@@ -1343,7 +1356,7 @@ async function closeSiteIssues(full, label, note) {
 async function ops({ by = 'schedule' } = {}) {
   needHosting();
   const { entries } = mainTree();
-  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d) && (isEmuRepo(d.site.repo) ? ghEmu : ghBot));
+  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d) && ghBot && (!isEmuRepo(d.site.repo) || emuHostingOn));
   const acts = [];
   const sites = [];
   for (const [name, d] of hosted) {
@@ -1415,12 +1428,14 @@ async function ops({ by = 'schedule' } = {}) {
 }
 
 // ── Managed accounts (Enterprise Managed Users) ────────────────
-/** The right token and org for a site repo: the managed enterprise's, or the classic sites org's. */
+/** Site repos in the managed org (vs classic sitesOrg). */
 const isEmuRepo = (full) => !!(EMU.org && lc(String(full).split('/')[0]) === lc(EMU.org));
+/** Every site repo uses BOT_PAT. Setup user (EMU_ADMIN_TOKEN) is SCIM-only and can't join orgs. */
 function apiFor(full) {
-  const api = isEmuRepo(full) ? ghEmu : ghBot;
-  if (!api) throw new Error(isEmuRepo(full) ? 'The `EMU_ADMIN_TOKEN` secret isn\'t set.' : 'The `BOT_PAT` secret isn\'t set.');
-  return api;
+  if (!ghBot) throw new Error(isEmuRepo(full)
+    ? 'The `BOT_PAT` secret isn\'t set (needs a provisioned owner of the managed org).'
+    : 'The `BOT_PAT` secret isn\'t set.');
+  return ghBot;
 }
 /** A person as they appear in a site repo: their managed login in the managed enterprise. */
 const loginIn = (full, personal) => (isEmuRepo(full) ? managedLoginOf(personal) : personal);
@@ -1501,7 +1516,8 @@ async function emuProvision(personalLogin, personalId, by) {
   }
   const managed = `${userName}_${lc(EMU.shortcode)}`;
   const lines = [ok(`account \`${managed}\`${role === 'enterprise_owner' ? ' (enterprise owner)' : ''}`)];
-  if (EMU.org) await step(lines, `member of ${EMU.org}`, async () => { await ghEmu.put(`/orgs/${EMU.org}/memberships/${managed}`, { role: 'member' }); });
+  if (EMU.org && ghBot) await step(lines, `member of ${EMU.org}`, async () => { await ghBot.put(`/orgs/${EMU.org}/memberships/${managed}`, { role: 'member' }); });
+  else if (EMU.org && !ghBot) lines.push(warn(`member of ${EMU.org}: BOT_PAT isn't set (provisioned org owner)`));
   await panelPost('/bot/identity', { personal_id: personalId, personal_login: personalLogin, user_name: userName, managed_login: managed, scim_id: user && user.id, status: 'active' });
   await activityLog(`🪪 **Managed account** \`${managed}\` for @${personalLogin}${by && lc(by) !== lc(personalLogin) ? ` · by @${by}` : ''}`);
   return { managed, message: `🪪 Your enterprise account is **${managed}**.\n\nSign in at [github.com/enterprises/${EMU.enterprise}/sso](https://github.com/enterprises/${EMU.enterprise}/sso): you'll confirm it's you with your GitHub account, and no new password is needed.\n\n${lines.join('\n')}` };
@@ -1535,7 +1551,7 @@ async function createFor({ name, owner: who, provider, repo: srcRepo = '', targe
   if (!/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i.test(person)) return { ok: false, message: 'Give a GitHub username for the owner.' };
   const profile = await gh.get(`/users/${person}`).catch(() => null);
   if (!profile) return { ok: false, message: `@${person} isn't a GitHub account.` };
-  const built = P.buildRequest({ Subdomain: name, 'Where should it point?': p.label, Template: template, 'GitHub repository': srcRepo, Target: target, Description: description }, profile.login, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
+  const built = P.buildRequest({ Subdomain: name, 'Where should it point?': p.label, Template: template, 'GitHub repository': srcRepo, Target: target, Description: description }, profile.login, { sitesOrg: ORG, emuOrg: emuHostingOn ? EMU.org : '' });
   const ev = await evaluateRequest({ built, author: profile.login, overrideHolds: true, overrideAll: force, by });
   if (ev.problems.length) return { ok: false, message: `Can't create it:\n${ev.problems.map((x) => `- ${x}`).join('\n')}` };
   if (ev.result.verdict !== 'ready') {
@@ -1595,7 +1611,7 @@ async function reportResult(job, { ok, message, link }) {
 async function selfUpdate(u, actor) {
   const built = P.buildRequest({
     Subdomain: u.name, 'Where should it point?': u.provider, 'GitHub repository': u.repo || '', Target: u.target || '', Description: u.description || '',
-  }, actor, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
+  }, actor, { sitesOrg: ORG, emuOrg: emuHostingOn ? EMU.org : '' });
   if (built.problems.length) return { ok: false, message: built.problems.join(' ') };
   const { entries } = mainTree();
   const name = built.name;
@@ -1654,7 +1670,7 @@ const reviewSummary = (ev) => (ev.problems.length
 /** A private request from the panel: review it, or (approved by a maintainer) make it live. */
 async function onPanelRequest(p) {
   const author = p.kind === 'approve' ? p.requester : p.actor;
-  const built = P.buildRequest(panelForm(p.form), author, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
+  const built = P.buildRequest(panelForm(p.form), author, { sitesOrg: ORG, emuOrg: emuHostingOn ? EMU.org : '' });
   const ev = await evaluateRequest({ built, author, labels: p.manualHold ? ['manual-hold'] : [], overrideHolds: p.kind === 'approve', overrideAll: p.kind === 'approve' && !!p.force, by: p.actor });
   const rev = { ...reviewSummary(ev), entry: built.entry || null };
   console.log(`panel request ${p.request} (${p.kind}) ${built.name}: ${rev.verdict}`);
