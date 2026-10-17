@@ -1,11 +1,13 @@
 name: Panel server
 
-# Deploys worker/ (api.awesomeprojects.tech) to Cloudflare Workers. Setup: docs/PANEL.md.
+# Thin runner: Worker code lives in apjs-hosted-sites/platform. Setup: docs/PANEL.md.
 on:
   push:
     branches: [main]
-    paths: ["worker/**", ".github/workflows/panel.yml"]
+    paths: [".github/workflows/panel.yml"]
   workflow_dispatch:
+  repository_dispatch:
+    types: [panel-deploy]
 
 permissions:
   contents: read
@@ -28,9 +30,11 @@ jobs:
           S3: ${{ secrets.PANEL_DISPATCH_TOKEN }}
           S4: ${{ secrets.PANEL_SESSION_SECRET }}
           S5: ${{ secrets.PANEL_BOT_SECRET }}
+          BOT: ${{ secrets.BOT_PAT }}
         run: |
           missing=""
           [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_WORKERS_TOKEN"
+          [ -n "$BOT" ] || missing="$missing BOT_PAT"
           [ -n "$S1" ] || missing="$missing PANEL_GITHUB_CLIENT_ID"
           [ -n "$S2" ] || missing="$missing PANEL_GITHUB_CLIENT_SECRET"
           [ -n "$S3" ] || missing="$missing PANEL_DISPATCH_TOKEN"
@@ -43,8 +47,23 @@ jobs:
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - name: Public registry (config)
         if: steps.ready.outputs.ok == 'true'
+        uses: actions/checkout@v4
+
+      - name: Private platform (worker)
+        if: steps.ready.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: apjs-hosted-sites/platform
+          ref: main
+          path: .platform
+          token: ${{ secrets.BOT_PAT }}
+
+      - name: Use registry config with platform worker
+        if: steps.ready.outputs.ok == 'true'
+        run: cp config.json .platform/config.json
+
       - uses: actions/setup-node@v4
         if: steps.ready.outputs.ok == 'true'
         with:
@@ -52,7 +71,7 @@ jobs:
 
       - name: Make sure the KV namespace exists
         if: steps.ready.outputs.ok == 'true'
-        working-directory: worker
+        working-directory: .platform/worker
         run: |
           set -euo pipefail
           title="awesomeprojects-panel"
@@ -67,9 +86,8 @@ jobs:
       - name: Make sure the D1 database exists
         id: d1
         if: steps.ready.outputs.ok == 'true'
-        working-directory: worker
+        working-directory: .platform/worker
         run: |
-          # No -e/pipefail here: a token without D1 permission must only turn private requests off.
           set +e +o pipefail
           db="awesomeprojects-panel"
           find_id() { (npx -y wrangler@4 d1 list --json 2>/dev/null || true) | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const l=JSON.parse(s.slice(s.indexOf('[')));const n=l.find(x=>x.name==='$db');process.stdout.write(n?n.uuid:'')}catch{}})"; }
@@ -86,7 +104,7 @@ jobs:
 
       - name: Managed enterprise sign-in (config.json → emu.enterprise)
         if: steps.ready.outputs.ok == 'true'
-        working-directory: worker
+        working-directory: .platform/worker
         run: |
           ent=$(node -e "process.stdout.write(String((require('../config.json').emu||{}).enterprise||'').replace(/[^a-z0-9-]/gi,''))")
           sed -i "s/^EMU_ENTERPRISE = .*/EMU_ENTERPRISE = \"$ent\"/" wrangler.toml
@@ -96,19 +114,19 @@ jobs:
 
       - name: Deploy
         if: steps.ready.outputs.ok == 'true'
-        working-directory: worker
+        working-directory: .platform/worker
         run: npx -y wrangler@4 deploy
 
       - name: Set the secrets
         if: steps.ready.outputs.ok == 'true'
-        working-directory: worker
+        working-directory: .platform/worker
         env:
           GITHUB_CLIENT_ID: ${{ secrets.PANEL_GITHUB_CLIENT_ID }}
           GITHUB_CLIENT_SECRET: ${{ secrets.PANEL_GITHUB_CLIENT_SECRET }}
           DISPATCH_TOKEN: ${{ secrets.PANEL_DISPATCH_TOKEN }}
           SESSION_SECRET: ${{ secrets.PANEL_SESSION_SECRET }}
           BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
-          SAML_PRIVATE_KEY: ${{ secrets.PANEL_SAML_PRIVATE_KEY }} # optional: managed-enterprise sign-in
+          SAML_PRIVATE_KEY: ${{ secrets.PANEL_SAML_PRIVATE_KEY }}
           SAML_CERT: ${{ secrets.PANEL_SAML_CERT }}
         run: |
           set -euo pipefail
