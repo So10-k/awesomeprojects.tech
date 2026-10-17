@@ -55,7 +55,7 @@ As the setup user: **Enterprise → Settings → Authentication security → Req
 | Public certificate | the contents of `ap-saml.crt` |
 | Signature / digest | RSA-SHA256 / SHA256 |
 
-Click **Test SAML configuration** and sign in with **your own** GitHub account (the repo owner). It's the only account the sign-in will sign for before anyone is provisioned, and the test account matches no managed user. Then save, and store the SSO recovery codes somewhere safe.
+Click **Test SAML configuration**. GitHub asks you to authorize the *awesomeprojects.tech* app **as the setup user**: approve it, and don't switch accounts, because switching breaks the test. Before anyone is provisioned, the sign-in will only sign for the setup user (`<shortcode>_admin`) or the repo owner, and neither matches a managed account. Then save, and store the SSO recovery codes somewhere safe.
 
 ### 5. The setup user's token
 

@@ -112,9 +112,12 @@ export async function parseAuthnRequest(samlRequest, { deflated }) {
   }
   const xml = new TextDecoder().decode(bytes);
   if (!/<(\w+:)?AuthnRequest[\s>]/.test(xml)) throw new Error('not an AuthnRequest');
-  const attr = (n) => (xml.match(new RegExp(`<(?:\\w+:)?AuthnRequest[^>]*\\s${n}="([^"]*)"`)) || [])[1];
+  // GitHub (and many SAML stacks) may use single or double quotes around attributes.
+  const attr = (n) => (xml.match(new RegExp(`<(?:\\w+:)?AuthnRequest[^>]*\\s${n}\\s*=\\s*["']([^"']*)["']`)) || [])[1];
   const issuer = (xml.match(/<(?:\w+:)?Issuer[^>]*>([^<]*)<\/(?:\w+:)?Issuer>/) || [])[1];
-  return { id: attr('ID'), acs: attr('AssertionConsumerServiceURL'), destination: attr('Destination'), issuer: issuer && issuer.trim() };
+  const id = attr('ID');
+  if (!id) throw new Error('AuthnRequest missing ID');
+  return { id, acs: attr('AssertionConsumerServiceURL'), destination: attr('Destination'), issuer: issuer && issuer.trim() };
 }
 
 /** IdP metadata (handy for checking the enterprise's SAML settings). */

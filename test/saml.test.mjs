@@ -55,6 +55,13 @@ test('AuthnRequests: redirect (deflated) and POST', async () => {
   assert.deepEqual(await parseAuthnRequest(zlib.deflateRawSync(req).toString('base64'), { deflated: true }), { id: '_r9', acs: ACS, destination: undefined, issuer: `https://github.com/enterprises/${ENT}` });
   assert.equal((await parseAuthnRequest(Buffer.from(req).toString('base64'), { deflated: false })).id, '_r9');
   await assert.rejects(parseAuthnRequest(Buffer.from('<x/>').toString('base64'), { deflated: false }));
+  // Single-quoted attributes (common in SAML XML): missing ID used to omit InResponseTo and GitHub failed the test.
+  const single = `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ID='_sq' Version='2.0' AssertionConsumerServiceURL='${ACS}' Destination='https://api.awesomeprojects.tech/saml/sso'><saml:Issuer xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">https://github.com/enterprises/${ENT}</saml:Issuer></samlp:AuthnRequest>`;
+  assert.deepEqual(await parseAuthnRequest(zlib.deflateRawSync(single).toString('base64'), { deflated: true }), {
+    id: '_sq', acs: ACS, destination: 'https://api.awesomeprojects.tech/saml/sso', issuer: `https://github.com/enterprises/${ENT}`,
+  });
+  const noId = `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" Version="2.0"><saml:Issuer xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">https://github.com/enterprises/${ENT}</saml:Issuer></samlp:AuthnRequest>`;
+  await assert.rejects(parseAuthnRequest(Buffer.from(noId).toString('base64'), { deflated: false }), /missing ID/);
 });
 
 // ── The Worker flow ─────────────────────────────────────────────
@@ -127,10 +134,22 @@ test('sign-in: other services and return addresses are refused', async () => {
   const e = env();
   assert.equal((await ssoRoundTrip(e, gitHubRequest('https://github.com/enterprises/someone-else'))).status, 400);
   assert.equal((await ssoRoundTrip(e, gitHubRequest(undefined, 'https://evil.example.com/consume'))).status, 400);
+  assert.equal((await go(e, '/saml/sso')).status, 400, 'no AuthnRequest → no IdP-initiated response');
   const off = env();
   delete off.EMU_ENTERPRISE;
   assert.equal((await go(off, '/saml/sso')).status, 503);
   assert.equal((await go(e, '/saml/metadata')).status, 200);
+});
+
+test('sign-in: single-quoted AuthnRequest still carries InResponseTo', async () => {
+  const e = env();
+  ghUser = { login: 'apjs_admin', id: 8 };
+  const single = `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ID='_gh-sq' Version='2.0' AssertionConsumerServiceURL='${ACS}'><saml:Issuer xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">https://github.com/enterprises/${ENT}</saml:Issuer></samlp:AuthnRequest>`;
+  const r = await ssoRoundTrip(e, single);
+  assert.equal(r.status, 200);
+  const xml = Buffer.from((await r.text()).match(/name="SAMLResponse" value="([^"]+)"/)[1], 'base64').toString('utf8');
+  assert.match(xml, /InResponseTo="_gh-sq"/);
+  ghUser = { login: 'Alice', id: 42, name: 'Alice A' };
 });
 
 test('the SAML request rides inside the signed OAuth state (no cookies)', async () => {

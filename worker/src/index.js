@@ -272,20 +272,23 @@ async function samlSso(req, env, url) {
     relayState = form.get('RelayState') || '';
     deflated = false;
   }
-  let ar = { id: undefined, acs: spAcs(env), issuer: spEntity(env) };
-  if (samlRequest) {
-    try { ar = await parseAuthnRequest(samlRequest, { deflated }); } catch { return page('Bad sign-in request', '<p>Start again from GitHub.</p>', 400); }
-  }
+  // GitHub is SP-initiated only: without an AuthnRequest ID the consume step rejects us with
+  // "InResponseTo was invalid or missing". Don't invent an IdP-initiated response.
+  if (!samlRequest) return page('Start from GitHub', '<p>Open the enterprise sign-in page (or <b>Test SAML configuration</b>), then come back here.</p>', 400);
+  let ar;
+  try { ar = await parseAuthnRequest(samlRequest, { deflated }); } catch { return page('Bad sign-in request', '<p>Start again from GitHub.</p>', 400); }
   // Only ever answer our own enterprise.
   if (ar.issuer && ar.issuer !== spEntity(env)) return page('Unknown service', '<p>This sign-in is only for our GitHub enterprise.</p>', 400);
   if (ar.acs && ar.acs !== spAcs(env)) return page('Unknown service', '<p>Unexpected return address.</p>', 400);
-  const samlState = { id: ar.id || null, relay: String(relayState).slice(0, 1000) };
+  const samlState = { id: ar.id, relay: String(relayState).slice(0, 1000) };
   return login(req, env, new URL(`${url.origin}/auth/login?return=/me/`), { saml: samlState });
 }
 
 /** After GitHub OAuth told us who this is: answer GitHub's SAML request for their managed account. */
 async function samlFinish(env, saml, me) {
   if (!env.DB) return page('Not set up yet', '<p>Accounts aren\'t switched on.</p>', 503);
+  // Never POST a Response without InResponseTo — GitHub's consume step fails with that exact error.
+  if (!saml || !saml.id) return page('Sign-in expired', '<p>Start again from GitHub.</p>', 400);
   let idn = await env.DB.prepare('SELECT * FROM identities WHERE personal_id = ?1').bind(me.id).first();
   // Setup: GitHub's "Test SAML configuration" needs one good round trip before anyone can be provisioned.
   // The repo owner may sign that test (a NameID that matches no managed account signs nobody in).
@@ -302,7 +305,7 @@ async function samlFinish(env, saml, me) {
   }
   const { xml } = await buildResponse({
     nameId: idn.user_name, acs: spAcs(env), audience: spEntity(env), issuer: env.SAML_ISSUER || 'https://api.awesomeprojects.tech/saml',
-    inResponseTo: saml.id || undefined, attributes: { full_name: [me.name || me.login] },
+    inResponseTo: saml.id, attributes: { full_name: [me.name || me.login] },
     privateKey: env.SAML_PRIVATE_KEY, cert: env.SAML_CERT,
   });
   await auditWrite(env, { id: newId(), at: Date.now(), actor: me.login, role: 'user', summary: `enterprise sign-in as ${idn.managed_login || idn.user_name}`, state: 'done' });
