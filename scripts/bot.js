@@ -1725,7 +1725,9 @@ async function setRecords(full, records, actor) {
   if (name !== base && entry.site) delete entry.site;
   const errs = [...R.checkName(name, reserved), ...R.checkEntry(name, entry)];
   const dns = await checkTargets([entry]);
-  for (const [h, v] of Object.entries(dns)) if (v === false) errs.push(`\`${h}\` doesn't exist yet. Set up the target first.`);
+  for (const [h, v] of Object.entries(dns)) {
+    if (v === false && !S.isPendingHostedTarget(name, entry, h)) errs.push(`\`${h}\` doesn't exist yet. Set up the target first.`);
+  }
   if (errs.length) return { ok: false, message: `Can't save that:\n${errs.map((e) => `- ${e}`).join('\n')}` };
   const { pr, merged } = await botChange({
     title: `${existing ? 'Update' : 'Add'} records ${name}`, body: `From My domains, by @${actor}.`,

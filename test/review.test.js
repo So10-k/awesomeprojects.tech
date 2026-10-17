@@ -140,6 +140,21 @@ test('dangling targets need changes', () => {
   assert.deepEqual(levels(r, 'target'), ['error']);
 });
 
+test('hosted Cloudflare Pages targets are allowed before the project exists', () => {
+  const hosted = {
+    owner: { github: 'alice' },
+    records: { CNAME: 'ap-justaquicktest.pages.dev' },
+    site: { provider: 'hosted', platform: 'cloudflare', repo: 'apjs-hosted-sites/justaquicktest', status: 'active', template: 'html' },
+  };
+  const r = run({
+    files: { justaquicktest: hosted },
+    dns: { 'ap-justaquicktest.pages.dev': false },
+    cfg: { hostedPerOwner: 5, hostedMinAccountAgeDays: 0 },
+  });
+  assert.equal(r.verdict, 'ready', r.findings.map((f) => `${f.check}:${f.level}:${f.text}`).join(' | '));
+  assert.match(r.findings.find((f) => f.check === 'target').text, /will be set up when this is approved/);
+});
+
 test('manual hold, and a maintainer overriding it', () => {
   assert.equal(run({ files: { alice: entry('alice') }, labels: ['manual-hold'] }).verdict, 'on-hold');
   const r = run({ files: { alice: entry('alice') }, labels: ['manual-hold'], overrideHolds: true });
