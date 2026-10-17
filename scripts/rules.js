@@ -183,23 +183,29 @@ function checkEntry(name, data) {
     errors.push('"repo" must be an https:// URL');
   }
   if (data.forced !== undefined && (typeof data.forced !== 'string' || !GITHUB_USER.test(data.forced))) errors.push('"forced" must be the maintainer who forced it');
-  if (data.site !== undefined) errors.push(...checkSite(data.site, data.records));
+  if (data.site !== undefined) errors.push(...checkSite(data.site, data.records, name));
   errors.push(...checkRecords(data.records, name));
   return errors;
 }
 
 /** Optional "where is it hosted" metadata. Doesn't change DNS; the bot and the portal use it. */
-function checkSite(site, records) {
+function checkSite(site, records, name) {
   if (!site || typeof site !== 'object' || Array.isArray(site)) return ['"site" must be an object'];
   const errors = [];
-  for (const k of Object.keys(site)) if (!['provider', 'repo', 'status', 'template'].includes(k)) errors.push(`unknown site field "${k}"`);
+  for (const k of Object.keys(site)) if (!['provider', 'repo', 'status', 'template', 'platform'].includes(k)) errors.push(`unknown site field "${k}"`);
+  if (site.platform !== undefined && (site.provider !== 'hosted' || !['github', 'cloudflare'].includes(site.platform))) errors.push('"site.platform" must be github or cloudflare (hosted sites only)');
   if (site.template !== undefined && (site.provider !== 'hosted' || !/^[a-z0-9-]{1,30}$/.test(String(site.template)))) errors.push('"site.template" is only for hosted sites');
   if (!PROVIDERS.includes(site.provider)) errors.push(`"site.provider" must be one of: ${PROVIDERS.join(', ')}`);
   if (site.repo !== undefined && (typeof site.repo !== 'string' || !REPO.test(site.repo))) errors.push('"site.repo" must look like owner/repo');
   if (site.status !== undefined && (site.provider !== 'hosted' || !SITE_STATUSES.includes(site.status))) {
     errors.push(site.provider !== 'hosted' ? '"site.status" is only for hosted sites' : `"site.status" must be one of: ${SITE_STATUSES.join(', ')}`);
   }
-  if (site.provider === 'github-pages' || site.provider === 'hosted') {
+  if (site.provider === 'hosted' && site.platform === 'cloudflare') {
+    if (!site.repo) errors.push('"site.repo" is required for hosted');
+    else if (name && records && typeof records.CNAME === 'string' && lc(records.CNAME).replace(/\.$/, '') !== `${require('./sites').cfProject(name)}.pages.dev`) {
+      errors.push(`a hosted (Cloudflare) site must have "CNAME": "${require('./sites').cfProject(name)}.pages.dev"`);
+    }
+  } else if (site.provider === 'github-pages' || site.provider === 'hosted') {
     if (!site.repo) errors.push(`"site.repo" is required for ${site.provider}`);
     else if (records && typeof records.CNAME === 'string' && lc(records.CNAME).replace(/\.$/, '') !== `${lc(site.repo.split('/')[0])}.github.io`) {
       errors.push(`a ${site.provider} site must have "CNAME": "${lc(site.repo.split('/')[0])}.github.io"`);

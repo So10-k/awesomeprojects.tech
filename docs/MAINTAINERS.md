@@ -355,3 +355,7 @@ Already done for this repo; here for reference.
 5. **Optional Discord:** `gh secret set DISCORD_WEBHOOK -R So10-k/awesomeprojects.tech` (a channel webhook URL) gets new requests, reports and ops problems.
 6. **Discussions** on, and **Pages** for this repo: *Source* = GitHub Actions, custom domain `awesomeprojects.tech`.
 7. **Later: the [Public Suffix List](https://github.com/publicsuffix/list).** Once established, apply so browsers isolate cookies between subdomains. Until then, nothing with logins should live on the root domain.
+
+## Managed accounts
+
+`/emu-create @user`, `/emu-suspend @user` and `/emu-restore @user` (or Console → People) manage people's enterprise accounts. Setup and how sign-in works: [MANAGED.md](MANAGED.md).

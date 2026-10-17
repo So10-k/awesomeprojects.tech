@@ -718,6 +718,18 @@ async function showProfile(raw) {
     ].filter(Boolean)),
   ]));
   try {
+    const { identities, enabled } = await Panel.identity({ login });
+    if (enabled) {
+      const idn = (identities || [])[0];
+      const row = el('div', { className: 'card-actions' }, [el('b', { textContent: 'Enterprise account: ' }), idn ? `${idn.managed_login || idn.user_name} · ${idn.status}` : 'none']);
+      const b = (label, cls, action) => { const x = el('button', { className: `btn ${cls}`, type: 'button', textContent: label }); x.addEventListener('click', () => propose({ action, args: { user: login }, command: `/${action} @${login}`, target: 'console' })); return x; };
+      if (!idn) row.append(b('Create it…', 'primary', 'emu-create'));
+      else if (idn.status === 'active') row.append(b('Suspend…', 'danger', 'emu-suspend'));
+      else row.append(b('Restore…', '', 'emu-restore'));
+      box.querySelector('.profile').append(row);
+    }
+  } catch { /* no identities yet */ }
+  try {
     const { entries } = await Panel.audit({ actor: login, limit: 8 });
     recent.replaceChildren(...(entries.length ? entries.map((a) => el('li', { textContent: `${when(a.at)} · ${a.summary}` })) : [el('li', { className: 'muted', textContent: 'nothing yet' })]));
   } catch { recent.replaceChildren(el('li', { className: 'muted', textContent: 'unavailable' })); }

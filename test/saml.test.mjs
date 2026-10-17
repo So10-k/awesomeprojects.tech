@@ -109,6 +109,16 @@ test('sign-in: only provisioned, active people get a signed response for our ent
   ghUser = { login: 'Alice', id: 42, name: 'Alice A' };
 });
 
+test('sign-in: the repo owner can run GitHub\'s SAML test before anyone is provisioned', async () => {
+  const e = env();
+  ghUser = { login: 'Boss', id: 7 };
+  const r = await ssoRoundTrip(e, gitHubRequest());
+  assert.equal(r.status, 200);
+  const xml = Buffer.from((await r.text()).match(/name="SAMLResponse" value="([^"]+)"/)[1], 'base64').toString('utf8');
+  assert.match(xml, />boss<\/saml:NameID>/);
+  ghUser = { login: 'Alice', id: 42, name: 'Alice A' };
+});
+
 test('sign-in: other services and return addresses are refused', async () => {
   const e = env();
   assert.equal((await ssoRoundTrip(e, gitHubRequest('https://github.com/enterprises/someone-else'))).status, 400);

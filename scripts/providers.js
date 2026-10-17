@@ -42,7 +42,7 @@ function cleanHost(s) {
  * form: { Subdomain, 'Where should it point?', 'GitHub repository', Target, Description }
  * returns { name, provider, entry, problems }
  */
-function buildRequest(form, author, { sitesOrg } = {}) {
+function buildRequest(form, author, { sitesOrg, emuOrg } = {}) {
   // form['Template']: a template id or label for hosted sites (default: plain HTML)
   const { cleanName } = require('./requests');
   const problems = [];
@@ -58,6 +58,16 @@ function buildRequest(form, author, { sitesOrg } = {}) {
     const repo = cleanRepo(form['GitHub repository']);
     if (!repo) problems.push('Enter your GitHub repository as `owner/repo`, e.g. `alice/portfolio`.');
     else { records = { CNAME: `${lc(repo.split('/')[0])}.github.io` }; site.repo = repo; }
+  } else if (provider.id === 'hosted' && emuOrg) {
+    // Managed-user enterprise: the repo lives there, and the site is served by Cloudflare Pages.
+    if (name.includes('.')) problems.push('Hosted sites need a top-level name.');
+    else {
+      const S = require('./sites');
+      const raw = lc(form['Template'] || '');
+      const tpl = S.TEMPLATES.find((t) => t.id === raw || lc(t.label) === raw) || S.TEMPLATES[0];
+      records = { CNAME: `${S.cfProject(name)}.pages.dev` };
+      site = { provider: 'hosted', platform: 'cloudflare', repo: `${emuOrg}/${name}`, status: 'active', template: tpl.id };
+    }
   } else if (provider.id === 'hosted') {
     if (!sitesOrg) problems.push('Hosting with us isn\'t switched on yet. Pick another option for now.');
     else if (name.includes('.')) problems.push('Hosted sites need a top-level name.');

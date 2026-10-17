@@ -84,6 +84,14 @@ jobs:
             echo "::warning::Couldn't create or find the D1 database, so private requests are off. Give the CLOUDFLARE_WORKERS_TOKEN the 'D1: Edit' permission (Cloudflare → API Tokens → edit the token) and re-run this workflow."
           fi
 
+      - name: Managed enterprise sign-in (config.json → emu.enterprise)
+        if: steps.ready.outputs.ok == 'true'
+        working-directory: worker
+        run: |
+          ent=$(node -e "process.stdout.write(String((require('../config.json').emu||{}).enterprise||'').replace(/[^a-z0-9-]/gi,''))")
+          sed -i "s/^EMU_ENTERPRISE = .*/EMU_ENTERPRISE = \"$ent\"/" wrangler.toml
+          echo "EMU enterprise: ${ent:-off}"
+
       - name: Deploy
         if: steps.ready.outputs.ok == 'true'
         working-directory: worker
@@ -98,11 +106,13 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.PANEL_DISPATCH_TOKEN }}
           SESSION_SECRET: ${{ secrets.PANEL_SESSION_SECRET }}
           BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
+          SAML_PRIVATE_KEY: ${{ secrets.PANEL_SAML_PRIVATE_KEY }} # optional: managed-enterprise sign-in
+          SAML_CERT: ${{ secrets.PANEL_SAML_CERT }}
         run: |
           set -euo pipefail
           umask 077
           f="$RUNNER_TEMP/panel-secrets.json"
-          node -e "const k=['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','DISPATCH_TOKEN','SESSION_SECRET','BOT_SECRET'];require('fs').writeFileSync(process.argv[1],JSON.stringify(Object.fromEntries(k.map(x=>[x,process.env[x]]))))" "$f"
+          node -e "const k=['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','DISPATCH_TOKEN','SESSION_SECRET','BOT_SECRET','SAML_PRIVATE_KEY','SAML_CERT'];require('fs').writeFileSync(process.argv[1],JSON.stringify(Object.fromEntries(k.filter(x=>process.env[x]).map(x=>[x,process.env[x]]))))" "$f"
           npx -y wrangler@4 secret bulk "$f" >/dev/null
           rm -f "$f"
           echo "Secrets set."

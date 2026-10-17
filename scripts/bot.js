@@ -39,6 +39,9 @@ const gh = github(process.env.GITHUB_TOKEN, { dryRun });
 // The bot account's token: only for the sites org (creating, configuring, locking and archiving repos).
 const ghBot = process.env.BOT_PAT ? github(String(process.env.BOT_PAT).trim(), { dryRun }) : null;
 const ORG = config.sitesOrg || '';
+// The managed-user (EMU) enterprise: accounts are created through SCIM with the setup user's token.
+const EMU = config.emu || {};
+const ghEmu = process.env.EMU_ADMIN_TOKEN ? github(String(process.env.EMU_ADMIN_TOKEN).trim(), { dryRun }) : null;
 const runUrl = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined;
 
@@ -342,7 +345,7 @@ async function onRequest(issue, { comment, cmd, force = false } = {}) {
   const approving = admin && cmd === '/approve';
   const forcing = approving && force;
   const labels = issue.labels.map((l) => l.name);
-  const built = P.buildRequest(Q.parseForm(issue.body), author, { sitesOrg: ORG });
+  const built = P.buildRequest(Q.parseForm(issue.body), author, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
   const { name } = built;
   const say = (result, opts) => upsertComment(issue.number, 'request', requestComment(result, { name, domain: R.DOMAIN, ...opts }));
 
@@ -674,19 +677,19 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
     }
     case '/redeploy': {
       if (kind === 'discussion') return undefined;
-      needOrg();
+      needHosting();
       const name = Q.cleanName(args[0] || '');
       const d = mainTree().entries[name];
       if (!d || !S.isHosted(d)) return `\`${name}\` isn't a hosted site.`;
       if (R.ownerOf(d) !== lc(by) && !admin) return `Only @${R.ownerOf(d)} can redeploy \`${name}\`.`;
       if (S.statusOf(d) !== 'active') return `\`${name}\` is ${S.statusOf(d)}, so it can't be redeployed.`;
-      await ghBot.post(`/repos/${d.site.repo}/actions/workflows/deploy.yml/dispatches`, { ref: 'main' });
+      await apiFor(d.site.repo).post(`/repos/${d.site.repo}/actions/workflows/deploy.yml/dispatches`, { ref: 'main' });
       await activityLog(`🚀 **Redeploy** \`${name}\` · by @${by}`);
       return `🚀 Redeploying \`${name}.${R.DOMAIN}\`: [watch it](https://github.com/${d.site.repo}/actions). Live in about a minute.`;
     }
     case '/site-collab': {
       if (kind === 'discussion') return undefined;
-      needOrg();
+      needHosting();
       const name = Q.cleanName(args[0] || '');
       const u = lc(String(args[1] || '').replace(/^@/, ''));
       const op = lc(args[2] || 'add');
@@ -703,13 +706,24 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
       }
       if (S.statusOf(d) !== 'active') return `\`${name}\` is ${S.statusOf(d)}, so nobody new can be added.`;
       if ((config.bannedUsers || []).map(lc).includes(u)) return `@${u} isn't allowed here.`;
-      const current = (await ghBot.all(`/repos/${full}/collaborators?affiliation=outside`).catch(() => [])).map((c) => lc(c.login)).filter((x) => x !== siteOwner);
-      const pending = (await ghBot.all(`/repos/${full}/invitations`).catch(() => [])).map((i) => lc(i.invitee && i.invitee.login)).filter((x) => x && x !== siteOwner);
+      const rapi = apiFor(full);
+      const ownerIn = lc(loginIn(full, siteOwner));
+      const current = (await rapi.all(`/repos/${full}/collaborators?affiliation=${collabAffiliation(full)}`).catch(() => [])).map((c) => lc(c.login)).filter((x) => x !== ownerIn);
+      const pending = (await rapi.all(`/repos/${full}/invitations`).catch(() => [])).map((i) => lc(i.invitee && i.invitee.login)).filter((x) => x && x !== ownerIn);
       const max = config.maxCollaboratorsPerSite ?? 2;
       if (!admin && new Set([...current, ...pending]).size >= max) return `\`${name}\` already has ${max} collaborator${max === 1 ? '' : 's'} (the limit). Remove one first.`;
       const seats = await seatUsage();
-      if (!admin && seats.max && !seats.people.includes(u) && seats.used >= seats.max) return `Hosting is full right now (${seats.used}/${seats.max} seats), so new collaborators need a maintainer.`;
-      await ghBot.put(`/repos/${full}/collaborators/${u}`, { permission: S.collaboratorRole(await haveRoles()) });
+      if (!admin && seats.max && !seated(seats, u) && seats.used >= seats.max) return `Hosting is full right now (${seats.used}/${seats.max} seats), so new collaborators need a maintainer.`;
+      if (isEmuRepo(full)) {
+        // Managed enterprise: they get (or keep) a managed account, then direct write access. No invite to accept.
+        const profile = await gh.get(`/users/${u}`).catch(() => null);
+        if (!profile) return `@${u} isn't a GitHub account.`;
+        const acct = await emuProvision(profile.login, profile.id, by);
+        await rapi.put(`/repos/${full}/collaborators/${acct.managed}`, { permission: S.collaboratorRole(await haveRoles(full)) });
+        await activityLog(`👥 **Collaborator added** @${u} (${acct.managed}) to [${full}](https://github.com/${full}) · by @${by}`);
+        return `👥 @${u} can now push to [${full}](https://github.com/${full}) as **${acct.managed}**. They sign in at https://github.com/enterprises/${EMU.enterprise}/sso with their GitHub account.`;
+      }
+      await rapi.put(`/repos/${full}/collaborators/${u}`, { permission: S.collaboratorRole(await haveRoles(full)) });
       await activityLog(`👥 **Collaborator added** @${u} to [${full}](https://github.com/${full}) · by @${by}`);
       return `👥 Invited @${u} to [${full}](https://github.com/${full}) with write access. They need to accept the invite.`;
     }
@@ -730,6 +744,7 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
         if (!S.isHosted(d) || R.ownerOf(d) !== u || ['suspended', 'archived'].includes(S.statusOf(d))) continue;
         lines.push(await setSiteStatus(name, 'suspended', by).then((m) => `⏸️ \`${name}\`: ${m.split('\n')[0]}`, (e) => `⚠️ \`${name}\`: ${e.message}`));
       }
+      if (EMU.enterprise && ghEmu) lines.push(await emuSetActive(u, false, by).catch((e) => `⚠️ managed account: ${e.message}`));
       await activityLog(`🚫 **Suspended user** @${u} · by @${by}${args.length > 1 ? `: ${args.slice(1).join(' ')}` : ''}`);
       await notify(`🚫 Suspended @${u} (by @${by})`);
       return `### 🚫 @${u} suspended\n\n${lines.map((l) => `- ${l}`).join('\n') || '- nothing else to do'}`;
@@ -748,6 +763,17 @@ async function anywhereCommand({ cmd, args, rest, by, admin, number, kind, form 
         target: !['github-pages', 'hosted', 'vercel'].includes(alias) ? rest2.slice(3).join(' ') : '',
       }, by);
       return r.message;
+    }
+    case '/emu-create': case '/emu-suspend': case '/emu-restore': {
+      if (kind === 'discussion') return undefined;
+      const u = String(args[0] || '').replace(/^@/, '');
+      if (!u) return `Usage: \`${cmd} @user\``;
+      if (cmd === '/emu-create') {
+        const profile = await gh.get(`/users/${u}`).catch(() => null);
+        if (!profile) return `@${u} isn't a GitHub account.`;
+        return (await emuProvision(profile.login, profile.id, by)).message;
+      }
+      return emuSetActive(u, cmd === '/emu-restore', by);
     }
     case '/make-repo': {
       if (kind === 'discussion') return undefined;
@@ -870,6 +896,11 @@ function needOrg() {
   if (!ORG) throw new Error('`sitesOrg` isn\'t set in config.json.');
   if (!ghBot) throw new Error('The `BOT_PAT` secret isn\'t set.');
 }
+/** Hosting works if either org is set up (the classic sites org or the managed enterprise). */
+function needHosting() {
+  if ((ORG && ghBot) || (EMU.org && ghEmu)) return;
+  needOrg();
+}
 const ok = (t) => `✅ ${t}`;
 const warn = (t) => `⚠️ ${t}`;
 async function step(lines, label, fn) {
@@ -878,10 +909,15 @@ async function step(lines, label, fn) {
 
 /** Seats used by hosted sites = outside collaborators in the sites org (each is an enterprise seat). */
 async function seatUsage() {
-  if (!ORG || !ghBot) return { used: 0, max: config.maxSeats || 0, people: [] };
-  const people = (await ghBot.all(`/orgs/${ORG}/outside_collaborators`).catch(() => [])).map((u) => lc(u.login));
+  const people = [
+    ...(ORG && ghBot ? (await ghBot.all(`/orgs/${ORG}/outside_collaborators`).catch(() => [])).map((u) => lc(u.login)) : []),
+    // Managed users are seats too (everyone but the setup user).
+    ...(EMU.org && ghEmu ? (await ghEmu.all(`/orgs/${EMU.org}/members`).catch(() => [])).map((u) => lc(u.login)).filter((x) => x !== `${lc(EMU.shortcode)}_admin`) : []),
+  ];
   return { used: people.length, max: config.maxSeats || 0, people };
 }
+/** Does this person already hold a seat (as themselves, or as their managed account)? */
+const seated = (seats, personal) => seats.people.includes(lc(personal)) || (!!EMU.shortcode && seats.people.includes(lc(managedLoginOf(personal))));
 
 /** Cost and safety guards before we create a hosted site for someone. */
 async function hostingGuards(author, entries, profile) {
@@ -895,7 +931,7 @@ async function hostingGuards(author, entries, profile) {
     out.push({ check: 'repo', level: 'hold', text: `Hosting needs a GitHub account at least ${minAge} days old, so a maintainer will take a look.`, waitingFor: 'maintainer', label: 'new-account' });
   }
   const seats = await seatUsage();
-  if (seats.max && !seats.people.includes(lc(author)) && seats.used >= seats.max) {
+  if (seats.max && !seated(seats, author) && seats.used >= seats.max) {
     out.push({ check: 'repo', level: 'hold', text: `Hosting is full right now (${seats.used}/${seats.max} seats). A maintainer will decide.`, waitingFor: 'maintainer', label: 'seats' });
   }
   return out;
@@ -903,7 +939,8 @@ async function hostingGuards(author, entries, profile) {
 
 /** Is the bot's token what we think? (owner command) */
 async function botCheck() {
-  needOrg();
+  const emuLine = await emuCheck();
+  if (!ORG || !ghBot) return `### 🤖 Bot check\n\n${emuLine}`;
   const res = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${String(process.env.BOT_PAT).trim()}`, 'User-Agent': 'awesomeprojects-bot' } });
   if (!res.ok) return `❌ GitHub rejected \`BOT_PAT\` (${res.status}). Create a new token and set it again.`;
   const me = await res.json();
@@ -922,6 +959,30 @@ async function botCheck() {
     `| **Missing** | ${missing.length ? missing.map((x) => `❌ \`${x}\``).join(' ') : '✅ none'} |`,
     `| **Riskier than needed** | ${extra.length ? extra.map((x) => `⚠️ \`${x}\``).join(' ') : '✅ no'} |`,
     `| **In ${ORG}** | ${m ? `${m.role === 'admin' ? '✅ owner' : `⚠️ ${m.role}`} (${m.state})` : '❌ not a member'} |`,
+    '',
+    emuLine,
+  ].join('\n');
+}
+/** The managed enterprise's setup-user token: right account, right scopes, SCIM reachable. */
+async function emuCheck() {
+  if (!EMU.enterprise) return '**Managed accounts:** off (`emu` isn\'t set in config.json).';
+  if (!process.env.EMU_ADMIN_TOKEN) return '**Managed accounts:** ❌ the `EMU_ADMIN_TOKEN` secret isn\'t set.';
+  const res = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${String(process.env.EMU_ADMIN_TOKEN).trim()}`, 'User-Agent': 'awesomeprojects-bot' } });
+  if (!res.ok) return `**Managed accounts:** ❌ GitHub rejected \`EMU_ADMIN_TOKEN\` (${res.status}).`;
+  const me = await res.json();
+  const scopes = (res.headers.get('x-oauth-scopes') || '').split(',').map((x) => x.trim());
+  const missing = ['scim:enterprise', 'admin:org', 'repo', 'workflow'].filter((x) => !scopes.includes(x));
+  const scim = await ghEmu.get(`/scim/v2/enterprises/${EMU.enterprise}/Users?count=1`).then((r) => `✅ ${r.totalResults} managed account${r.totalResults === 1 ? '' : 's'}`, (e) => `❌ ${String(e.message).slice(0, 120)}`);
+  const cf = process.env.CLOUDFLARE_PAGES_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID ? '✅ set' : '❌ `CLOUDFLARE_PAGES_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` missing';
+  return [
+    `**Managed accounts** (enterprise \`${EMU.enterprise}\`, org \`${EMU.org}\`)`,
+    '',
+    '| | |',
+    '|---|---|',
+    `| **Setup user** | ${me.login}${me.login === `${lc(EMU.shortcode)}_admin` ? ' ✅' : ' ⚠️ expected the setup user'} |`,
+    `| **Missing scopes** | ${missing.length ? missing.map((x) => `❌ \`${x}\``).join(' ') : '✅ none'} |`,
+    `| **SCIM** | ${scim} |`,
+    `| **Cloudflare Pages** | ${cf} |`,
   ].join('\n');
 }
 
@@ -939,54 +1000,62 @@ async function syncTeam(maintainersList) {
   return changes.length ? `maintainers team: ${changes.join(' ')}` : 'maintainers team already in sync';
 }
 
-/** Owner command: safe org defaults, rulesets, Actions allow-list, maintainers team. */
+/** Owner command: safe org defaults, rulesets, Actions allow-list, maintainers team, in every org we host in. */
 async function orgSetup() {
-  needOrg();
+  needHosting();
+  const out = [];
+  if (ORG && ghBot) out.push(await orgSetupFor(ghBot, ORG, { managed: false }));
+  if (EMU.org && ghEmu) out.push(await orgSetupFor(ghEmu, EMU.org, { managed: true }));
+  return out.join('\n\n');
+}
+async function orgSetupFor(api, org, { managed }) {
   const lines = [];
-  await step(lines, 'org defaults (no default access, members can\'t create repos or Pages)', async () => { await ghBot.patch(`/orgs/${ORG}`, S.ORG_SETTINGS); });
+  const mine = (d) => S.isHosted(d) && lc(orgOf(d.site.repo)) === lc(org);
+  await step(lines, 'org defaults (no default access, members can\'t create repos or Pages)', async () => { await api.patch(`/orgs/${org}`, S.ORG_SETTINGS); });
   await step(lines, 'Actions: only GitHub\'s actions and our build workflow', async () => {
     const pol = S.actionsPolicy(repo);
-    await ghBot.put(`/orgs/${ORG}/actions/permissions`, pol.permissions);
-    await ghBot.put(`/orgs/${ORG}/actions/permissions/selected-actions`, pol.selected);
+    await api.put(`/orgs/${org}/actions/permissions`, pol.permissions);
+    await api.put(`/orgs/${org}/actions/permissions/selected-actions`, pol.selected);
   });
-  await step(lines, 'custom properties (ap_status, ap_owner, ap_name, ap_template)', async () => { await ghBot.patch(`/orgs/${ORG}/properties/schema`, { properties: S.PROPERTIES }); });
+  await step(lines, 'custom properties (ap_status, ap_owner, ap_name, ap_template)', async () => { await api.patch(`/orgs/${org}/properties/schema`, { properties: S.PROPERTIES }); });
   for (const rs of [S.workflowRuleset(config), S.branchRuleset(), S.frozenRuleset()]) {
     await step(lines, `ruleset “${rs.name}”`, async () => {
-      const existing = (await ghBot.get(`/orgs/${ORG}/rulesets`)).find((x) => x.name === rs.name);
-      if (existing) await ghBot.put(`/orgs/${ORG}/rulesets/${existing.id}`, rs);
-      else await ghBot.post(`/orgs/${ORG}/rulesets`, rs);
+      const existing = (await api.get(`/orgs/${org}/rulesets`)).find((x) => x.name === rs.name);
+      if (existing) await api.put(`/orgs/${org}/rulesets/${existing.id}`, rs);
+      else await api.post(`/orgs/${org}/rulesets`, rs);
     });
   }
-  await step(lines, 'maintainers team', () => syncTeam(config.maintainers));
+  if (!managed) await step(lines, 'maintainers team', () => syncTeam(config.maintainers));
   await step(lines, 'custom repository roles', async () => {
-    const avail = await ghBot.get(`/orgs/${ORG}/repository-fine-grained-permissions`).then((l) => l.map((x) => x.name), () => []);
-    const existing = (await ghBot.get(`/orgs/${ORG}/custom-repository-roles`).catch(() => ({ custom_roles: [] }))).custom_roles || [];
+    const avail = await api.get(`/orgs/${org}/repository-fine-grained-permissions`).then((l) => l.map((x) => x.name), () => []);
+    const existing = (await api.get(`/orgs/${org}/custom-repository-roles`).catch(() => ({ custom_roles: [] }))).custom_roles || [];
     const made = [];
     for (const role of S.repoRoles(avail)) {
       const cur = existing.find((r) => r.name === role.name);
-      if (cur) await ghBot.patch(`/orgs/${ORG}/custom-repository-roles/${cur.id}`, role);
-      else await ghBot.post(`/orgs/${ORG}/custom-repository-roles`, role);
+      if (cur) await api.patch(`/orgs/${org}/custom-repository-roles/${cur.id}`, role);
+      else await api.post(`/orgs/${org}/custom-repository-roles`, role);
       made.push(`${role.name} (${role.base_role}${role.permissions.length ? ` + ${role.permissions.length}` : ''})`);
     }
     roleCache = null;
+    delete roleCaches[ORG];
     return `repository roles: ${made.join(', ')}`;
   });
-  await step(lines, 'maintainers org role', async () => {
-    const avail = await ghBot.get(`/orgs/${ORG}/organization-fine-grained-permissions`).then((l) => l.map((x) => x.name), () => []);
+  if (!managed) await step(lines, 'maintainers org role', async () => {
+    const avail = await api.get(`/orgs/${org}/organization-fine-grained-permissions`).then((l) => l.map((x) => x.name), () => []);
     const role = S.orgRole(avail);
     if (!role.permissions.length) return 'maintainers org role: no permissions available on this plan, skipped';
-    const list = (await ghBot.get(`/orgs/${ORG}/organization-roles`).catch(() => ({ roles: [] }))).roles || [];
+    const list = (await api.get(`/orgs/${org}/organization-roles`).catch(() => ({ roles: [] }))).roles || [];
     let cur = list.find((r) => r.name === role.name);
-    if (cur) await ghBot.patch(`/orgs/${ORG}/organization-roles/${cur.id}`, role);
-    else cur = await ghBot.post(`/orgs/${ORG}/organization-roles`, role);
-    await ghBot.put(`/orgs/${ORG}/organization-roles/teams/${S.TEAM.slug}/${cur.id}`);
+    if (cur) await api.patch(`/orgs/${org}/organization-roles/${cur.id}`, role);
+    else cur = await api.post(`/orgs/${org}/organization-roles`, role);
+    await api.put(`/orgs/${org}/organization-roles/teams/${S.TEAM.slug}/${cur.id}`);
     return `org role ${role.name} (${role.permissions.join(', ')}) → ${S.TEAM.slug}`;
   });
   await step(lines, 'owner access on existing sites', async () => {
     const { entries } = mainTree();
     let n = 0;
     for (const [, d] of Object.entries(entries)) {
-      if (!S.isHosted(d) || S.statusOf(d) === 'archived') continue;
+      if (!mine(d) || S.statusOf(d) === 'archived') continue;
       await applyAccess(d.site.repo, d.owner.github, S.statusOf(d)).then(() => n++, () => {});
     }
     return `custom roles applied on ${n} site${n === 1 ? '' : 's'}`;
@@ -995,42 +1064,53 @@ async function orgSetup() {
     const { entries } = mainTree();
     let n = 0;
     for (const [name, d] of Object.entries(entries)) {
-      if (!S.isHosted(d)) continue;
+      if (!mine(d)) continue;
       await setProperties(name, d).then(() => n++, () => {});
     }
     return `properties set on ${n} site repo${n === 1 ? '' : 's'}`;
   });
-  return `### 🏗️ ${ORG} setup\n\n${lines.join('\n')}`;
+  return `### 🏗️ ${org} setup\n\n${lines.join('\n')}`;
 }
 
 /** Our custom repository roles that exist in the org (cached per run). */
 let roleCache = null;
-async function haveRoles() {
-  if (!roleCache) roleCache = ((await ghBot.get(`/orgs/${ORG}/custom-repository-roles`).catch(() => ({ custom_roles: [] }))).custom_roles || []).map((r) => r.name);
-  return roleCache;
+const roleCaches = {};
+async function haveRoles(full) {
+  const org = full ? orgOf(full) : ORG;
+  if (org === ORG && roleCache) return roleCache;
+  if (!roleCaches[org]) roleCaches[org] = ((await apiFor(`${org}/x`).get(`/orgs/${org}/custom-repository-roles`).catch(() => ({ custom_roles: [] }))).custom_roles || []).map((r) => r.name);
+  if (org === ORG) roleCache = roleCaches[org];
+  return roleCaches[org];
 }
 
 /** Owner access for a status: the custom role (or built-in fallback), or none. */
 async function applyAccess(full, user, status) {
-  const perm = S.ownerRole(status, await haveRoles());
-  if (perm) return ghBot.put(`/repos/${full}/collaborators/${user}`, { permission: perm });
-  await ghBot.del(`/repos/${full}/collaborators/${user}`).catch(() => {});
-  for (const inv of await ghBot.all(`/repos/${full}/invitations`).catch(() => [])) {
-    if (lc(inv.invitee && inv.invitee.login) === lc(user)) await ghBot.del(`/repos/${full}/invitations/${inv.id}`).catch(() => {});
+  const api = apiFor(full);
+  const who = isEmuRepo(full) ? managedLoginOf(user) : user;
+  const perm = S.ownerRole(status, await haveRoles(full));
+  if (perm) {
+    if (isEmuRepo(full)) await api.put(`/orgs/${orgOf(full)}/memberships/${who}`, { role: 'member' }).catch(() => {});
+    return api.put(`/repos/${full}/collaborators/${who}`, { permission: perm });
+  }
+  await api.del(`/repos/${full}/collaborators/${who}`).catch(() => {});
+  for (const inv of await api.all(`/repos/${full}/invitations`).catch(() => [])) {
+    if (lc(inv.invitee && inv.invitee.login) === lc(who)) await api.del(`/repos/${full}/invitations/${inv.id}`).catch(() => {});
   }
 }
+/** A person's managed login (EMU): their SCIM userName + _shortcode. */
+const managedLoginOf = (personal) => `${emuUserName(personal)}_${lc(EMU.shortcode || '')}`;
 
 /** Custom properties drive org rulesets (e.g. locked/suspended sites are frozen by GitHub itself). */
 async function setProperties(name, entry) {
   const repoName = entry.site.repo.split('/')[1];
-  await ghBot.patch(`/orgs/${ORG}/properties/values`, {
+  await apiFor(entry.site.repo).patch(`/orgs/${orgOf(entry.site.repo)}/properties/values`, {
     repository_names: [repoName],
     properties: S.propertyValues({ status: S.statusOf(entry), owner: entry.owner.github, name, template: entry.site.template }),
   });
 }
 
 /** Template files for a new site, filled in, plus the managed workflow and build config. */
-function siteFiles({ name, owner, template }) {
+function siteFiles({ name, owner, template, cloudflare = false }) {
   const dir = path.join(root, 'templates', template || 'html');
   const vars = { name, host: `${name}.${R.DOMAIN}`, owner, year: String(new Date().getFullYear()) };
   const files = [];
@@ -1043,57 +1123,71 @@ function siteFiles({ name, owner, template }) {
   };
   if (fs.existsSync(dir)) walk(dir);
   else files.push(...S.starterFiles({ name, owner, sourceRepo: repo }).filter((f) => !f.path.startsWith('.github/')));
-  files.push({ path: '.github/workflows/deploy.yml', content: S.deployWorkflow(repo) });
+  files.push({ path: '.github/workflows/deploy.yml', content: cloudflare ? S.deployWorkflowCf(repo, S.cfProject(name)) : S.deployWorkflow(repo) });
   if (!files.some((f) => f.path === 'awesomeprojects.json')) files.push({ path: 'awesomeprojects.json', content: JSON.stringify({ framework: 'auto' }, null, 2) + '\n' });
   return files;
 }
 
 /** Replace a repo's content with `files` in ONE commit (git data API). */
 async function commitFiles(full, files, message) {
-  const ref = await ghBot.get(`/repos/${full}/git/ref/heads/main`);
-  const tree = await ghBot.post(`/repos/${full}/git/trees`, { tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) });
-  const commit = await ghBot.post(`/repos/${full}/git/commits`, { message, tree: tree.sha, parents: [ref.object.sha] });
-  await ghBot.patch(`/repos/${full}/git/refs/heads/main`, { sha: commit.sha });
+  const api = apiFor(full);
+  const ref = await api.get(`/repos/${full}/git/ref/heads/main`);
+  const tree = await api.post(`/repos/${full}/git/trees`, { tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) });
+  const commit = await api.post(`/repos/${full}/git/commits`, { message, tree: tree.sha, parents: [ref.object.sha] });
+  await api.patch(`/repos/${full}/git/refs/heads/main`, { sha: commit.sha });
   return commit.sha;
 }
 
 /** Create (or bring back to standard) a hosted site's repo. Idempotent. */
 async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
-  needOrg();
   const full = entry.site.repo;
+  const cf = S.onCloudflare(entry);
+  if (cf) needEmu(); else needOrg();
+  const api = apiFor(full);
+  const org = orgOf(full);
   const repoName = full.split('/')[1];
   const owner = entry.owner.github;
   const status = S.statusOf(entry);
   const lines = [];
-  let existing = await ghBot.get(`/repos/${full}`).catch(() => null);
+  // Managed enterprise: the owner needs a managed account first (created on the fly).
+  if (cf && status !== 'archived') {
+    await step(lines, `managed account for @${owner}`, async () => {
+      const profile = await gh.get(`/users/${owner}`);
+      const r = await emuProvision(profile.login, profile.id, 'bot');
+      return `managed account ${r.managed}`;
+    });
+  }
+  let existing = await api.get(`/repos/${full}`).catch(() => null);
   if (existing && existing.archived && status === 'archived') return { created: false, full, lines: [ok('archived (access removed, DNS off)')] };
   const created = !existing;
   if (created) {
-    existing = await ghBot.post(`/orgs/${ORG}/repos`, { name: repoName, ...S.repoSettings({ name, owner }), auto_init: true });
+    existing = await api.post(`/orgs/${org}/repos`, { name: repoName, ...S.repoSettings({ name, owner }), auto_init: true });
     lines.push(ok(`created [${full}](https://github.com/${full})`));
   } else {
-    if (existing.archived && status !== 'archived') await ghBot.patch(`/repos/${full}`, { archived: false });
-    await step(lines, 'repo settings', async () => { await ghBot.patch(`/repos/${full}`, S.repoSettings({ name, owner })); });
+    if (existing.archived && status !== 'archived') await api.patch(`/repos/${full}`, { archived: false });
+    await step(lines, 'repo settings', async () => { await api.patch(`/repos/${full}`, S.repoSettings({ name, owner })); });
   }
-  await step(lines, 'topic', async () => { await ghBot.put(`/repos/${full}/topics`, { names: [S.TOPIC] }); });
+  await step(lines, 'topic', async () => { await api.put(`/repos/${full}/topics`, { names: [S.TOPIC] }); });
   await step(lines, 'properties', () => setProperties(name, entry));
-  await step(lines, 'Dependabot alerts', async () => { await ghBot.put(`/repos/${full}/vulnerability-alerts`); });
+  await step(lines, 'Dependabot alerts', async () => { await api.put(`/repos/${full}/vulnerability-alerts`); });
   await step(lines, 'secret scanning', async () => {
-    await ghBot.patch(`/repos/${full}`, { security_and_analysis: { secret_scanning: { status: 'enabled' }, secret_scanning_push_protection: { status: 'enabled' } } });
+    await api.patch(`/repos/${full}`, { security_and_analysis: { secret_scanning: { status: 'enabled' }, secret_scanning_push_protection: { status: 'enabled' } } });
   });
+  if (cf) await step(lines, `Cloudflare Pages project on ${name}.${R.DOMAIN}`, async () => `Cloudflare Pages project ${await ensureCfProject(name)}`);
   if (created) {
-    const files = siteFiles({ name, owner, template: entry.site.template });
+    const files = siteFiles({ name, owner, template: entry.site.template, cloudflare: cf });
     await step(lines, `${entry.site.template || 'html'} template (${files.length} files, one commit)`, async () => {
       await new Promise((r) => setTimeout(r, 1500)); // let auto_init land
       await commitFiles(full, files, `Start ${name}.${R.DOMAIN} from the ${entry.site.template || 'html'} template`);
     });
   }
   // On re-sync, put the managed workflow back.
-  for (const f of rewriteWorkflow ? [{ path: '.github/workflows/deploy.yml', content: S.deployWorkflow(repo) }] : []) {
+  const managedWorkflow = cf ? S.deployWorkflowCf(repo, S.cfProject(name)) : S.deployWorkflow(repo);
+  for (const f of rewriteWorkflow ? [{ path: '.github/workflows/deploy.yml', content: managedWorkflow }] : []) {
     await step(lines, f.path, async () => {
-      const cur = await ghBot.get(`/repos/${full}/contents/${f.path}`).catch(() => null);
+      const cur = await api.get(`/repos/${full}/contents/${f.path}`).catch(() => null);
       if (cur && Buffer.from(cur.content || '', 'base64').toString('utf8') === f.content) return `${f.path} already up to date`;
-      await ghBot.put(`/repos/${full}/contents/${f.path}`, {
+      await api.put(`/repos/${full}/contents/${f.path}`, {
         message: `Update ${f.path} (managed by awesomeprojects.tech)`,
         content: Buffer.from(f.content).toString('base64'),
         ...(cur ? { sha: cur.sha } : {}),
@@ -1101,30 +1195,36 @@ async function provisionSite(name, entry, { rewriteWorkflow = false } = {}) {
     });
   }
   let pagesNew = false;
-  await step(lines, `Pages on ${name}.${R.DOMAIN}`, async () => {
-    const pages = await ghBot.get(`/repos/${full}/pages`).catch(() => null);
-    if (!pages) { await ghBot.post(`/repos/${full}/pages`, { build_type: 'workflow' }); pagesNew = true; }
-    await ghBot.put(`/repos/${full}/pages`, { build_type: 'workflow', cname: `${name}.${R.DOMAIN}`, public: true });
-  });
-  // The starter commit's deploy may have run before Pages existed: start one now.
+  if (!cf) {
+    await step(lines, `Pages on ${name}.${R.DOMAIN}`, async () => {
+      const pages = await api.get(`/repos/${full}/pages`).catch(() => null);
+      if (!pages) { await api.post(`/repos/${full}/pages`, { build_type: 'workflow' }); pagesNew = true; }
+      await api.put(`/repos/${full}/pages`, { build_type: 'workflow', cname: `${name}.${R.DOMAIN}`, public: true });
+    });
+  }
+  // The starter commit's deploy may have run before everything existed: start one now.
   if ((created || pagesNew || rewriteWorkflow) && status !== 'archived') {
     await step(lines, 'first deploy started', async () => {
       await new Promise((r) => setTimeout(r, 3000));
-      await ghBot.post(`/repos/${full}/actions/workflows/deploy.yml/dispatches`, { ref: 'main' });
+      await api.post(`/repos/${full}/actions/workflows/deploy.yml/dispatches`, { ref: 'main' });
     });
   }
-  await step(lines, 'maintainers team access', async () => { await ghBot.put(`/orgs/${ORG}/teams/${S.TEAM.slug}/repos/${full}`, { permission: S.TEAM.permission }); });
-  await step(lines, `@${owner}: ${S.ownerRole(status, await haveRoles()) || 'no'} access (${status})`, async () => { await applyAccess(full, owner, status); });
-  if (status === 'archived') await step(lines, 'archived', async () => { await ghBot.patch(`/repos/${full}`, { archived: true }); });
+  if (!cf) await step(lines, 'maintainers team access', async () => { await api.put(`/orgs/${org}/teams/${S.TEAM.slug}/repos/${full}`, { permission: S.TEAM.permission }); });
+  const who = cf ? managedLoginOf(owner) : owner;
+  await step(lines, `@${who}: ${S.ownerRole(status, await haveRoles(full)) || 'no'} access (${status})`, async () => { await applyAccess(full, owner, status); });
+  if (status === 'archived') await step(lines, 'archived', async () => { await api.patch(`/repos/${full}`, { archived: true }); });
   return { created, full, lines };
 }
 
 /** After merges: make every hosted entry's repo exist, and archive repos whose name is gone. */
 async function reconcileSites() {
-  if (!ORG || !ghBot) return;
+  if ((!ORG || !ghBot) && (!EMU.org || !ghEmu)) return;
   const { entries } = mainTree();
-  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d));
-  const repos = await ghBot.all(`/orgs/${ORG}/repos?type=all`);
+  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d) && (isEmuRepo(d.site.repo) ? ghEmu : ghBot));
+  const repos = [
+    ...(ORG && ghBot ? await ghBot.all(`/orgs/${ORG}/repos?type=all`) : []),
+    ...(EMU.org && ghEmu ? await ghEmu.all(`/orgs/${EMU.org}/repos?type=all`).catch(() => []) : []),
+  ];
   const byName = new Map(repos.map((r) => [lc(r.full_name), r]));
   for (const [name, d] of hosted) {
     const r = byName.get(lc(d.site.repo));
@@ -1139,14 +1239,15 @@ async function reconcileSites() {
   const live = new Set(hosted.map(([, d]) => lc(d.site.repo)));
   for (const r of repos) {
     if (!(r.topics || []).includes(S.TOPIC) || r.archived || live.has(lc(r.full_name))) continue;
-    for (const c of await ghBot.all(`/repos/${r.full_name}/collaborators?affiliation=outside`).catch(() => [])) await ghBot.del(`/repos/${r.full_name}/collaborators/${c.login}`).catch(() => {});
-    await ghBot.patch(`/repos/${r.full_name}`, { archived: true });
+    const rapi = apiFor(r.full_name);
+    for (const c of await rapi.all(`/repos/${r.full_name}/collaborators?affiliation=${isEmuRepo(r.full_name) ? 'direct' : 'outside'}`).catch(() => [])) await rapi.del(`/repos/${r.full_name}/collaborators/${c.login}`).catch(() => {});
+    await rapi.patch(`/repos/${r.full_name}`, { archived: true });
     await activityLog(`🗄️ **Archived** [${r.full_name}](${r.html_url}): its name was removed`);
   }
 }
 
 async function setSiteStatus(name, status, by) {
-  needOrg();
+  needHosting();
   const { entries } = mainTree();
   const d = entries[name];
   if (!d) return `\`${name}\` isn't registered.`;
@@ -1167,13 +1268,19 @@ async function setSiteStatus(name, status, by) {
 }
 
 async function repoAccessCmd(name, user, level, by) {
-  needOrg();
+  needHosting();
   const { entries } = mainTree();
   const d = entries[name];
   if (!d || !S.isHosted(d)) return `\`${name}\` isn't a hosted site.`;
   if (!(level in S.ACCESS)) return `Access must be one of: ${Object.keys(S.ACCESS).join(', ')}.`;
   const full = d.site.repo;
-  if (S.ACCESS[level]) await ghBot.put(`/repos/${full}/collaborators/${user}`, { permission: S.ACCESS[level] });
+  if (S.ACCESS[level]) {
+    if (isEmuRepo(full)) {
+      const profile = await gh.get(`/users/${user}`);
+      await emuProvision(profile.login, profile.id, by);
+    }
+    await apiFor(full).put(`/repos/${full}/collaborators/${loginIn(full, user)}`, { permission: S.ACCESS[level] });
+  }
   else await applyAccess(full, user, 'archived');
   await activityLog(`🔑 **Repo access** [${full}](https://github.com/${full}) · @${user}: ${level} · by @${by}`);
   return `🔑 @${user} now has **${level}** access to [${full}](https://github.com/${full})${S.ACCESS[level] ? ' (an invite if they aren\'t in yet; this uses a seat)' : ''}.`;
@@ -1195,14 +1302,16 @@ async function publicDigest(opsLine) {
 // ── Daily ops ──────────────────────────────────────────────────
 /** Open (or keep) one issue with `label` in a site repo, assigned to its owner. */
 async function siteIssue(full, owner, label, title, body) {
-  const open = await ghBot.get(`/repos/${full}/issues?state=open&labels=${encodeURIComponent(label)}`).catch(() => []);
+  const api = apiFor(full);
+  const open = await api.get(`/repos/${full}/issues?state=open&labels=${encodeURIComponent(label)}`).catch(() => []);
   if (open.length) return open[0];
-  return ghBot.post(`/repos/${full}/issues`, { title, body, labels: [label], assignees: [owner] }).catch(() => ghBot.post(`/repos/${full}/issues`, { title, body, labels: [label] }));
+  return api.post(`/repos/${full}/issues`, { title, body, labels: [label], assignees: [loginIn(full, owner)] }).catch(() => api.post(`/repos/${full}/issues`, { title, body, labels: [label] }));
 }
 async function closeSiteIssues(full, label, note) {
-  for (const i of await ghBot.get(`/repos/${full}/issues?state=open&labels=${encodeURIComponent(label)}`).catch(() => [])) {
-    await ghBot.post(`/repos/${full}/issues/${i.number}/comments`, { body: note }).catch(() => {});
-    await ghBot.patch(`/repos/${full}/issues/${i.number}`, { state: 'closed', state_reason: 'completed' }).catch(() => {});
+  const api = apiFor(full);
+  for (const i of await api.get(`/repos/${full}/issues?state=open&labels=${encodeURIComponent(label)}`).catch(() => [])) {
+    await api.post(`/repos/${full}/issues/${i.number}/comments`, { body: note }).catch(() => {});
+    await api.patch(`/repos/${full}/issues/${i.number}`, { state: 'closed', state_reason: 'completed' }).catch(() => {});
   }
 }
 
@@ -1212,27 +1321,29 @@ async function closeSiteIssues(full, label, note) {
  * then send the console a snapshot and post a digest.
  */
 async function ops({ by = 'schedule' } = {}) {
-  needOrg();
+  needHosting();
   const { entries } = mainTree();
-  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d));
+  const hosted = Object.entries(entries).filter(([, d]) => S.isHosted(d) && (isEmuRepo(d.site.repo) ? ghEmu : ghBot));
   const acts = [];
   const sites = [];
   for (const [name, d] of hosted) {
     const full = d.site.repo;
-    const owner = d.owner.github;
+    const api = apiFor(full);
+    const cf = S.onCloudflare(d);
+    const owner = loginIn(full, d.owner.github); // who to @mention inside the site repo
     const status = S.statusOf(d);
-    const site = { name, owner, status, repo: full };
+    const site = { name, owner: d.owner.github, status, repo: full, platform: cf ? 'cloudflare' : 'github' };
     try {
-      const r = await ghBot.get(`/repos/${full}`);
+      const r = await api.get(`/repos/${full}`);
       site.sizeMB = Math.round((r.size || 0) / 102.4) / 10;
       site.pushedAt = r.pushed_at;
       if (status === 'archived') { sites.push(site); continue; }
-      const pages = await ghBot.get(`/repos/${full}/pages`).catch(() => null);
-      site.https = !!(pages && pages.https_enforced);
-      if (S.httpsReady(pages)) {
-        await ghBot.put(`/repos/${full}/pages`, { build_type: 'workflow', cname: pages.cname || `${name}.${R.DOMAIN}`, public: true, https_enforced: true }).then(() => { site.https = true; acts.push(`🔒 HTTPS on for \`${name}\``); }, () => {});
+      const pages = cf ? null : await api.get(`/repos/${full}/pages`).catch(() => null);
+      site.https = cf || !!(pages && pages.https_enforced); // Cloudflare always serves HTTPS
+      if (!cf && S.httpsReady(pages)) {
+        await api.put(`/repos/${full}/pages`, { build_type: 'workflow', cname: pages.cname || `${name}.${R.DOMAIN}`, public: true, https_enforced: true }).then(() => { site.https = true; acts.push(`🔒 HTTPS on for \`${name}\``); }, () => {});
       }
-      const runs = await ghBot.get(`/repos/${full}/actions/runs?per_page=1&exclude_pull_requests=true`).catch(() => null);
+      const runs = await api.get(`/repos/${full}/actions/runs?per_page=1&exclude_pull_requests=true`).catch(() => null);
       const run = runs && runs.workflow_runs && runs.workflow_runs[0];
       if (run) {
         site.deploy = { conclusion: run.conclusion || run.status, url: run.html_url, at: run.created_at };
@@ -1244,9 +1355,9 @@ async function ops({ by = 'schedule' } = {}) {
           await closeSiteIssues(full, 'deploy-failed', '✅ The latest deploy worked, so I\'m closing this.');
         }
       }
-      const collabs = await ghBot.all(`/repos/${full}/collaborators?affiliation=outside`).catch(() => []);
+      const collabs = await api.all(`/repos/${full}/collaborators?affiliation=${collabAffiliation(full)}`).catch(() => []);
       site.collaborators = collabs.map((c) => c.login);
-      const invites = await ghBot.all(`/repos/${full}/invitations`).catch(() => []);
+      const invites = await api.all(`/repos/${full}/invitations`).catch(() => []);
       site.pendingInvites = invites.map((i) => (i.invitee ? i.invitee.login : '?'));
       // Size
       const maxMB = config.maxRepoSizeMB || 0;
@@ -1257,7 +1368,7 @@ async function ops({ by = 'schedule' } = {}) {
         acts.push(`🔒 locked \`${name}\` (${site.sizeMB} MB)`);
       }
       // Inactivity
-      const warned = (await ghBot.get(`/repos/${full}/issues?state=open&labels=inactive`).catch(() => []))[0];
+      const warned = (await api.get(`/repos/${full}/issues?state=open&labels=inactive`).catch(() => []))[0];
       const what = S.inactivity({ pushedAt: r.pushed_at, status: site.status, warnDays: config.inactivityWarnDays || 0, lockDays: config.inactivityLockDays || 0, warnedAt: warned ? warned.created_at : null });
       if (what === 'warn') {
         await siteIssue(full, owner, 'inactive', '👋 Still using this site?', `@${owner}, nobody has pushed to this site in a while. If you're done with it, remove the name at [My domains](https://awesomeprojects.tech/me/). Otherwise, just close this issue.${config.inactivityLockDays ? ` Sites without a push for ${config.inactivityLockDays} days get locked.` : ''}`);
@@ -1274,13 +1385,103 @@ async function ops({ by = 'schedule' } = {}) {
   }
   const seats = await seatUsage();
   const failing = sites.filter((x) => x.deploy && x.deploy.conclusion === 'failure').length;
-  const snapshot = { at: Date.now(), org: ORG, seats: { used: seats.used, max: seats.max }, sites };
+  const snapshot = { at: Date.now(), org: ORG, emuOrg: EMU.org || '', seats: { used: seats.used, max: seats.max }, sites };
   await panelPost('/bot/sites', snapshot);
   const digest = `📋 **Daily ops** (${by}) · ${sites.length} hosted site${sites.length === 1 ? '' : 's'} · ${failing} failing · seats ${seats.used}${seats.max ? `/${seats.max}` : ''}${acts.length ? `\n${acts.map((a) => `- ${a}`).join('\n')}` : ''}`;
   if (acts.length) await activityLog(digest);
   if (by === 'schedule') await publicDigest(digest);
   if (acts.length || (seats.max && seats.used >= seats.max * 0.9)) await notify(digest.replace(/\*\*/g, '**'));
   return digest;
+}
+
+// ── Managed accounts (Enterprise Managed Users) ────────────────
+/** The right token and org for a site repo: the managed enterprise's, or the classic sites org's. */
+const isEmuRepo = (full) => !!(EMU.org && lc(String(full).split('/')[0]) === lc(EMU.org));
+function apiFor(full) {
+  const api = isEmuRepo(full) ? ghEmu : ghBot;
+  if (!api) throw new Error(isEmuRepo(full) ? 'The `EMU_ADMIN_TOKEN` secret isn\'t set.' : 'The `BOT_PAT` secret isn\'t set.');
+  return api;
+}
+/** A person as they appear in a site repo: their managed login in the managed enterprise. */
+const loginIn = (full, personal) => (isEmuRepo(full) ? managedLoginOf(personal) : personal);
+const collabAffiliation = (full) => (isEmuRepo(full) ? 'direct' : 'outside');
+const orgOf = (full) => String(full).split('/')[0];
+
+/** Cloudflare Pages: a project per hosted site, with its custom domain. */
+async function cfApi(method, pathname, body) {
+  const token = String(process.env.CLOUDFLARE_PAGES_TOKEN || '').trim();
+  const account = String(process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  if (!token || !account) throw new Error('CLOUDFLARE_PAGES_TOKEN / CLOUDFLARE_ACCOUNT_ID aren\'t set.');
+  if (dryRun && method !== 'GET') { console.log(`[dry-run] cloudflare ${method} ${pathname}`); return {}; }
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${pathname}`, {
+    method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || d.success === false) {
+    const e = new Error(`Cloudflare ${method} ${pathname}: ${res.status} ${(d.errors || []).map((x) => x.message).join('; ')}`);
+    e.status = res.status;
+    throw e;
+  }
+  return d.result;
+}
+async function ensureCfProject(name) {
+  const project = S.cfProject(name);
+  const have = await cfApi('GET', `/pages/projects/${project}`).catch((e) => (e.status === 404 ? null : Promise.reject(e)));
+  if (!have) await cfApi('POST', '/pages/projects', { name: project, production_branch: 'main' });
+  const domain = `${name}.${R.DOMAIN}`;
+  const domains = await cfApi('GET', `/pages/projects/${project}/domains`).catch(() => []);
+  if (!(domains || []).some((d) => d.name === domain)) await cfApi('POST', `/pages/projects/${project}/domains`, { name: domain });
+  return project;
+}
+
+function needEmu() {
+  if (!EMU.enterprise || !EMU.shortcode) throw new Error('The managed-user enterprise isn\'t configured (config.json → emu).');
+  if (!ghEmu) throw new Error('The `EMU_ADMIN_TOKEN` secret isn\'t set.');
+}
+/** SCIM userName from a GitHub login (GitHub then adds _<shortcode>). */
+const emuUserName = (login) => lc(login).replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 38 - String(EMU.shortcode || '').length) || 'user';
+const scimPath = (p = '') => `/scim/v2/enterprises/${EMU.enterprise}/Users${p}`;
+async function scimFind(userName) {
+  const r = await ghEmu.get(`${scimPath()}?filter=${encodeURIComponent(`userName eq "${userName}"`)}`).catch(() => null);
+  return r && r.Resources && r.Resources[0];
+}
+
+/** Create (or re-find) someone's managed account, add it to the managed org, and tell the panel. */
+async function emuProvision(personalLogin, personalId, by) {
+  needEmu();
+  const userName = emuUserName(personalLogin);
+  const body = {
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+    externalId: `gh-${personalId}`,
+    active: true,
+    userName,
+    displayName: personalLogin,
+    name: { givenName: personalLogin, familyName: '-' },
+    emails: [{ value: `${userName}@users.awesomeprojects.tech`, type: 'work', primary: true }],
+    roles: [{ value: 'user', primary: false }],
+  };
+  let user = await scimFind(userName);
+  if (!user) user = await ghEmu.post(scimPath(), body);
+  else if (user.active === false) user = await ghEmu.patch(scimPath(`/${user.id}`), { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', path: 'active', value: true }] });
+  const managed = `${userName}_${lc(EMU.shortcode)}`;
+  const lines = [ok(`account \`${managed}\``)];
+  if (EMU.org) await step(lines, `member of ${EMU.org}`, async () => { await ghEmu.put(`/orgs/${EMU.org}/memberships/${managed}`, { role: 'member' }); });
+  await panelPost('/bot/identity', { personal_id: personalId, personal_login: personalLogin, user_name: userName, managed_login: managed, scim_id: user && user.id, status: 'active' });
+  await activityLog(`🪪 **Managed account** \`${managed}\` for @${personalLogin}${by && lc(by) !== lc(personalLogin) ? ` · by @${by}` : ''}`);
+  return { managed, message: `🪪 Your enterprise account is **${managed}**.\n\nSign in at [github.com/enterprises/${EMU.enterprise}/sso](https://github.com/enterprises/${EMU.enterprise}/sso): you'll confirm it's you with your GitHub account, and no new password is needed.\n\n${lines.join('\n')}` };
+}
+
+/** Suspend or re-activate a managed account (SCIM active flag). */
+async function emuSetActive(personalLogin, active, by) {
+  needEmu();
+  const userName = emuUserName(personalLogin);
+  const user = await scimFind(userName);
+  if (!user) return `@${personalLogin} has no managed account.`;
+  await ghEmu.patch(scimPath(`/${user.id}`), { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', path: 'active', value: active }] });
+  const profile = await gh.get(`/users/${personalLogin}`).catch(() => null);
+  if (profile) await panelPost('/bot/identity', { personal_id: profile.id, personal_login: profile.login, user_name: userName, managed_login: `${userName}_${lc(EMU.shortcode)}`, scim_id: user.id, status: active ? 'active' : 'suspended' });
+  await activityLog(`🪪 **Managed account ${active ? 'restored' : 'suspended'}** \`${userName}_${lc(EMU.shortcode)}\` · by @${by}`);
+  return `🪪 \`${userName}_${lc(EMU.shortcode)}\` is ${active ? 'active again' : 'suspended: they can\'t sign in'}.`;
 }
 
 // ── Making things for people ───────────────────────────────────
@@ -1298,7 +1499,7 @@ async function createFor({ name, owner: who, provider, repo: srcRepo = '', targe
   if (!/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i.test(person)) return { ok: false, message: 'Give a GitHub username for the owner.' };
   const profile = await gh.get(`/users/${person}`).catch(() => null);
   if (!profile) return { ok: false, message: `@${person} isn't a GitHub account.` };
-  const built = P.buildRequest({ Subdomain: name, 'Where should it point?': p.label, Template: template, 'GitHub repository': srcRepo, Target: target, Description: description }, profile.login, { sitesOrg: ORG });
+  const built = P.buildRequest({ Subdomain: name, 'Where should it point?': p.label, Template: template, 'GitHub repository': srcRepo, Target: target, Description: description }, profile.login, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
   const ev = await evaluateRequest({ built, author: profile.login, overrideHolds: true, overrideAll: force, by });
   if (ev.problems.length) return { ok: false, message: `Can't create it:\n${ev.problems.map((x) => `- ${x}`).join('\n')}` };
   if (ev.result.verdict !== 'ready') {
@@ -1358,7 +1559,7 @@ async function reportResult(job, { ok, message, link }) {
 async function selfUpdate(u, actor) {
   const built = P.buildRequest({
     Subdomain: u.name, 'Where should it point?': u.provider, 'GitHub repository': u.repo || '', Target: u.target || '', Description: u.description || '',
-  }, actor, { sitesOrg: ORG });
+  }, actor, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
   if (built.problems.length) return { ok: false, message: built.problems.join(' ') };
   const { entries } = mainTree();
   const name = built.name;
@@ -1417,7 +1618,7 @@ const reviewSummary = (ev) => (ev.problems.length
 /** A private request from the panel: review it, or (approved by a maintainer) make it live. */
 async function onPanelRequest(p) {
   const author = p.kind === 'approve' ? p.requester : p.actor;
-  const built = P.buildRequest(panelForm(p.form), author, { sitesOrg: ORG });
+  const built = P.buildRequest(panelForm(p.form), author, { sitesOrg: ORG, emuOrg: EMU.org && ghEmu ? EMU.org : '' });
   const ev = await evaluateRequest({ built, author, labels: p.manualHold ? ['manual-hold'] : [], overrideHolds: p.kind === 'approve', overrideAll: p.kind === 'approve' && !!p.force, by: p.actor });
   const rev = { ...reviewSummary(ev), entry: built.entry || null };
   console.log(`panel request ${p.request} (${p.kind}) ${built.name}: ${rev.verdict}`);
@@ -1499,6 +1700,11 @@ async function onPanel(p) {
     if (p.update) return finish(await selfUpdate(p.update, actor));
     if (p.records) return finish(await setRecords(p.records.name, p.records.records, actor));
     if (p.create) return finish(admin ? await createFor(p.create, actor) : { ok: false, message: 'That needs a maintainer.' });
+    if (p.emu) {
+      if ((config.bannedUsers || []).map(lc).includes(lc(actor))) return finish({ ok: false, message: 'This account can\'t get an enterprise account.' });
+      const r = await emuProvision(actor, Number(p.actorId), actor);
+      return finish({ ok: true, message: r.message });
+    }
     const parsed = C.parseCommand(p.command);
     if (!parsed) return finish({ ok: false, message: 'Unknown action.' });
     // The Worker checked roles; check again here, from main's config.

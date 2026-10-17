@@ -286,7 +286,11 @@ async function samlSso(req, env, url) {
 /** After GitHub OAuth told us who this is: answer GitHub's SAML request for their managed account. */
 async function samlFinish(env, saml, me) {
   if (!env.DB) return page('Not set up yet', '<p>Accounts aren\'t switched on.</p>', 503);
-  const idn = await env.DB.prepare('SELECT * FROM identities WHERE personal_id = ?1').bind(me.id).first();
+  let idn = await env.DB.prepare('SELECT * FROM identities WHERE personal_id = ?1').bind(me.id).first();
+  // Setup: GitHub's "Test SAML configuration" needs one good round trip before anyone can be provisioned.
+  // The repo owner may sign that test (a NameID that matches no managed account signs nobody in).
+  const repoOwner = String(env.REPO || '').split('/')[0].toLowerCase();
+  if (!idn && repoOwner && String(me.login).toLowerCase() === repoOwner) idn = { user_name: repoOwner, managed_login: `${repoOwner} (setup test)`, status: 'active' };
   if (!idn || idn.status !== 'active') {
     const why = !idn ? 'You don\'t have an enterprise account yet.' : idn.status === 'suspended' ? 'Your enterprise account is suspended.' : 'Your enterprise account isn\'t ready yet.';
     return page(why, `<p>Signed in as <b>@${me.login}</b>. ${idn && idn.status === 'suspended' ? 'Contact a maintainer.' : `Get one at <a style="color:#7aa8ff" href="${env.SITE_ORIGIN}/me/">My domains</a>, then come back.`}</p>`, 403);
