@@ -116,9 +116,9 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 | `/deploy` | anywhere | Re-runs the DNS deploy and rebuilds the website |
 | `/health` | anywhere | Runs the dangling-name check now |
 | `/promote @user` · `/demote @user` | any issue | **Owner only.** Edits `config.json → maintainers`. Promoting creates that person's duty account and adds it to `site-maintainers`. Demoting suspends the duty account. |
-| `/ops-account` | any issue | Creates your duty account (a separate enterprise login, `ops-…`). It can see no repository until you elevate it. |
+| `/ops-account` | any issue, console, maintainer rooms | Creates your duty account (a separate enterprise login, `ops-…`). It can see no repository until you elevate it. |
 | `/access <name> <read\|triage\|write> @user` | any issue | Site owner: standing access for someone's everyday account, only the permission you name. |
-| `/access <name> <read\|triage\|write\|security\|maintain\|admin> [hours]` | any issue | Maintainer: elevate your duty account on that one repo. Caps are 14 days, 7 days, 12h, 8h, 4h, and 2h. `maintain` and `admin` wait for the owner. |
+| `/access <name> <read\|triage\|write\|security\|maintain\|admin> [hours]` | any issue, console, maintainer rooms | Maintainer: elevate your duty account on that one repo. Caps are 14 days, 7 days, 12h, 8h, 4h, and 2h. `maintain` and `admin` wait for the owner. The console's **Elevate** tab sends the same command. |
 | `/access-list [name]` · `/access-revoke <id>` | any issue | See grants, or end one now. The hourly job expires elevations that have run out. |
 | `/access-approve <id>` · `/access-deny <id>` | any issue | **Owner only.** Approve or deny a pending elevation. Nothing is granted until it's approved. |
 | `/site <name> <active\|locked\|suspended\|archived>` | any issue | A hosted site's status: locked = owner read-only · suspended = also DNS off · archived = repo archived, access removed |
@@ -132,7 +132,14 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 | `/org-setup` · `/bot-check` | any issue | **Owner only.** Re-apply the sites org's defaults · check the bot token and its org role |
 | `/help` | anywhere | Everything, including the user commands |
 
-**A good place to run admin commands:** open one issue titled "Admin console", pin it, and run `/ban`, `/reserve`, `/lock`… there. Its history is your audit trail.
+**A good place to run admin commands:** the console's **Elevate** tab, an issue in the maintainer queue, or the lounge. The public "Admin console" issue still works. Every command is logged.
+
+## Maintainer rooms
+
+Two private organizations on the enterprise:
+
+- **apjs-maintainers** is for your everyday account. `handbook` is the instructions (read only). `lounge` is the discussion board; a link off our sites, GitHub, or the enterprise is locked. `queue` receives requests and reports. A command on a copied issue runs against the original.
+- **apjs-elevated** is the runbook. Organization owners can see it. A duty account can see it only while that account holds an elevation, and it is removed when the last one expires.
 
 ---
 

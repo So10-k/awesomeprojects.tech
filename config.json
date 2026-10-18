@@ -70,5 +70,7 @@
     "shortcode": "2mv68l64",
     "host": "awesome-projects.ghe.com"
   },
-  "platformRepo": "apjs-hosted-sites/platform"
+  "platformRepo": "apjs-hosted-sites/platform",
+  "maintainersOrg": "apjs-maintainers",
+  "elevatedOrg": "apjs-elevated"
 }

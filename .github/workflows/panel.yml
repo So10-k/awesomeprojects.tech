@@ -131,11 +131,12 @@ jobs:
           BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
           SAML_PRIVATE_KEY: ${{ secrets.PANEL_SAML_PRIVATE_KEY }}
           SAML_CERT: ${{ secrets.PANEL_SAML_CERT }}
+          ROOM_HOOK_SECRET: ${{ secrets.ROOM_HOOK_SECRET }}
         run: |
           set -euo pipefail
           umask 077
           f="$RUNNER_TEMP/panel-secrets.json"
-          node -e "const k=['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','DISPATCH_TOKEN','SESSION_SECRET','BOT_SECRET','SAML_PRIVATE_KEY','SAML_CERT'];require('fs').writeFileSync(process.argv[1],JSON.stringify(Object.fromEntries(k.filter(x=>process.env[x]).map(x=>[x,process.env[x]]))))" "$f"
+          node -e "const k=['GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','DISPATCH_TOKEN','SESSION_SECRET','BOT_SECRET','SAML_PRIVATE_KEY','SAML_CERT','ROOM_HOOK_SECRET'];require('fs').writeFileSync(process.argv[1],JSON.stringify(Object.fromEntries(k.filter(x=>process.env[x]).map(x=>[x,process.env[x]]))))" "$f"
           npx -y wrangler@4 secret bulk "$f" >/dev/null
           rm -f "$f"
           echo "Secrets set."

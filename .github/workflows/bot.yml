@@ -77,3 +77,4 @@ jobs:
           EMU_ADMIN_TOKEN: ${{ secrets.EMU_ADMIN_TOKEN }}
           CLOUDFLARE_PAGES_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ROOM_HOOK_SECRET: ${{ secrets.ROOM_HOOK_SECRET }}
