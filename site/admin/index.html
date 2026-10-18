@@ -73,6 +73,7 @@
         <button role="tab" data-tab="names">Names</button>
         <button role="tab" data-tab="people">People</button>
         <button role="tab" data-tab="maint">Maintenance</button>
+        <button role="tab" data-tab="elevate">Elevate</button>
         <button role="tab" data-tab="settings" data-owner-only data-panel-only>Settings</button>
         <button role="tab" data-tab="owner" id="ownerTab" data-owner-only>Owner</button>
         <button role="tab" data-tab="log">Activity</button>
@@ -209,6 +210,38 @@
         </div>
         <h2 class="sub">Reserved <span class="muted" id="reservedCount"></span></h2>
         <ul class="chips" id="reservedList"></ul>
+      </div>
+
+      <div class="panel" data-panel="elevate" role="tabpanel" hidden>
+        <div class="split">
+          <form class="box" id="elevateForm">
+            <h2>Elevate your duty account</h2>
+            <p class="help">One permission, one site, for a fixed time. It is applied to your duty account, not the account you are signed in with. <code>maintain</code> and <code>admin</code> wait for the owner. Nothing is granted before that approval.</p>
+            <label>Site <select id="elevSite" name="name" required></select></label>
+            <label>Permission
+              <select name="permission" id="elevPerm">
+                <option value="read">read · up to 14 days</option>
+                <option value="triage">triage · up to 7 days</option>
+                <option value="write">write · up to 12 hours</option>
+                <option value="security">security · up to 8 hours</option>
+                <option value="maintain">maintain · up to 4 hours, owner approves</option>
+                <option value="admin">admin · up to 2 hours, owner approves</option>
+              </select>
+            </label>
+            <label>Hours <input name="hours" id="elevHours" type="number" min="1" max="336" value="1" required></label>
+            <div class="row">
+              <button class="btn primary" type="submit">Elevate…</button>
+              <button class="btn" id="opsAccount" type="button">Create my duty account…</button>
+            </div>
+          </form>
+          <div class="box">
+            <h2>Rooms</h2>
+            <p class="help">The maintainer organization is your everyday account. The elevated organization is visible to your duty account only while an elevation is active, and it holds the runbook for what that elevation can do.</p>
+            <ul class="people" id="roomLinks"></ul>
+          </div>
+        </div>
+        <h2 class="sub">Your grants</h2>
+        <div id="elevGrants" class="cards"></div>
       </div>
 
       <div class="panel" data-panel="owner" role="tabpanel" hidden>

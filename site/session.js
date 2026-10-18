@@ -49,6 +49,7 @@ const Panel = (() => {
     audit: (q = {}) => call(`/api/audit?${new URLSearchParams({ limit: 200, ...q })}`),
     stats: () => call('/api/stats'),
     sites: () => call('/api/sites'),
+    grants: () => call('/api/grants'),
     identity: (q = {}) => call(`/api/identity?${new URLSearchParams(q)}`),
     requests: (q = {}) => call(`/api/requests?${new URLSearchParams(q)}`),
     request: (id) => call(`/api/requests/${encodeURIComponent(id)}`),

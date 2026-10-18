@@ -247,6 +247,7 @@ function selectTab(name) {
   for (const p of $$('.panel')) p.hidden = p.dataset.panel !== name;
   if (name === 'log') loadLog();
   if (name === 'overview') renderOverview();
+  if (name === 'elevate') renderElevate();
 }
 
 // ── Tabs ───────────────────────────────────────────────────────
@@ -282,6 +283,7 @@ async function loadAll() {
   renderPeople(cfg);
   renderMaint(cfg);
   renderOwner(cfg);
+  if (!$('[data-panel="elevate"]').hidden) renderElevate();
   if (mode === 'panel') {
     renderSites();
     setupCreate();
@@ -486,6 +488,70 @@ for (const b of $$('[data-action]')) {
     if (b.dataset.action === 'announce-off') return propose({ action: 'announce', args: { text: 'off' }, command: '/announce off', target: 'console' });
     propose({ action: b.dataset.action, args: {}, command: `/${b.dataset.action}`, target: 'console' });
   });
+}
+
+const ELEV_MAX = { read: 336, triage: 168, write: 12, security: 8, maintain: 4, admin: 2 };
+$('#elevPerm').addEventListener('change', () => {
+  const max = ELEV_MAX[$('#elevPerm').value] || 1;
+  $('#elevHours').max = String(max);
+  if (Number($('#elevHours').value) > max) $('#elevHours').value = String(max);
+});
+$('#opsAccount').addEventListener('click', () => propose({ action: 'ops-account', args: {}, command: '/ops-account', target: 'console' }));
+$('#elevateForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = Object.fromEntries(new FormData($('#elevateForm')));
+  const hours = Math.max(1, Math.min(ELEV_MAX[v.permission] || 1, Math.floor(Number(v.hours) || 1)));
+  const site = String(v.name || '').trim().toLowerCase();
+  propose({ action: 'elevate', args: { name: site, permission: v.permission, hours }, command: `/access ${site} ${v.permission} ${hours}`, target: 'console' });
+});
+
+async function renderElevate() {
+  const sel = $('#elevSite');
+  const names = [...new Set([...(snapshot.sites || []).map((s) => s.name), ...((D && D.names) || []).filter((n) => n.host === 'Hosted by us' && !n.name.includes('.')).map((n) => n.name)])].sort();
+  const prev = sel.value;
+  sel.replaceChildren(...(names.length ? names : ['']).map((n) => el('option', { value: n, textContent: n || 'No hosted site yet' })));
+  if (prev) sel.value = prev;
+  const box = $('#roomLinks');
+  box.replaceChildren(el('li', { className: 'muted', textContent: 'Loading rooms…' }));
+  const grants = $('#elevGrants');
+  grants.replaceChildren();
+  let data = { grants: [], rooms: null };
+  try { data = await Panel.grants(); } catch (e) { box.replaceChildren(el('li', { className: 'muted', textContent: e.message })); }
+  if (data.rooms) {
+    const link = (href, text) => el('a', { href, target: '_blank', rel: 'noopener', textContent: text });
+    box.replaceChildren(
+      el('li', {}, [link(data.rooms.handbook, 'Handbook')]),
+      el('li', {}, [link(data.rooms.lounge, 'Lounge')]),
+      el('li', {}, [link(data.rooms.queue, 'Queue')]),
+      el('li', {}, [link(data.rooms.runbook, 'Elevated runbook'), ' · duty account, only while elevated']),
+    );
+  }
+  const rows = data.grants || [];
+  if (!rows.length) grants.append(el('p', { className: 'help', textContent: 'No active or pending elevations.' }));
+  for (const g of rows) {
+    const until = g.standing ? 'standing' : g.expires_at ? `until ${new Date(g.expires_at).toLocaleString()}` : 'waiting for the owner';
+    const actions = [];
+    if (g.state === 'pending' && role === 'owner') {
+      const ok = el('button', { className: 'btn primary', type: 'button', textContent: 'Approve…' });
+      ok.addEventListener('click', () => propose({ action: 'access-approve', args: { id: g.id }, command: `/access-approve ${g.id}`, target: 'console' }));
+      const no = el('button', { className: 'btn danger', type: 'button', textContent: 'Deny…' });
+      no.addEventListener('click', () => propose({ action: 'access-deny', args: { id: g.id }, command: `/access-deny ${g.id}`, target: 'console' }));
+      actions.push(ok, no);
+    }
+    if (g.state === 'active' || g.state === 'pending') {
+      const revoke = el('button', { className: 'btn', type: 'button', textContent: 'Revoke…' });
+      revoke.addEventListener('click', () => propose({ action: 'access-revoke', args: { id: g.id }, command: `/access-revoke ${g.id}`, target: 'console' }));
+      actions.push(revoke);
+    }
+    grants.append(el('article', { className: 'card' }, [
+      el('div', { className: 'card-top' }, [
+        el('span', { className: 'card-name', textContent: g.permission }),
+        el('span', { className: 'card-meta', textContent: g.state }),
+      ]),
+      el('div', { className: 'card-meta', textContent: `${g.login} on ${g.repo} · ${until}` }),
+      el('div', { className: 'card-actions' }, actions),
+    ]));
+  }
 }
 
 // ── Activity ───────────────────────────────────────────────────
