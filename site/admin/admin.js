@@ -519,12 +519,22 @@ async function renderElevate() {
   try { data = await Panel.grants(); } catch (e) { box.replaceChildren(el('li', { className: 'muted', textContent: e.message })); }
   if (data.rooms) {
     const link = (href, text) => el('a', { href, target: '_blank', rel: 'noopener', textContent: text });
-    box.replaceChildren(
+    const items = [
       el('li', {}, [link(data.rooms.handbook, 'Handbook')]),
       el('li', {}, [link(data.rooms.lounge, 'Lounge')]),
       el('li', {}, [link(data.rooms.queue, 'Queue')]),
       el('li', {}, [link(data.rooms.runbook, 'Elevated runbook'), ' · duty account, only while elevated']),
-    );
+    ];
+    try {
+      const id = await Panel.identity();
+      if (id && id.signIn && id.dutyLogin) {
+        items.unshift(el('li', {}, [
+          link(id.signIn, `Sign in as ${id.dutyLogin}`),
+          ' · enterprise SSO asks everyday or duty after GitHub confirms it\'s you',
+        ]));
+      }
+    } catch { /* identity optional */ }
+    box.replaceChildren(...items);
   }
   const rows = data.grants || [];
   if (!rows.length) grants.append(el('p', { className: 'help', textContent: 'No active or pending elevations.' }));

@@ -132,7 +132,7 @@ From then on, new hosted requests go to the managed org on Cloudflare Pages. To 
 
 1. Alice opens `github.com/enterprises/<slug>/sso`. GitHub sends her to our `/saml/sso` with a SAML request.
 2. We check that the request is from *our* enterprise and returns to *its* address, then send her through GitHub OAuth. The SAML request rides inside the signed OAuth state, with no cookies.
-3. Back from GitHub, we look up her account **id** in `identities`. If she's provisioned and active, we sign a SAML response with NameID = her SCIM `userName`, and her browser posts it to GitHub.
+3. Back from GitHub, we look up her account **id** in `identities`. If she's provisioned and active, we sign a SAML response with NameID = her SCIM `userName`, and her browser posts it to GitHub. Maintainers see a picker first: everyday account or duty account (`ops-…`).
 
 ## Seats
 
