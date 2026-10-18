@@ -141,6 +141,14 @@ Two private organizations on the enterprise:
 - **apjs-maintainers** is for your everyday account. `handbook` is the instructions (read only). `lounge` is the discussion board; a link off our sites, GitHub, or the enterprise is locked. `queue` receives requests and reports. A command on a copied issue runs against the original.
 - **apjs-elevated** is the runbook. Organization owners can see it. A duty account can see it only while that account holds an elevation, and it is removed when the last one expires.
 
+## Signing in as the duty account
+
+1. Open the enterprise SSO page (or **Sign in as ops-…** on the console's Elevate tab).
+2. Confirm it's you with your normal GitHub account.
+3. Choose **Everyday** or **Duty**. Duty is `ops-` plus your managed username.
+
+Elevations still apply to the duty account even if you never open a browser session as it. The picker is how you use that account in the GitHub UI.
+
 ---
 
 ## Request issues
