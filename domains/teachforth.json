@@ -1,0 +1,16 @@
+{
+  "owner": {
+    "github": "samo-tf"
+  },
+  "description": "For a non-profit",
+  "records": {
+    "CNAME": "ap-teachforth.pages.dev"
+  },
+  "site": {
+    "provider": "hosted",
+    "platform": "cloudflare",
+    "repo": "apjs-hosted-sites/teachforth",
+    "status": "active",
+    "template": "next"
+  }
+}
