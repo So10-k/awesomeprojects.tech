@@ -1,6 +1,8 @@
 {
   "$comment": "Knobs for the review bot. Maintainers can change most of these with commands (/ban, /limit, /lock...); otherwise edit via a PR.",
-  "maintainers": [],
+  "maintainers": [
+    "happyshot10"
+  ],
   "sitesOrg": "",
   "bannedUsers": [],
   "limits": {},
