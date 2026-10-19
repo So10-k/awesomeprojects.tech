@@ -1,0 +1,15 @@
+{
+  "owner": {
+    "github": "So10-k"
+  },
+  "records": {
+    "CNAME": "ap-e2e-claude.pages.dev"
+  },
+  "site": {
+    "provider": "hosted",
+    "platform": "cloudflare",
+    "repo": "apjs-hosted-sites/e2e-claude",
+    "status": "active",
+    "template": "html"
+  }
+}
