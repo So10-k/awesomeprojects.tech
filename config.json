@@ -72,6 +72,12 @@
     "shortcode": "2mv68l64",
     "host": "awesome-projects.ghe.com"
   },
+  "ghes": {
+    "host": "github.samsprojects.xyz",
+    "org": "sites",
+    "maintainersOrg": "maintainers",
+    "elevatedOrg": "on-duty"
+  },
   "platformRepo": "apjs-hosted-sites/platform",
   "maintainersOrg": "apjs-maintainers",
   "elevatedOrg": "apjs-elevated"
