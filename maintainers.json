@@ -1,0 +1,17 @@
+{
+  "about": "The maintainer roster. Ranks: trainee, maintainer, lead (the repo owner is always owner). Rolesets: reviewer, abuse, hosting, infra, docs. Change it with /promote, /demote, /rank and /roleset; see docs/MAINTAINERS.md#ranks-and-rolesets.",
+  "people": [
+    {
+      "github": "So10-k",
+      "rank": "owner",
+      "rolesets": ["reviewer", "abuse", "hosting", "infra", "docs"],
+      "status": "active"
+    },
+    {
+      "github": "Happyshot10",
+      "rank": "maintainer",
+      "rolesets": ["reviewer", "abuse", "hosting", "infra", "docs"],
+      "status": "active"
+    }
+  ]
+}

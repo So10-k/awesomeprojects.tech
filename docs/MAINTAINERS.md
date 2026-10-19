@@ -134,6 +134,42 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 
 **A good place to run admin commands:** the console's **Elevate** tab, an issue in the maintainer queue, or the lounge. The public "Admin console" issue still works. Every command is logged.
 
+## Ranks and rolesets
+
+The roster is [`maintainers.json`](../maintainers.json). Each change is a bot PR, like the config, so `git log` shows who changed whom and when.
+
+**Ranks** decide how much you can do on your own:
+
+| Rank | On their own | Needs a second maintainer (`/cosign`) | Never |
+|---|---|---|---|
+| **Trainee** | hold requests, site sync, DNS deploy, checks, duty account, read/triage/write elevations | approve, reject, create, reserve, limits, takedowns, dismissals, site status, standing access, announcements | force-approve, bans, account changes, registry lock, security elevations, cosigning |
+| **Maintainer** | everything in their rolesets | elevations while off duty (once there's a rotation) | owner-only things |
+| **Lead** | everything in every area, and off-duty elevations | — | owner-only things |
+| **Owner** | everything | — | — |
+
+Owner-only: the roster (`/promote`, `/demote`, `/rank`, `/roleset`), `/config`, `/org-setup`, `/bot-check`, and approving `maintain`/`admin` elevations.
+
+**Rolesets** decide where you work. Leads and the owner cover all of them:
+
+| Roleset | Area |
+|---|---|
+| `reviewer` | requests: approve, reject, hold, limits, reserved names, making names |
+| `abuse` | reports and takedowns, bans, suspensions |
+| `hosting` | hosted sites: status, sync, repos, accounts, access |
+| `infra` | DNS deploys, the registry lock, security elevations |
+| `docs` | announcements and the handbook |
+
+**The two-person rule.** When a trainee runs something that needs a second pair of eyes, the bot doesn't run it. It answers with an id, and any maintainer who could do it themselves confirms with **`/cosign <id>`**. Then it runs, as the trainee, with both names in the activity log. A cosign stays open for 24 hours and runs only once. You can't cosign your own action, and trainees can't cosign.
+
+**Changing people** (owner):
+- `/promote @user [@mentor]` adds a **trainee** (`reviewer`), on probation for 60 days.
+- `/rank @user maintainer` (or `trainee`, `lead`) promotes, and ends probation.
+- `/roleset @user +abuse -docs` adds or removes areas.
+- `/demote @user` takes them off the roster, which also removes them from the rooms and ends their duty grants.
+- Setting `"status": "away"` or `"emeritus"` in the file pauses someone's powers without removing them.
+
+If `maintainers.json` is ever invalid, the bot and the panel give maintainer powers to **the owner only** until it's fixed. They never fall back to more.
+
 ## Maintainer rooms
 
 Two private organizations on our server, `maintainers` and `on-duty` (`config.json → ghes`). `/org-setup` (or any `/promote` / `/demote`) builds and re-checks them, and its last lines are an audit: owners, members, default access and whether Actions is off.
