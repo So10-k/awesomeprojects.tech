@@ -737,7 +737,7 @@ function renderSites() {
       el('td', {}, [
         btn('Redeploy', () => propose({ action: 'redeploy', args: { name: n.name }, command: `/redeploy ${n.name}`, target: 'console' })), ' ',
         btn('Re-sync', () => propose({ action: 'site-sync', args: { name: n.name }, command: `/site-sync ${n.name}`, target: 'console' })), ' ',
-        el('a', { className: 'btn', href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: 'Repo' }),
+        el('a', { className: 'btn', href: repoUrl(D, n.repo), target: '_blank', rel: 'noopener', textContent: 'Repo' }),
       ]),
     ]));
   }
@@ -784,7 +784,7 @@ async function showProfile(raw) {
     ]),
     el('div', { className: 'cols' }, [
       el('div', {}, [el('h3', { textContent: `Names (${names.length})` }), list(names.map((n) => el('li', { textContent: `${n.name} · ${n.host}${n.status ? ` · ${n.status}` : ''}` })), 'none')]),
-      el('div', {}, [el('h3', { textContent: `Hosted repos (${sites.length})` }), list(sites.map((x) => el('li', {}, [el('a', { href: `https://github.com/${x.repo}`, target: '_blank', rel: 'noopener', textContent: x.repo }), ` · ${x.status}${lc(x.owner) !== l ? ' · collaborator' : ''}`])), 'none')]),
+      el('div', {}, [el('h3', { textContent: `Hosted repos (${sites.length})` }), list(sites.map((x) => el('li', {}, [el('a', { href: repoUrl(D, x.repo), target: '_blank', rel: 'noopener', textContent: x.repo }), ` · ${x.status}${lc(x.owner) !== l ? ' · collaborator' : ''}`])), 'none')]),
       el('div', {}, [el('h3', { textContent: `Private requests (${reqs.length})` }), list(reqs.map((r) => el('li', { textContent: `${r.name} · ${r.state}` })), 'none')]),
       el('div', {}, [el('h3', { textContent: 'Recent actions' }), recent]),
     ]),

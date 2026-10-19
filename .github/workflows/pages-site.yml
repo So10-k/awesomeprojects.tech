@@ -1,0 +1,78 @@
+name: awesomeprojects.tech site build
+
+# A reusable workflow: people's repos call this to build their site and publish it on
+# GitHub Pages at <name>.awesomeprojects.tech. It runs in THEIR repo, with their permissions.
+#
+#   jobs:
+#     site:
+#       uses: So10-k/awesomeprojects.tech/.github/workflows/pages-site.yml@main
+#
+# Detects Next.js (static export), Nuxt, SvelteKit, Astro, Gatsby, Docusaurus, VitePress,
+# Eleventy, Create React App, Vite, any `npm run build`, or plain HTML. Override anything
+# with an awesomeprojects.json in the repo (see docs/HOSTING.md).
+on:
+  workflow_call:
+    inputs:
+      directory:
+        description: Project folder, if it isn't the repo root
+        type: string
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get the build scripts
+        uses: So10-k/awesomeprojects.tech/.github/actions/site-build@main
+      - name: Detect
+        id: plan
+        run: node .awesomeprojects/scripts/site-build.js plan
+        env:
+          INPUT_DIRECTORY: ${{ inputs.directory }}
+
+      - uses: actions/setup-node@v4
+        if: steps.plan.outputs.node != ''
+        with:
+          node-version: ${{ steps.plan.outputs.node }}
+
+      - name: Enable pnpm / yarn
+        if: steps.plan.outputs.pm == 'pnpm' || steps.plan.outputs.pm == 'yarn'
+        run: corepack enable
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.plan.outputs.pm == 'bun'
+
+      - name: Install
+        if: steps.plan.outputs.install != ''
+        working-directory: ${{ steps.plan.outputs.dir }}
+        run: ${{ steps.plan.outputs.install }}
+
+      - name: Prepare
+        run: node .awesomeprojects/scripts/site-build.js prepare
+
+      - name: Build
+        if: steps.plan.outputs.build != ''
+        working-directory: ${{ steps.plan.outputs.dir }}
+        run: ${{ steps.plan.outputs.build }}
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Collect the site
+        id: finish
+        run: node .awesomeprojects/scripts/site-build.js finish
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.finish.outputs.path }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -28,7 +28,7 @@ for (const f of fs.readdirSync(dir).sort()) {
   }
 }
 
-const opts = { reserved, maintainers, maxPerOwner: config.maxPerOwner };
+const opts = { reserved, maintainers, maxPerOwner: config.maxPerOwner, limits: config.limits || {} };
 for (const [name, errs] of Object.entries(R.checkTree(entries, opts))) {
   for (const e of errs) problems.push([`domains/${name}.json`, e]);
 }

@@ -1,143 +1,102 @@
-# Managed accounts (Enterprise Managed Users)
+# Managed accounts and hosted sites
 
-When this is on, people don't join hosted site repos with their own GitHub account. The bot creates them a **managed account** in our enterprise (`alice_ap`, say) and gives that account access. To sign in, they open the enterprise's sign-in page and prove who they are with their normal GitHub account. There's no new password to remember.
+People never join our hosted repos with their own GitHub account. The bot gives each person a **managed account** in our enterprise and grants that account access. They sign in by proving who they are with their normal GitHub account, so there is no new password.
 
-- **Identity provider:** the panel server (`api.awesomeprojects.tech/saml`). It signs people in through GitHub OAuth and answers GitHub with a signed SAML response. It only signs for people the bot has provisioned, and it matches them by their GitHub account **id**, so renaming an account can't take over someone else's.
-- **Provisioning:** the bot calls GitHub's SCIM API with the setup user's token. It creates, suspends, restores and finds accounts.
-- **Hosting:** GitHub Pages sites are always private under managed users, so these sites deploy to **Cloudflare Pages** (`ap-<name>.pages.dev`, with `<name>.awesomeprojects.tech` attached). Leave `sitesOrg` empty to host only here; if you still have a classic sites org, those GitHub Pages sites keep working as before.
-
-| Who | What they do |
+| | Where it lives |
 |---|---|
-| Site owner | **My domains → Enterprise account → Get my enterprise account.** Hosted requests create one automatically. |
-| Maintainer | Console → People → *Create / Suspend / Restore account*, or `/emu-create @user`, `/emu-suspend @user`, `/emu-restore @user`. `/suspend-user` also suspends the managed account. |
-| Collaborators | `/site-collab <name> @user add` gives them a managed account plus write access. There's no invite to accept. |
+| Public registry: names, DNS, request forms, website, the thin bot runner | [`So10-k/awesomeprojects.tech`](https://github.com/So10-k/awesomeprojects.tech) on github.com |
+| The enterprise (managed users, data residency) | **`awesome-projects`** on [awesome-projects.ghe.com](https://awesome-projects.ghe.com/enterprises/awesome-projects) |
+| Hosted site repos + the private platform (bot, panel server, templates, reusable deploy workflows) | org **`apjs-hosted-sites`**: `platform`, `justaquicktest`, `teachforth`, … |
+| Maintainers' everyday accounts: `handbook`, `lounge`, `queue` | org **`apjs-maintainers`** |
+| Duty accounts while elevated: `runbook` | org **`apjs-elevated`** |
+| Sign-in (SAML identity provider) and the panel API | `api.awesomeprojects.tech` (Cloudflare Worker, code in `platform/worker`) |
+| Hosted sites | Cloudflare Pages, one project per site: `ap-<name>.pages.dev` + `<name>.awesomeprojects.tech` |
 
-GitHub only supports partner identity providers. A custom one like ours is allowed (it implements SAML 2.0 and SCIM 2.0), but GitHub Support won't help debug it.
-
-### Public registry vs private platform
-
-| Repo | Visibility | Holds |
-|---|---|---|
-| `So10-k/awesomeprojects.tech` | **Public** | `domains/`, DNS, request forms, marketing site, thin bot/panel runners, domain `scripts/` for validate/site build |
-| `apjs-hosted-sites/platform` (`config.platformRepo`) | **Private** (EMU) | Bot, panel Worker, templates, unit tests, `cf-pages-site.yml` / site-build |
-
-Site repos call reusable workflows in **platform** (same org → `secrets: inherit` works). That private repo must allow Actions access from the rest of the org (`/org-setup` sets this; otherwise GitHub says the workflow was not found). The public bot/panel workflows check out platform with `BOT_PAT`. Platform is the source of truth for ops code — edit there, not in this registry.
-
-After bootstrap: `/site-sync` existing hosted sites so their `deploy.yml` points at `apjs-hosted-sites/platform`.
+`config.json → emu` names the enterprise, org, setup-user short code and host. `platformRepo` is `apjs-hosted-sites/platform`. `sitesOrg` is empty: the old GitHub Pages hosting org is off, and its one remaining site, `samsdocs`, keeps working as a plain GitHub Pages site the bot no longer manages.
 
 ---
 
-## Setting it up (owner, once)
+## What people do
 
-### 1. Create the managed enterprise
-
-Managed users need a **new** enterprise; an existing enterprise can't be converted. Start an *Enterprise Managed Users* trial or purchase from <https://github.com/enterprise/trial> and choose **Enterprise with managed users**.
-
-- Pick a **short code** of 3–8 letters or numbers (for example `ap`). It's permanent, and every managed username ends in `_<shortcode>`.
-- GitHub emails a password-reset link for the **setup user**, `<shortcode>_admin`. Sign in with it in a private window, set a password and turn on 2FA. Save its recovery codes.
-
-### 2. Make the SAML signing key
-
-The private key goes straight into a GitHub secret, and only the public certificate stays on disk:
-
-```bash
-openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=awesomeprojects.tech SAML" -keyout /tmp/ap-saml.key -out ap-saml.crt
-openssl pkcs8 -topk8 -nocrypt -in /tmp/ap-saml.key | gh secret set PANEL_SAML_PRIVATE_KEY -R So10-k/awesomeprojects.tech
-rm /tmp/ap-saml.key
-gh secret set PANEL_SAML_CERT -R So10-k/awesomeprojects.tech < ap-saml.crt
-```
-
-### 3. Turn it on in `config.json`
-
-```json
-"emu": { "enterprise": "<enterprise slug>", "org": "<managed org name>", "shortcode": "ap" }
-```
-
-The enterprise slug is the `…` in `github.com/enterprises/…`. Merge it, then run the **Panel server** workflow (Actions → *Panel server* → *Run workflow*). This deploys the sign-in with the key and the enterprise name. Check <https://api.awesomeprojects.tech/saml/metadata>: it should show your certificate.
-
-### 4. Point the enterprise at our sign-in
-
-As the setup user: **Enterprise → Settings → Authentication security → Require SAML authentication**.
-
-| Field | Value |
+| Who | How |
 |---|---|
-| Sign on URL | `https://api.awesomeprojects.tech/saml/sso` |
-| Issuer | `https://api.awesomeprojects.tech/saml` |
-| Public certificate | the contents of `ap-saml.crt` |
-| Signature / digest | RSA-SHA256 / SHA256 |
+| Someone who wants a hosted site | Picks **Host it for me** on the website. When it's approved, the bot creates their managed account, a private repo from the starter they chose, the Cloudflare Pages project and the DNS record. The first deploy is live about a minute later. |
+| Site owner | Signs in at **[awesome-projects.ghe.com/enterprises/awesome-projects/sso](https://awesome-projects.ghe.com/enterprises/awesome-projects/sso)**, edits the repo and pushes; each push redeploys. [My domains](https://awesomeprojects.tech/me/) shows the deploys and has Redeploy, collaborators and **Get my enterprise account**. |
+| Collaborator | The owner adds them in My domains or with `/site-collab <name> @user add`. They get a managed account with write access. There is no invite to accept. |
+| Maintainer | `/emu-create`, `/emu-suspend`, `/emu-restore @user`, or Console → People. `/suspend-user` also suspends the managed account. A suspended account is only ever brought back by `/emu-restore`: nothing else (a new request, being added to a site, a site sync) re-activates it. |
+| Maintainer on duty | `/ops-account` makes a separate duty login (`ops-<name>`) that can open no repository. `/access <name> <permission> [hours]` elevates it on one repo for a limited time; `maintain` and `admin` wait for the owner's `/access-approve`. At the SSO page, pick **Everyday** or **Duty**. Details: [MAINTAINERS.md](MAINTAINERS.md#maintainer-rooms). |
 
-Click **Test SAML configuration** while signed in to github.com as the repo owner or the setup user, and approve the *awesomeprojects.tech* app. The response's NameID is always the setup user (`<shortcode>_admin`), which is the only account GitHub's test will accept. Then save, and store the SSO recovery codes somewhere safe.
+## How sign-in works
 
-Still on that page (as the setup user): under **Open SCIM Configuration**, enable **Enable open SCIM configuration**. Without that checkbox, every SCIM call returns `403 … must use Azure AD, Okta, or Ping Federate` — GitHub's way of saying "partner IdP only", until you turn open SCIM on for a custom IdP like ours.
+1. Alice opens the enterprise SSO page. GitHub sends her browser to `api.awesomeprojects.tech/saml/sso` with a SAML request.
+2. The Worker checks the request is from **our** enterprise and returns to **its** address, then sends her through GitHub OAuth on github.com. The SAML request rides inside the signed OAuth state, so there are no cookies.
+3. Back from GitHub, it looks her up by her GitHub account **id** (renaming an account can't take over someone else's). If she's provisioned and active, it signs a SAML response whose NameID is her SCIM `userName`, and her browser posts it to the enterprise.
 
-### 5. Two tokens (setup user ≠ org owner)
+The SAML test in the enterprise settings is signed for the setup user (`2mv68l64_admin`) or the repo owner, because nobody is provisioned at that point.
 
-The **setup user can't join organizations**. SCIM and org admin are different accounts:
+## How a deploy works
 
-| Secret | Who | What for |
+Each site repo has a managed `.github/workflows/deploy.yml` (site owners can't edit `.github/workflows`; an org ruleset blocks it). It calls `apjs-hosted-sites/platform/.github/workflows/cf-pages-site.yml` and passes **only** the two Cloudflare secrets.
+
+- **build** runs the site's own code (`npm install`, the build) with **no secrets**. It gets the build scripts from the platform's `site-build` action, so it never clones anything.
+- **deploy** only uploads the built files, after stripping `_worker.js`, `functions/` and `_routes.json`, so a site can't run server code on our Cloudflare account.
+
+People who point a name at **their own** GitHub repo use the public copy instead: `So10-k/awesomeprojects.tech/.github/workflows/pages-site.yml`, which publishes to their repo's GitHub Pages. It has to be public, because a personal repo can't call a private workflow in our enterprise.
+
+## Secrets
+
+| Where | Secret | What it is |
 |---|---|---|
-| `EMU_ADMIN_TOKEN` | setup user (`<shortcode>_admin`) | SCIM only (`scim:enterprise`) |
-| `BOT_PAT` | your **provisioned** managed account (e.g. `so10-k_apjs`), Owner of the managed org | `/org-setup`, creating site repos, collaborators, org secrets |
+| Public registry | `BOT_PAT` | Classic token of **your managed account** (`so10-k` on ghe.com), owner of the three orgs. Scopes: `repo`, `workflow`, `admin:org`. It does site repos, org setup, rooms and checking out the platform. |
+| Public registry | `EMU_ADMIN_TOKEN` | Classic token of the **setup user** `2mv68l64_admin`, scope `scim:enterprise`. SCIM only: it creates, suspends and restores accounts. The setup user can't join orgs. |
+| Public registry | `CLOUDFLARE_PAGES_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Lets the bot create Pages projects and attach domains. |
+| Public registry | `CLOUDFLARE_API_TOKEN` | DNS (DNSControl). |
+| Public registry | `CLOUDFLARE_WORKERS_TOKEN`, `PANEL_*`, `ROOM_HOOK_SECRET` | The panel server and its sign-in key: [PANEL.md](PANEL.md). |
+| Org `apjs-hosted-sites` | `CLOUDFLARE_PAGES_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Used by site deploys, which only see these two. |
 
-As the setup user, create a classic PAT with `scim:enterprise` (no expiry), then:
+`/bot-check` shows both tokens, their scopes, SCIM and Cloudflare. Ask for no more scope than the table says: `admin:enterprise` on `BOT_PAT` isn't needed.
 
-```bash
-gh secret set EMU_ADMIN_TOKEN -R So10-k/awesomeprojects.tech
-```
+## Keeping it running
 
-### 6. Your managed account, the org, then `BOT_PAT`
-
-After SAML is required, only a **provisioned** enterprise owner can create organizations. The bot makes the repo owner's managed account an enterprise owner automatically.
-
-1. On any issue, comment `/emu-create @So10-k` (or **My domains → Get my enterprise account**). You should get something like `so10-k_apjs`.
-2. Sign in at `https://github.com/enterprises/<slug>/sso` **as that managed account** (confirm with your normal GitHub account when our sign-in asks).
-3. Create the org you named in `config.json` (**Enterprise → Organizations → New organization**). You (the managed owner) are the org owner; the setup user will never appear in the member list — that's normal.
-4. As that managed owner, create a classic PAT with `repo`, `workflow`, `admin:org` (no expiry) and save it as `BOT_PAT` on the public registry **and** as an org secret (site deploys inherit it to clone private `platform`):
-
-```bash
-gh secret set BOT_PAT -R So10-k/awesomeprojects.tech
-gh secret set BOT_PAT --org <managed org> --visibility all
-```
-
-5. Still as the managed owner (personal `So10-k` can't see the org), set the Cloudflare org secrets:
-
-```bash
-gh secret set CLOUDFLARE_PAGES_TOKEN --org <managed org> --visibility all
-gh secret set CLOUDFLARE_ACCOUNT_ID --org <managed org> --visibility all --body 2f8365ea25e7fd8c95ba7da82046b81c
-```
-
-6. In this repo (as `So10-k` is fine):
-
-```bash
-gh secret set CLOUDFLARE_PAGES_TOKEN -R So10-k/awesomeprojects.tech
-gh secret set CLOUDFLARE_ACCOUNT_ID -R So10-k/awesomeprojects.tech --body 2f8365ea25e7fd8c95ba7da82046b81c
-```
-
-Site owners can't read the org secrets. Each site's deploy workflow uses `secrets: inherit` into the reusable workflow in **`platform`** (same org). Set `CLOUDFLARE_PAGES_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as **org** secrets on the managed org. The build job never sees them: it loads `site-build.js` as a composite action from platform (GitHub fetches that action; a PAT clone fails SAML SSO). Only the publish job gets the Cloudflare token. The deploy workflow is locked by the *managed workflows* ruleset, and the publish step strips `_worker.js`, `functions/` and `_routes.json`, so a site can only publish static files.
-
-If a site was created before that workflow shape, comment `/site-sync <name>` so the bot rewrites `.github/workflows/deploy.yml`.
-
-### 7. Check, then set up the org
-
-On any issue in this repo, comment:
-
-- `/bot-check`: **BOT_PAT** should be your managed owner of the org; **Managed accounts** should show the setup user + SCIM ✅. If SCIM says to enable Open SCIM, go back to step 4.
-- `/org-setup`: applies defaults, Actions allow-list, custom properties, rulesets and custom roles via `BOT_PAT` (not the setup user).
-
-From then on, new hosted requests go to the managed org on Cloudflare Pages. To stop using a classic sites org, set `"sitesOrg": ""` in `config.json`.
-
----
-
-## How a sign-in works
-
-1. Alice opens `github.com/enterprises/<slug>/sso`. GitHub sends her to our `/saml/sso` with a SAML request.
-2. We check that the request is from *our* enterprise and returns to *its* address, then send her through GitHub OAuth. The SAML request rides inside the signed OAuth state, with no cookies.
-3. Back from GitHub, we look up her account **id** in `identities`. If she's provisioned and active, we sign a SAML response with NameID = her SCIM `userName`, and her browser posts it to GitHub. Maintainers see a picker first: everyday account or duty account (`ops-…`).
+- **Code changes** go to `apjs-hosted-sites/platform` (`npm test` there; Checks runs on every push). The public bot runs whatever is on platform `main` on its next event.
+- **The panel server redeploys itself.** Every hour the bot compares the live version (`/health` → `version`) with platform's `worker/` plus the `emu` settings, and runs **Panel server** when they differ. To deploy right away: Actions → *Panel server* → *Run workflow*.
+- **The website** takes its command list and hosting rules from the platform on every build, so it can't drift from the bot.
+- **Site repos** pick up changes to the deploy workflow with `/site-sync <name>`.
+- **Daily ops** (06:41 UTC, or `/ops`): deploy failures become an issue in the site repo, oversize and abandoned sites get locked, seats are counted.
 
 ## Seats
 
-Every managed user is an enterprise seat, the same as an outside collaborator was. `maxSeats` counts both orgs together, leaving out the setup user. When hosting is full, new hosted requests and collaborators wait for a maintainer.
+Every managed user is a seat, duty accounts too. The setup user isn't counted. `maxSeats` (now 50) caps it: when hosting is full, new hosted requests and collaborators wait for a maintainer. `/seats` lists them.
+
+---
+
+## Rebuilding it from scratch
+
+Only needed for a new enterprise. The one above is set up.
+
+1. **Enterprise.** Start an Enterprise Managed Users trial with data residency and pick the subdomain (`awesome-projects` → `awesome-projects.ghe.com`). GitHub mails the setup user `<shortcode>_admin`; set its password and 2FA, and keep the recovery codes.
+2. **Signing key.** The private key goes straight into a secret, and only the certificate stays on disk:
+   ```bash
+   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=awesomeprojects.tech SAML" -keyout /tmp/ap-saml.key -out ap-saml.crt
+   openssl pkcs8 -topk8 -nocrypt -in /tmp/ap-saml.key | gh secret set PANEL_SAML_PRIVATE_KEY -R So10-k/awesomeprojects.tech
+   rm /tmp/ap-saml.key
+   gh secret set PANEL_SAML_CERT -R So10-k/awesomeprojects.tech < ap-saml.crt
+   ```
+3. **`config.json`**: `"emu": { "enterprise": "<slug>", "org": "<sites org>", "shortcode": "<code>", "host": "<slug>.ghe.com" }`. Merge it. The hourly check deploys the panel with the new settings, or run *Panel server* yourself. <https://api.awesomeprojects.tech/saml/metadata> then shows the certificate.
+4. **SAML**, as the setup user: Enterprise → Settings → Authentication security → *Require SAML authentication*. Sign on URL `https://api.awesomeprojects.tech/saml/sso`, issuer `https://api.awesomeprojects.tech/saml`, the certificate from `ap-saml.crt`, RSA-SHA256 / SHA256. **Test SAML configuration** and approve the awesomeprojects.tech app **as the setup user**, without switching accounts. Save, and keep the SSO recovery codes.
+5. **Open SCIM**, same page: tick *Enable open SCIM configuration*. Without it every SCIM call fails with "must use Azure AD, Okta, or Ping".
+6. **Setup-user token**: a classic token with `scim:enterprise` → `gh secret set EMU_ADMIN_TOKEN -R So10-k/awesomeprojects.tech`.
+7. **Your managed account**: comment `/emu-create @So10-k` (it's made an enterprise owner), sign in at the SSO page as it, and create the sites org. Then make a classic token on that account with `repo`, `workflow` and `admin:org` → `gh secret set BOT_PAT -R So10-k/awesomeprojects.tech`.
+8. **Cloudflare**: a token with *Account → Cloudflare Pages → Edit*, set on the public registry and as org secrets (run these logged in to the enterprise host: `gh auth login -h <slug>.ghe.com`):
+   ```bash
+   gh secret set CLOUDFLARE_PAGES_TOKEN -R So10-k/awesomeprojects.tech
+   gh secret set CLOUDFLARE_ACCOUNT_ID -R So10-k/awesomeprojects.tech --body <account id>
+   GH_HOST=<slug>.ghe.com gh secret set CLOUDFLARE_PAGES_TOKEN --org <sites org> --visibility all
+   GH_HOST=<slug>.ghe.com gh secret set CLOUDFLARE_ACCOUNT_ID --org <sites org> --visibility all --body <account id>
+   ```
+9. **Platform**: create `<sites org>/platform` (private) and push this repo's platform code to it.
+10. **Check**: `/bot-check` should be all ✅, then `/org-setup` applies org defaults, the Actions allow-list, custom properties, rulesets, custom roles and the maintainer rooms. `/site-sync <name>` re-applies each site.
 
 ## Turning it off
 
-Set `"emu": { "enterprise": "", "org": "", "shortcode": "" }`. New hosted requests need a classic `sitesOrg` again (or hosting is off). Sites already in the managed org keep running on Cloudflare Pages, but the bot stops managing them until you turn it back on.
+Set `"emu": {}`. New hosted requests then need a classic `sitesOrg`, or hosting is off. Existing managed sites keep running on Cloudflare Pages, but the bot stops managing them.

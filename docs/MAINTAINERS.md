@@ -51,7 +51,7 @@ Everything is a comment, so it all works from the GitHub mobile app.
 
 ## Hosted sites
 
-"**Host it for me**" names get a private repo in the **managed org** (`config.json` → `emu.org`, e.g. `apjs-hosted-sites`), created with the setup user's token (`EMU_ADMIN_TOKEN`) and served on **Cloudflare Pages**. Leave `sitesOrg` empty unless you still want a classic GitHub Pages hosting org.
+"**Host it for me**" names get a private repo in the **managed org** (`config.json` → `emu.org`, e.g. `apjs-hosted-sites`), created with `BOT_PAT` (your managed account, an owner of the org) and served on **Cloudflare Pages**. The setup user's `EMU_ADMIN_TOKEN` only creates and suspends accounts. How it all fits: [MANAGED.md](MANAGED.md). Leave `sitesOrg` empty unless you still want a classic GitHub Pages hosting org.
 
 - **On approval** the bot creates `<emu.org>/<name>` with a starter page, the Cloudflare deploy workflow and an `awesomeprojects.json`. It provisions a managed account for the owner, gives them write access (no invite to accept), and attaches `<name>.awesomeprojects.tech` to the Pages project.
 - **Status** lives in `domains/<name>.json → site.status` and is applied to the repo:

@@ -1,0 +1,11 @@
+name: Site build scripts
+description: Drop site-build.js into the caller repo (public, so any repo can use it).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        mkdir -p .awesomeprojects/scripts
+        cp "$GITHUB_ACTION_PATH/site-build.js" "$GITHUB_ACTION_PATH/frameworks.js" .awesomeprojects/scripts/
+        # The scripts are CommonJS. Without this, a repo with "type": "module" (Vite, Astro, VitePress…) can't run them.
+        echo '{ "type": "commonjs" }' > .awesomeprojects/scripts/package.json

@@ -13,7 +13,7 @@ const R = require('./rules');
 const STATUSES = ['active', 'locked', 'suspended', 'archived'];
 const OWNER_PERMISSION = { active: 'push', locked: 'pull', suspended: 'pull', archived: null };
 const DNS_ON = { active: true, locked: true, suspended: false, archived: false };
-const TEAM = { slug: 'site-maintainers', name: 'Site maintainers', permission: 'maintain' };
+const TEAM = { slug: 'site-maintainers', name: 'Site maintainers', permission: null };
 const TOPIC = 'awesomeprojects-site';
 
 const lc = (s) => String(s || '').toLowerCase();
@@ -75,7 +75,8 @@ function cfProject(name) {
 }
 /** The workflow for sites in the managed-user enterprise: build without secrets, publish to Cloudflare Pages. */
 function deployWorkflowCf(platformRepo, project) {
-  // Prefer the private platform repo in the managed org so `secrets: inherit` works (same org).
+  // Only the two Cloudflare secrets, by name: \`secrets: inherit\` would also hand the platform workflow
+  // every other org secret, which a site deploy never needs.
   return `# Managed by awesomeprojects.tech: changes to .github/workflows are blocked for site owners.
 name: Deploy
 on:
@@ -92,7 +93,9 @@ jobs:
     uses: ${platformRepo}/.github/workflows/cf-pages-site.yml@main
     with:
       project: ${project}
-    secrets: inherit
+    secrets:
+      CLOUDFLARE_PAGES_TOKEN: \${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 `;
 }
 const onCloudflare = (d) => !!(d && d.site && d.site.provider === 'hosted' && d.site.platform === 'cloudflare');
@@ -216,7 +219,7 @@ function branchRuleset() {
 function actionsPolicy(sourceRepo) {
   return {
     permissions: { enabled_repositories: 'all', allowed_actions: 'selected' },
-    selected: { github_owned_allowed: true, verified_allowed: false, patterns_allowed: [`${sourceRepo}/.github/workflows/*`, 'oven-sh/setup-bun@*'] },
+    selected: { github_owned_allowed: true, verified_allowed: false, patterns_allowed: [`${sourceRepo}/.github/workflows/*`, `${sourceRepo}/.github/actions/*`, 'oven-sh/setup-bun@*'] },
   };
 }
 
@@ -280,6 +283,11 @@ const httpsReady = (pages) => !!pages && !pages.https_enforced && !!pages.https_
  *   ap-site-locked        triage: a locked/suspended owner can still answer our issues, but not push
  */
 const REPO_ROLES = [
+  { name: 'ap-read', description: 'awesomeprojects.tech: clone and read one repo', base_role: 'read', want: [] },
+  { name: 'ap-triage', description: 'awesomeprojects.tech: issues and pull requests, no push', base_role: 'triage', want: [] },
+  { name: 'ap-write', description: 'awesomeprojects.tech: push code, no settings', base_role: 'write', want: [] },
+  { name: 'ap-security', description: 'awesomeprojects.tech: push code and read security alerts', base_role: 'write', want: ['view_dependabot_alerts', 'read_code_scanning', 'view_secret_scanning_alerts'] },
+  { name: 'ap-maintain', description: 'awesomeprojects.tech: repository settings, no admin', base_role: 'maintain', want: [] },
   { name: 'ap-site-owner', description: 'awesomeprojects.tech: owner of a hosted site', base_role: 'write', want: ['view_dependabot_alerts', 'read_code_scanning', 'view_secret_scanning_alerts', 'close_issue', 'reopen_issue', 'manage_topics'] },
   { name: 'ap-site-collaborator', description: 'awesomeprojects.tech: collaborator on a hosted site', base_role: 'write', want: [] },
   { name: 'ap-site-locked', description: 'awesomeprojects.tech: owner of a locked or suspended site (no pushes)', base_role: 'triage', want: ['view_dependabot_alerts'] },

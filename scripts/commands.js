@@ -45,7 +45,14 @@ const CATALOG = [
   { cmd: '/deploy', who: 'maintainer', where: 'any', usage: '/deploy', does: 'Push DNS and rebuild the website now', admin: true },
   { cmd: '/site', who: 'maintainer', where: 'issues', usage: '/site <name> <active|locked|suspended|archived>', does: 'Change a hosted site\'s status: locked = owner read-only, suspended = also DNS off, archived = repo archived', admin: true },
   { cmd: '/site-sync', who: 'maintainer', where: 'issues', usage: '/site-sync <name>', does: 'Re-apply the standard repo setup (settings, workflow, Pages, access)', admin: true },
-  { cmd: '/repo-access', who: 'maintainer', where: 'issues', usage: '/repo-access <name> @user <read|write|maintain|none>', does: 'Give someone access to a hosted site\'s repo (uses a seat)', admin: true },
+  { cmd: '/repo-access', who: 'maintainer', where: 'issues', usage: '/repo-access <name> @user <read|write|maintain|none>', does: 'Give someone access to a hosted site\'s repo (uses a seat). Prefer /access.', admin: true },
+  { cmd: '/access', who: 'owner', where: 'issues', usage: '/access <name> <read|triage|write> @user', does: 'Grant one standing permission on your site to someone\'s everyday account' },
+  { cmd: '/access', who: 'maintainer', where: 'issues', usage: '/access <name> <read|triage|write|security|maintain|admin> [hours]', does: 'Elevate your duty account on one repo, for the shortest time that covers the job', admin: true },
+  { cmd: '/access-list', who: 'owner', where: 'any', usage: '/access-list [name]', does: 'Show standing grants and elevations, including who asked and when they expire' },
+  { cmd: '/access-revoke', who: 'owner', where: 'issues', usage: '/access-revoke <id>', does: 'End a grant now. The owner, the person who asked, or a maintainer can do this.' },
+  { cmd: '/ops-account', who: 'maintainer', where: 'issues', usage: '/ops-account', does: 'Create your separate duty account. It can see no repository until you elevate it.', admin: true },
+  { cmd: '/access-approve', who: 'owner', where: 'issues', usage: '/access-approve <id>', does: 'Approve a pending elevation (admin, and maintain when a maintainer asked)', admin: true, owner: true },
+  { cmd: '/access-deny', who: 'owner', where: 'issues', usage: '/access-deny <id>', does: 'Deny a pending elevation', admin: true, owner: true },
   { cmd: '/redeploy', who: 'owner', where: 'issues', usage: '/redeploy <name>', does: 'Rebuild and redeploy your hosted site now' },
   { cmd: '/site-collab', who: 'owner', where: 'issues', usage: '/site-collab <name> @user <add|remove>', does: 'Add or remove a collaborator on your hosted repo (limited per site)' },
   { cmd: '/suspend-user', who: 'maintainer', where: 'issues', usage: '/suspend-user @user <reason>', does: 'Ban an account and suspend every site it hosts', admin: true },
@@ -64,8 +71,8 @@ const CATALOG = [
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats', '/create', '/make-repo', '/emu-create', '/emu-suspend', '/emu-restore']);
-const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check', '/config']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats', '/create', '/make-repo', '/emu-create', '/emu-suspend', '/emu-restore', '/ops-account', '/access-approve', '/access-deny']);
+const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check', '/config', '/access-approve', '/access-deny']);
 
 /** Settings /config may change, and how to read the value. */
 const SETTINGS = {
