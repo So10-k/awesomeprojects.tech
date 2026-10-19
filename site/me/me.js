@@ -141,7 +141,7 @@ function renderName(n) {
   const result = h('div', { className: 'result', hidden: true });
   const facts = h('div', { className: 'facts' },
     h('span', { className: 'fact', textContent: n.host }),
-    n.repo ? h('span', { className: 'fact' }, h('a', { href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: n.repo })) : null,
+    n.repo ? h('span', { className: 'fact' }, h('a', { href: repoUrl(D, n.repo), target: '_blank', rel: 'noopener', textContent: n.repo })) : null,
     n.status ? h('span', { className: `pill ${n.status}`, textContent: n.status }) : null,
     n.description ? h('span', { className: 'fact', textContent: n.description }) : null);
   const check = h('button', { className: 'btn', type: 'button', textContent: 'Check it' });
@@ -279,16 +279,20 @@ function hostedBox(n, result) {
   }
   if (!people.length) list.append(h('li', { className: 'empty', textContent: 'Just you.' }));
   const who = h('input', { placeholder: '@friend', spellcheck: false, autocomplete: 'off' });
-  const add = h('form', { className: 'inline' }, who, h('button', { className: 'btn', type: 'submit', textContent: 'Invite' }));
-  add.addEventListener('submit', (e) => { e.preventDefault(); if (who.value.trim()) run(result, 'site-collab', { name: n.name, user: who.value.trim(), op: 'add' }, `Inviting ${who.value.trim()}…`); });
+  const managed = isManagedRepo(D, n.repo); // managed: we give their enterprise account access, no invite to accept
+  const add = h('form', { className: 'inline' }, who, h('button', { className: 'btn', type: 'submit', textContent: managed ? 'Add' : 'Invite' }));
+  add.addEventListener('submit', (e) => { e.preventDefault(); if (who.value.trim()) run(result, 'site-collab', { name: n.name, user: who.value.trim(), op: 'add' }, `${managed ? 'Adding' : 'Inviting'} ${who.value.trim()}…`); });
   return h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Your site' }), redeploy),
     h('div', { className: 'body' },
       facts,
       h('p', {}, 'Push to ', h('code', { textContent: 'main' }), ' and it\'s live a minute later. Workflows are managed for you.'),
       h('div', { className: 'danger-row' },
-        h('a', { className: 'btn', href: `https://github.com/${n.repo}`, target: '_blank', rel: 'noopener', textContent: 'Open the repo' }),
-        h('a', { className: 'btn', href: `https://github.com/${n.repo}/invitations`, target: '_blank', rel: 'noopener', textContent: 'Accept your invite' }),
-        h('a', { className: 'btn', href: `https://github.com/${n.repo}/actions`, target: '_blank', rel: 'noopener', textContent: 'Deploy logs' })),
+        h('a', { className: 'btn', href: repoUrl(D, n.repo), target: '_blank', rel: 'noopener', textContent: 'Open the repo' }),
+        // Managed repos have no invite: their enterprise account already has access, after signing in.
+        isManagedRepo(D, n.repo)
+          ? (D.signIn ? h('a', { className: 'btn', href: D.signIn, target: '_blank', rel: 'noopener', textContent: 'Enterprise sign-in' }) : null)
+          : h('a', { className: 'btn', href: `https://github.com/${n.repo}/invitations`, target: '_blank', rel: 'noopener', textContent: 'Accept your invite' }),
+        h('a', { className: 'btn', href: `${repoUrl(D, n.repo)}/actions`, target: '_blank', rel: 'noopener', textContent: 'Deploy logs' })),
       h('h3', { className: 'sub-h', textContent: `Collaborators (up to ${D.settings && D.settings.maxCollaboratorsPerSite ? D.settings.maxCollaboratorsPerSite.value : 2})` }),
       list, add,
       snapshot.at ? h('p', { className: 'help', textContent: `Status checked ${ago(new Date(snapshot.at).toISOString())}.` }) : null));

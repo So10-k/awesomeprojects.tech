@@ -4,3 +4,7 @@ node_modules/
 _site/
 worker/.wrangler/
 worker/node_modules/
+.DS_Store
+ap-saml.crt
+*.key
+.platform/

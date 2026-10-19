@@ -24,6 +24,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The command list and hosting rules on the site come from the private platform, where the bot
+      # lives, so they can't drift from what the bot does. Without the token it uses this repo's copies.
+      - name: Latest bot scripts from the platform
+        continue-on-error: true
+        env:
+          BOT_PAT: ${{ secrets.BOT_PAT }}
+        run: |
+          [ -n "$BOT_PAT" ] || { echo "No BOT_PAT: using this repo's copies."; exit 0; }
+          git clone -q --depth 1 "https://x-access-token:${BOT_PAT}@awesome-projects.ghe.com/apjs-hosted-sites/platform.git" "$RUNNER_TEMP/platform"
+          cp "$RUNNER_TEMP/platform/scripts/"{commands,sites,providers,rules,requests,frameworks}.js scripts/
+          echo "Using platform $(git -C "$RUNNER_TEMP/platform" rev-parse --short HEAD)"
       - run: node scripts/build-site.js
       - uses: actions/upload-pages-artifact@v3
         with:

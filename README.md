@@ -72,7 +72,9 @@ Once a maintainer approves it, the bot writes your record, DNS goes live in abou
 
 ## 🏠 Or let us host it
 
-Pick **"Host it for me"** and choose a starter: **Plain HTML, Next.js, Vite + React, Astro or Docs**. You get a private repo in our org, already live at `yourname.awesomeprojects.tech`. Push HTML, or a Next.js / Vite / Astro / SvelteKit project, and it's rebuilt and live a minute later. At **[My domains](https://awesomeprojects.tech/me/)** you can see your deploys, redeploy, invite a collaborator or two, and manage your DNS records.
+Pick **"Host it for me"** and choose a starter: **Plain HTML, Next.js, Vite + React, Astro or Docs**. You get a private repo in our GitHub enterprise, already live at `yourname.awesomeprojects.tech`. Push HTML, or a Next.js / Vite / Astro / SvelteKit project, and it's rebuilt and live a minute later.
+
+You get an **enterprise account** for it automatically, linked to your GitHub account. Sign in at [awesome-projects.ghe.com](https://awesome-projects.ghe.com/enterprises/awesome-projects/sso) by confirming it's you on GitHub; there's no new password. At **[My domains](https://awesomeprojects.tech/me/)** you can see your deploys, redeploy, add a collaborator or two, and manage your DNS records.
 
 ## 🛠️ Host your repo
 
@@ -161,7 +163,7 @@ flowchart LR
 1. **Real projects only.** No phishing, scams, malware, spam, adult content, impersonation, or anything illegal.
 2. **Three names per person.** Names under yours (`blog.you`, `_vercel.you`) don't count.
 3. **Don't leave it dangling.** A weekly health check flags names that point at nothing; remove yours when you're done.
-4. **Accounts must be at least a week old.** New or automated-looking accounts get a human review.
+4. **New accounts get a human review.** Accounts under 30 days old, or that look automated, wait for a maintainer. Hosting needs an account at least 30 days old.
 5. **We can remove anything, any time.** It's a free service run by volunteers.
 
 ---

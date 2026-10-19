@@ -3,6 +3,14 @@
 // localStorage with "keep me signed in"), never a cookie.
 'use strict';
 
+/** Web link to a site repo: hosted repos live in the managed enterprise (data.emuHost), the rest on github.com. */
+function repoUrl(data, full) {
+  const org = String(full || '').split('/')[0].toLowerCase();
+  const managed = data && data.emuHost && data.emuOrg && org === String(data.emuOrg).toLowerCase();
+  return managed ? `https://${data.emuHost}/${full}` : `https://github.com/${full}`;
+}
+const isManagedRepo = (data, full) => repoUrl(data, full).indexOf('https://github.com/') !== 0;
+
 const Panel = (() => {
   const KEY = 'ap.session';
   let api = 'https://api.awesomeprojects.tech';

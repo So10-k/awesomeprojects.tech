@@ -54,6 +54,9 @@ const data = {
   commands: C.CATALOG,
   sitesOrg: config.sitesOrg || '',
   emuOrg: (config.emu && config.emu.org) || '',
+  // Hosted repos live in the managed enterprise; links to them go to its host (e.g. awesome-projects.ghe.com).
+  emuHost: (config.emu && config.emu.host) || '',
+  signIn: config.emu && config.emu.enterprise ? `https://${(config.emu.host || 'github.com')}/enterprises/${config.emu.enterprise}/sso` : '',
   announcement: config.announcement || '',
   templates: require('./sites').TEMPLATES,
   settings: Object.fromEntries(Object.entries(C.SETTINGS).map(([k, v]) => [k, { ...v, value: config[k] }])),

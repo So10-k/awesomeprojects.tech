@@ -2,11 +2,16 @@ name: Checks
 
 # Domain/DNS validation on the public registry (no secrets — works for fork PRs).
 # Bot/unit tests live in apjs-hosted-sites/platform.
+# Request PRs (domains/ only) are checked by the bot itself (pull_request_target, status
+# "subdomain-review"), so they don't run this: the bot's own PRs merge in seconds and the run would
+# fail with the branch gone, and new contributors' PRs would wait on "Approve workflows to run".
 on:
   pull_request:
     branches: [main]
+    paths: ["dnsconfig.js", "domain.schema.json", "scripts/**", ".github/**", "site/**"]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read

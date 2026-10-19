@@ -115,6 +115,13 @@ jobs:
           sed -i "s/^EMU_HOST = .*/EMU_HOST = \"$host\"/" wrangler.toml
           echo "EMU enterprise: ${ent:-off} ${host:-github.com}"
 
+      - name: Stamp the version (worker code + enterprise settings)
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          v="$(git -C .platform rev-parse --short=12 HEAD:worker)-$(node -e "process.stdout.write(JSON.stringify(require('./config.json').emu||{}))" | sha256sum | cut -c1-8)"
+          sed -i "s/^PANEL_VERSION = .*/PANEL_VERSION = \"$v\"/" .platform/worker/wrangler.toml
+          echo "Panel version: $v"
+
       - name: Deploy
         if: steps.ready.outputs.ok == 'true'
         working-directory: .platform/worker
