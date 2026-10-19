@@ -9,7 +9,7 @@
     "provider": "hosted",
     "platform": "cloudflare",
     "repo": "apjs-hosted-sites/e2e-claude",
-    "status": "active",
+    "status": "locked",
     "template": "html"
   }
 }
