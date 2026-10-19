@@ -4,14 +4,37 @@
     {
       "github": "So10-k",
       "rank": "owner",
-      "rolesets": ["reviewer", "abuse", "hosting", "infra", "docs"],
+      "rolesets": [
+        "reviewer",
+        "abuse",
+        "hosting",
+        "infra",
+        "docs"
+      ],
       "status": "active"
     },
     {
       "github": "Happyshot10",
       "rank": "maintainer",
-      "rolesets": ["reviewer", "abuse", "hosting", "infra", "docs"],
+      "rolesets": [
+        "reviewer",
+        "abuse",
+        "hosting",
+        "infra",
+        "docs"
+      ],
       "status": "active"
+    },
+    {
+      "github": "samo-tf",
+      "rank": "trainee",
+      "rolesets": [
+        "reviewer"
+      ],
+      "status": "active",
+      "since": "2026-10-19",
+      "probationUntil": "2026-12-18",
+      "mentor": "so10-k"
     }
   ]
 }
