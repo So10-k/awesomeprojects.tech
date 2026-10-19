@@ -115,6 +115,8 @@ jobs:
           sed -i "s/^EMU_HOST = .*/EMU_HOST = \"$host\"/" wrangler.toml
           ghes=$(node -e "process.stdout.write(String((require('../config.json').ghes||{}).host||'').replace(/[^a-z0-9.-]/gi,''))")
           sed -i "s/^GHES_HOST = .*/GHES_HOST = \"$ghes\"/" wrangler.toml
+          live=$(node -e "process.stdout.write((require('../config.json').ghes||{}).live===true?'true':'')")
+          sed -i "s/^GHES_LIVE = .*/GHES_LIVE = \"$live\"/" wrangler.toml
           echo "EMU enterprise: ${ent:-off} ${host:-github.com}"
 
       - name: Stamp the version (worker code + enterprise settings)

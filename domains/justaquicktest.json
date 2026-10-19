@@ -9,7 +9,7 @@
   "site": {
     "provider": "hosted",
     "platform": "cloudflare",
-    "repo": "apjs-hosted-sites/justaquicktest",
+    "repo": "sites/justaquicktest",
     "status": "active",
     "template": "html"
   }
