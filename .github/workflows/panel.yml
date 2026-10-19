@@ -113,12 +113,14 @@ jobs:
           sed -i "s/^EMU_SHORTCODE = .*/EMU_SHORTCODE = \"$code\"/" wrangler.toml
           host=$(node -e "process.stdout.write(String((require('../config.json').emu||{}).host||'').replace(/[^a-z0-9.-]/gi,''))")
           sed -i "s/^EMU_HOST = .*/EMU_HOST = \"$host\"/" wrangler.toml
+          ghes=$(node -e "process.stdout.write(String((require('../config.json').ghes||{}).host||'').replace(/[^a-z0-9.-]/gi,''))")
+          sed -i "s/^GHES_HOST = .*/GHES_HOST = \"$ghes\"/" wrangler.toml
           echo "EMU enterprise: ${ent:-off} ${host:-github.com}"
 
       - name: Stamp the version (worker code + enterprise settings)
         if: steps.ready.outputs.ok == 'true'
         run: |
-          v="$(git -C .platform rev-parse --short=12 HEAD:worker)-$(node -e "process.stdout.write(JSON.stringify(require('./config.json').emu||{}))" | sha256sum | cut -c1-8)"
+          v="$(git -C .platform rev-parse --short=12 HEAD:worker)-$(node -e "process.stdout.write(JSON.stringify([require('./config.json').emu||{},require('./config.json').ghes||{}]))" | sha256sum | cut -c1-8)"
           sed -i "s/^PANEL_VERSION = .*/PANEL_VERSION = \"$v\"/" .platform/worker/wrangler.toml
           echo "Panel version: $v"
 
