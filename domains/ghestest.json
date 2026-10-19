@@ -1,0 +1,15 @@
+{
+  "owner": {
+    "github": "So10-k"
+  },
+  "records": {
+    "CNAME": "ap-ghestest.pages.dev"
+  },
+  "site": {
+    "provider": "hosted",
+    "platform": "cloudflare",
+    "repo": "sites/ghestest",
+    "status": "active",
+    "template": "html"
+  }
+}
