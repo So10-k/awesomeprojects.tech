@@ -1,0 +1,51 @@
+name: Site push
+
+# A push to a hosted site on our GitHub Enterprise Server (github.samsprojects.xyz) reaches the panel
+# server's /hooks/ghes webhook, which sends a "site-push" dispatch here. The bot copies the site's main
+# branch to its build copy on ghe.com (which deploys it to Cloudflare Pages) and reports back on the
+# commit. Nothing from the site runs here: the bot only reads it as git objects.
+on:
+  repository_dispatch:
+    types: [site-push]
+
+permissions:
+  contents: read
+
+# One run per site at a time. Pushes in between collapse into one: the bot always copies main's tip.
+concurrency:
+  group: site-push-${{ github.event.client_payload.repo }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Public registry (domains, config)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Private platform (bot scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: apjs-hosted-sites/platform
+          ref: main
+          path: .platform
+          token: ${{ secrets.BOT_PAT }}
+          github-server-url: https://awesome-projects.ghe.com
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Copy to the build copy and report
+        run: node "$PLATFORM_ROOT/scripts/bot.js"
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+          PLATFORM_ROOT: ${{ github.workspace }}/.platform
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PANEL_API: https://api.awesomeprojects.tech
+          PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
+          BOT_PAT: ${{ secrets.BOT_PAT }}
+          GHES_BOT_TOKEN: ${{ secrets.GHES_BOT_TOKEN }}
