@@ -17,6 +17,8 @@ const Panel = (() => {
 
   // Pick the session out of the URL after GitHub sends us back, then clean the URL.
   const frag = new URLSearchParams(location.hash.slice(1));
+  // After the "email me" sign-in: saved | none (no verified address on GitHub).
+  const emailResult = frag.get('email') || '';
   if (frag.get('session')) {
     (localStorage.getItem('ap.keep') === '1' ? localStorage : sessionStorage).setItem(KEY, frag.get('session'));
     history.replaceState(null, '', location.pathname + location.search);
@@ -59,6 +61,10 @@ const Panel = (() => {
     sites: () => call('/api/sites'),
     grants: () => call('/api/grants'),
     identity: (q = {}) => call(`/api/identity?${new URLSearchParams(q)}`),
+    /** Email: { email: 's***@x.com' | null, turnOn: url }. turnOn is a sign-in that asks GitHub for your verified address. */
+    contact: () => call('/api/contact'),
+    contactOff: () => call('/api/contact', { method: 'POST', body: { off: true } }),
+    emailResult,
     requests: (q = {}) => call(`/api/requests?${new URLSearchParams(q)}`),
     request: (id) => call(`/api/requests/${encodeURIComponent(id)}`),
     newRequest: (form) => call('/api/requests', { method: 'POST', body: form }),
