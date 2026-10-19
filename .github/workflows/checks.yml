@@ -8,7 +8,7 @@ name: Checks
 on:
   pull_request:
     branches: [main]
-    paths: ["dnsconfig.js", "domain.schema.json", "scripts/**", ".github/**", "site/**"]
+    paths: ["dnsconfig.js", "domain.schema.json", "maintainers.json", "scripts/**", ".github/**", "site/**"]
   push:
     branches: [main]
   workflow_dispatch:
