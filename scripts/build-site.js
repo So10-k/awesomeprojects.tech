@@ -36,6 +36,7 @@ for (const f of fs.readdirSync(path.join(root, 'domains')).sort()) {
 }
 
 const config = read('config.json');
+const live = !!(config.ghes && config.ghes.live && config.ghes.host);
 const data = {
   domain: R.DOMAIN,
   repo: process.env.GITHUB_REPOSITORY || 'So10-k/awesomeprojects.tech',
@@ -53,10 +54,12 @@ const data = {
   frameworks: F.FRAMEWORKS.map(({ id, label, dep }) => ({ id, label, dep })),
   commands: C.CATALOG,
   sitesOrg: config.sitesOrg || '',
-  emuOrg: (config.emu && config.emu.org) || '',
+  // Hosted sites and people's accounts: our server once it's live (config.ghes.live), else the managed enterprise.
+  emuOrg: (live && config.ghes.org) || (config.emu && config.emu.org) || '',
   // Hosted repos live in the managed enterprise; links to them go to its host (e.g. awesome-projects.ghe.com).
-  emuHost: (config.emu && config.emu.host) || '',
-  signIn: config.emu && config.emu.enterprise ? `https://${(config.emu.host || 'github.com')}/enterprises/${config.emu.enterprise}/sso` : '',
+  emuHost: (live && config.ghes.host) || (config.emu && config.emu.host) || '',
+  signIn: live ? `https://${config.ghes.host}/login`
+    : config.emu && config.emu.enterprise ? `https://${(config.emu.host || 'github.com')}/enterprises/${config.emu.enterprise}/sso` : '',
   announcement: config.announcement || '',
   templates: require('./sites').TEMPLATES,
   settings: Object.fromEntries(Object.entries(C.SETTINGS).map(([k, v]) => [k, { ...v, value: config[k] }])),

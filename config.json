@@ -74,6 +74,8 @@
   },
   "ghes": {
     "host": "github.samsprojects.xyz",
+    "enterprise": "techmonium",
+    "live": true,
     "org": "sites",
     "maintainersOrg": "maintainers",
     "elevatedOrg": "on-duty"
