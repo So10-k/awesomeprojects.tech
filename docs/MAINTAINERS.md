@@ -51,9 +51,9 @@ Everything is a comment, so it all works from the GitHub mobile app.
 
 ## Hosted sites
 
-"**Host it for me**" names get a private repo in the **managed org** (`config.json` → `emu.org`, e.g. `apjs-hosted-sites`), created with `BOT_PAT` (your managed account, an owner of the org) and served on **Cloudflare Pages**. The setup user's `EMU_ADMIN_TOKEN` only creates and suspends accounts. How it all fits: [MANAGED.md](MANAGED.md). Leave `sitesOrg` empty unless you still want a classic GitHub Pages hosting org.
+"**Host it for me**" names get a private repo in the **`sites` org on our GitHub server** (github.samsprojects.xyz, `config.json → ghes`), served on **Cloudflare Pages**. Each site also has a bot-only *build copy* on ghe.com (`apjs-hosted-sites/<name>`): every push to the server is copied there and deployed on GitHub's runners, and the result comes back as a status on the commit (with the log, if it failed). The copy is refused if `.github/workflows` was changed. How it all fits: [MANAGED.md](MANAGED.md). Leave `sitesOrg` empty unless you still want a classic GitHub Pages hosting org.
 
-- **On approval** the bot creates `<emu.org>/<name>` with a starter page, the Cloudflare deploy workflow and an `awesomeprojects.json`. It provisions a managed account for the owner, gives them write access (no invite to accept), and attaches `<name>.awesomeprojects.tech` to the Pages project.
+- **On approval** the bot creates `sites/<name>` on the server with a starter page, the Cloudflare deploy workflow and an `awesomeprojects.json`. It provisions a managed account for the owner, gives them write access (no invite to accept), and attaches `<name>.awesomeprojects.tech` to the Pages project.
 - **Status** lives in `domains/<name>.json → site.status` and is applied to the repo:
 
   | Status | Owner | Site / DNS | Use it when |
@@ -70,7 +70,7 @@ Everything is a comment, so it all works from the GitHub mobile app.
   - **managed workflows:** no edits to `.github/workflows/**`, a maximum file size (`maxFileSizeMB`), and blocked file types (`blockedExtensions`)
   - **protect main:** no force pushes or deletion
 - **Custom roles** (Enterprise): `ap-site-owner` (write + read security alerts), `ap-site-collaborator` (write), `ap-site-locked` (triage: they can answer our issues but not push), and an `ap-maintainer` org role (audit log, Actions usage, read-only) for the maintainers team. Only the permissions GitHub offers are used; `/org-setup` reads the live list.
-- **Security:** Dependabot alerts and secret scanning (push protection) are switched on per repo where the plan allows.
+- **Security:** on the server, push rules (`awesome-projects/push-rules`) refuse private keys, common tokens and files over 25 MiB at push time. On ghe.com repos, Dependabot alerts and secret scanning are switched on where the plan allows.
 - **Cost guards:** `maxSeats` (managed accounts + any classic outside collaborators; new hosted approvals hold at the cap), `hostedPerOwner`, `hostedMinAccountAgeDays`, `maxRepoSizeMB` and `maxCollaboratorsPerSite`. All are in the console's *Settings* tab.
 - **Daily ops** (06:41 UTC, or `/ops` / *Run checks now*):
   - turns on HTTPS when the certificate is ready
@@ -81,7 +81,7 @@ Everything is a comment, so it all works from the GitHub mobile app.
 - **Owners manage their own site** in My domains: Redeploy, and collaborators (`/site-collab`), capped per site.
 - **Locked down:** org rulesets block every change to `.github/workflows/**` except by org admins (the bot), and the Actions allow-list only permits GitHub's own actions and our build workflow. Site owners edit content; they can't run arbitrary Actions on the org's minutes. To give a site a different build, edit its workflow as an admin, or `/site-sync` to reset it.
 - **Removing** a hosted name (takedown or `/remove`) archives the repo and removes the owner; nothing is deleted.
-- **Tokens:** `EMU_ADMIN_TOKEN` = setup user, **SCIM only** (can't join orgs). `BOT_PAT` = a **provisioned** owner of the managed org (and classic `sitesOrg` if you still have one). `/bot-check` shows both.
+- **Tokens:** `GHES_BOT_TOKEN` = `so10-k` on the server (orgs and repos). `GHES_SCIM_TOKEN` = the server's `scim-admin`, **SCIM only**. `BOT_PAT` = `so10-k` on ghe.com (build copies and the platform). `/bot-check` shows all three.
 
 ---
 
@@ -136,19 +136,19 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 
 ## Maintainer rooms
 
-Two private organizations on the enterprise. `/org-setup` (or any `/promote` / `/demote`) builds and re-checks them, and its last lines are an audit: owners, members, default access and whether Actions is off.
+Two private organizations on our server, `maintainers` and `on-duty` (`config.json → ghes`). `/org-setup` (or any `/promote` / `/demote`) builds and re-checks them, and its last lines are an audit: owners, members, default access and whether Actions is off.
 
-- **apjs-maintainers** is for your everyday account. `handbook` is the instructions (read only). `lounge` is the discussion board. `queue` gets a copy of every request and report; a command on a copy runs against the original, and the reply is posted in both places. Members can comment and triage; nobody can push, create repositories or change settings.
-- **apjs-elevated** is the runbook. Owners can always see it. A duty account is a member only while it holds an active elevation; the bot adds it on approval and removes it when the last one ends. Anyone else found there is removed on the next sync.
+- **maintainers** is for your everyday account. `handbook` is the instructions (read only). `lounge` is the discussion board. `queue` gets a copy of every request and report; a command on a copy runs against the original, and the reply is posted in both places. Members can comment and triage; nobody can push, create repositories or change settings.
+- **on-duty** is the runbook. Owners can always see it. A duty account is a member only while it holds an active elevation; the bot adds it on approval and removes it when the last one ends. Anyone else found there is removed on the next sync.
 - **Actions is switched off** in both, so nothing in them can run a workflow.
-- **Links.** Only awesomeprojects.tech, github.com and our enterprise (`awesome-projects.ghe.com`). Other `*.ghe.com` enterprises count as outside. An outside link in a lounge thread hides the comment and locks the thread; in the queue the comment is hidden, and an issue opened with one is closed and locked. Edited comments are checked too.
+- **Links.** Only awesomeprojects.tech, github.com and our server (`github.samsprojects.xyz`). Anything else counts as outside, including other `*.ghe.com` enterprises. An outside link in a lounge thread hides the comment and locks the thread; in the queue the comment is hidden, and an issue opened with one is closed and locked. Edited comments are checked too.
 - **Who can run commands there.** The bot maps the enterprise login back to the maintainer's github.com login, and only runs commands for current maintainers and the owner. A duty account can only run `/access-list`, `/access-revoke` and `/help` (from the runbook); everything else comes from the everyday account.
 
 ## Duty accounts
 
 - **Names.** `ops-` + your enterprise username. That prefix is reserved: nobody can get an everyday account named `ops-…`, the sign-in refuses one, and the bot never adopts an existing account unless its SCIM `externalId` is that person's (`gh-<id>` for everyday, `ops-gh-<id>` for duty). Without that check, a github.com user named `ops-<maintainer>` could have been handed that maintainer's duty account.
 - **Elevations** (`/access <name> <permission> [hours]`) are per repo, per permission and timed. `maintain` and `admin` wait for the owner; a request that isn't approved within 24 hours lapses, and the owner is pinged on Discord when one arrives (once `DISCORD_WEBHOOK` is set; it isn't yet). Expiry runs every hour.
-- **Demotion** removes the everyday account from apjs-maintainers, suspends the duty account, ends every grant it held and takes it out of apjs-elevated.
+- **Demotion** removes the everyday account from `maintainers`, suspends the duty account, ends every grant it held and takes it out of `on-duty`.
 - **Suspensions stick.** Nothing re-activates a suspended account as a side effect (a hosted request, a collaborator add, a site sync). Only `/emu-restore`.
 
 **One setting to change by hand** (GitHub has no API for it): Enterprise → **Policies → Repositories → Repository deletion and transfer → Disabled**. Then even an `admin` elevation can't delete or move a site's repository.

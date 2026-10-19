@@ -72,9 +72,9 @@ Once a maintainer approves it, the bot writes your record, DNS goes live in abou
 
 ## 🏠 Or let us host it
 
-Pick **"Host it for me"** and choose a starter: **Plain HTML, Next.js, Vite + React, Astro or Docs**. You get a private repo in our GitHub enterprise, already live at `yourname.awesomeprojects.tech`. Push HTML, or a Next.js / Vite / Astro / SvelteKit project, and it's rebuilt and live a minute later.
+Pick **"Host it for me"** and choose a starter: **Plain HTML, Next.js, Vite + React, Astro or Docs**. You get a private repo on our own GitHub server, already live at `yourname.awesomeprojects.tech`. Push HTML, or a Next.js / Vite / Astro / SvelteKit project, and it's rebuilt and live a minute later. Each commit shows whether it went live; if a build fails, the error is right there on the commit.
 
-You get an **enterprise account** for it automatically, linked to your GitHub account. Sign in at [awesome-projects.ghe.com](https://awesome-projects.ghe.com/enterprises/awesome-projects/sso) by confirming it's you on GitHub; there's no new password. At **[My domains](https://awesomeprojects.tech/me/)** you can see your deploys, redeploy, add a collaborator or two, and manage your DNS records.
+You get an **enterprise account** for it automatically, linked to your GitHub account. Sign in at [github.samsprojects.xyz](https://github.samsprojects.xyz/login) with **Sign in with SAML**, confirming it's you on GitHub; there's no new password. At **[My domains](https://awesomeprojects.tech/me/)** you can see your deploys, redeploy, add a collaborator or two, and manage your DNS records.
 
 ## 🛠️ Host your repo
 

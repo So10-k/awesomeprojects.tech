@@ -1,34 +1,30 @@
 # Managed accounts and hosted sites
 
-People never join our hosted repos with their own GitHub account. The bot gives each person a **managed account** in our enterprise and grants that account access. They sign in by proving who they are with their normal GitHub account, so there is no new password.
+People never join our hosted repos with their own GitHub account. The bot gives each person an account on **our GitHub server** and grants that account access. They sign in by proving who they are with their normal GitHub account, so there is no new password.
 
 | | Where it lives |
 |---|---|
 | Public registry: names, DNS, request forms, website, the thin bot runner | [`So10-k/awesomeprojects.tech`](https://github.com/So10-k/awesomeprojects.tech) on github.com |
-| The enterprise (managed users, data residency) | **`awesome-projects`** on [awesome-projects.ghe.com](https://awesome-projects.ghe.com/enterprises/awesome-projects) |
-| Hosted site repos + the private platform (bot, panel server, templates, reusable deploy workflows) | org **`apjs-hosted-sites`**: `platform`, `justaquicktest`, `teachforth`, … |
-| Maintainers' everyday accounts: `handbook`, `lounge`, `queue` | org **`apjs-maintainers`** |
-| Duty accounts while elevated: `runbook` | org **`apjs-elevated`** |
+| People's accounts, **hosted site repos** (org `sites`) and the maintainer rooms (orgs `maintainers`, `on-duty`) | our GitHub Enterprise Server, **[github.samsprojects.xyz](https://github.samsprojects.xyz)** (`config.json → ghes`) |
+| The private platform (bot, panel server, templates, deploy workflows) and a bot-only **build copy** of every site | org **`apjs-hosted-sites`** on [awesome-projects.ghe.com](https://awesome-projects.ghe.com) (`config.json → emu`) |
 | Sign-in (SAML identity provider) and the panel API | `api.awesomeprojects.tech` (Cloudflare Worker, code in `platform/worker`) |
 | Hosted sites | Cloudflare Pages, one project per site: `ap-<name>.pages.dev` + `<name>.awesomeprojects.tech` |
 
-`config.json → emu` names the enterprise, org, setup-user short code and host. `platformRepo` is `apjs-hosted-sites/platform`. `sitesOrg` is empty: the old GitHub Pages hosting org is off, and its one remaining site, `samsdocs`, keeps working as a plain GitHub Pages site the bot no longer manages.
-
----
+Why two GitHubs: the server is ours, so it can enforce our own push rules and branding. But a site's build runs the owner's code, and that must not run on our machine. So every build happens on GitHub's runners, in the site's build copy on ghe.com. Setting `ghes.live` to `false` puts everything back on ghe.com, where everyone still has an account. Server details (host, backups, admin access) are in the private `platform/docs/SERVER.md`.
 
 ## What people do
 
 | Who | How |
 |---|---|
 | Someone who wants a hosted site | Picks **Host it for me** on the website. When it's approved, the bot creates their managed account, a private repo from the starter they chose, the Cloudflare Pages project and the DNS record. The first deploy is live about a minute later. |
-| Site owner | Signs in at **[awesome-projects.ghe.com/enterprises/awesome-projects/sso](https://awesome-projects.ghe.com/enterprises/awesome-projects/sso)**, edits the repo and pushes; each push redeploys. [My domains](https://awesomeprojects.tech/me/) shows the deploys and has Redeploy, collaborators and **Get my enterprise account**. |
+| Site owner | Signs in at **[github.samsprojects.xyz](https://github.samsprojects.xyz/login)** (*Sign in with SAML*), edits the repo and pushes; each push redeploys, and the commit shows whether it went live. [My domains](https://awesomeprojects.tech/me/) shows the deploys and has Redeploy, collaborators and **Get my enterprise account**. |
 | Collaborator | The owner adds them in My domains or with `/site-collab <name> @user add`. They get a managed account with write access. There is no invite to accept. |
 | Maintainer | `/emu-create`, `/emu-suspend`, `/emu-restore @user`, or Console → People. `/suspend-user` also suspends the managed account. A suspended account is only ever brought back by `/emu-restore`: nothing else (a new request, being added to a site, a site sync) re-activates it. |
 | Maintainer on duty | `/ops-account` makes a separate duty login (`ops-<name>`) that can open no repository. `/access <name> <permission> [hours]` elevates it on one repo for a limited time; `maintain` and `admin` wait for the owner's `/access-approve`. At the SSO page, pick **Everyday** or **Duty**. Details: [MAINTAINERS.md](MAINTAINERS.md#maintainer-rooms). |
 
 ## How sign-in works
 
-1. Alice opens the enterprise SSO page. GitHub sends her browser to `api.awesomeprojects.tech/saml/sso` with a SAML request.
+1. Alice opens the server's sign-in page (or the enterprise SSO page on ghe.com). GitHub sends her browser to `api.awesomeprojects.tech/saml/sso` with a SAML request.
 2. The Worker checks the request is from **our** enterprise and returns to **its** address, then sends her through GitHub OAuth on github.com. The SAML request rides inside the signed OAuth state, so there are no cookies.
 3. Back from GitHub, it looks her up by her GitHub account **id** (renaming an account can't take over someone else's). If she's provisioned and active, it signs a SAML response whose NameID is her SCIM `userName`, and her browser posts it to the enterprise.
 
@@ -36,10 +32,12 @@ The SAML test in the enterprise settings is signed for the setup user (`2mv68l64
 
 ## How a deploy works
 
-Each site repo has a managed `.github/workflows/deploy.yml` (site owners can't edit `.github/workflows`; an org ruleset blocks it). It calls `apjs-hosted-sites/platform/.github/workflows/cf-pages-site.yml` and passes **only** the two Cloudflare secrets.
-
-- **build** runs the site's own code (`npm install`, the build) with **no secrets**. It gets the build scripts from the platform's `site-build` action, so it never clones anything.
-- **deploy** only uploads the built files, after stripping `_worker.js`, `functions/` and `_routes.json`, so a site can't run server code on our Cloudflare account.
+1. The owner pushes to `main` of `sites/<name>` on the server.
+2. The server's webhook tells the panel. The panel asks the bot to copy that commit to the build copy, `apjs-hosted-sites/<name>` on ghe.com. **The copy is refused** unless `.github/workflows` holds exactly the managed `deploy.yml`, so nobody can run their own workflow with our secrets.
+3. The build copy's `deploy.yml` calls `apjs-hosted-sites/platform/.github/workflows/cf-pages-site.yml` and passes **only** the two Cloudflare secrets:
+   - **build** runs the site's own code (`npm install`, the build) with **no secrets**. It gets the build scripts from the platform's `site-build` action, so it never clones anything.
+   - **deploy** only uploads the built files, after stripping `_worker.js`, `functions/` and `_routes.json`, so a site can't run server code on our Cloudflare account.
+4. The commit on the server gets a status: ✓ *Live on name.awesomeprojects.tech*, or ✗ with a comment showing the failed step and the end of its log.
 
 People who point a name at **their own** GitHub repo use the public copy instead: `So10-k/awesomeprojects.tech/.github/workflows/pages-site.yml`, which publishes to their repo's GitHub Pages. It has to be public, because a personal repo can't call a private workflow in our enterprise.
 
@@ -47,21 +45,23 @@ People who point a name at **their own** GitHub repo use the public copy instead
 
 | Where | Secret | What it is |
 |---|---|---|
-| Public registry | `BOT_PAT` | Classic token of **your managed account** (`so10-k` on ghe.com), owner of the three orgs. Scopes: `repo`, `workflow`, `admin:org`. It does site repos, org setup, rooms and checking out the platform. |
-| Public registry | `EMU_ADMIN_TOKEN` | Classic token of the **setup user** `2mv68l64_admin`, scope `scim:enterprise`. SCIM only: it creates, suspends and restores accounts. The setup user can't join orgs. |
+| Public registry | `GHES_BOT_TOKEN` | Classic token of `so10-k` **on the server**: `repo`, `workflow`, `admin:org`, `admin:org_hook`. Site repos, orgs, rooms, commit statuses. |
+| Public registry | `GHES_SCIM_TOKEN` | Classic token of the server's `scim-admin` (a site admin), `scim:enterprise`, no expiry. SCIM only: creates, suspends and restores accounts. |
+| Public registry | `BOT_PAT` | Classic token of `so10-k` **on ghe.com**: `repo`, `workflow`, `admin:org`. Build copies and checking out the platform. |
+| Public registry | `EMU_ADMIN_TOKEN` | ghe.com's setup user (`2mv68l64_admin`), `scim:enterprise`. Only used while `ghes.live` is off. |
 | Public registry | `CLOUDFLARE_PAGES_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Lets the bot create Pages projects and attach domains. |
 | Public registry | `CLOUDFLARE_API_TOKEN` | DNS (DNSControl). |
-| Public registry | `CLOUDFLARE_WORKERS_TOKEN`, `PANEL_*`, `ROOM_HOOK_SECRET` | The panel server and its sign-in key: [PANEL.md](PANEL.md). |
-| Org `apjs-hosted-sites` | `CLOUDFLARE_PAGES_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Used by site deploys, which only see these two. |
+| Public registry | `CLOUDFLARE_WORKERS_TOKEN`, `PANEL_*`, `ROOM_HOOK_SECRET` | The panel server and its sign-in key: [PANEL.md](PANEL.md). `ROOM_HOOK_SECRET` also signs the server's webhooks. |
+| Org `apjs-hosted-sites` (ghe.com) | `CLOUDFLARE_PAGES_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Used by site deploys, which only see these two. |
 
-`/bot-check` shows both tokens, their scopes, SCIM and Cloudflare. Ask for no more scope than the table says: `admin:enterprise` on `BOT_PAT` isn't needed.
+`/bot-check` shows every token, its scopes, SCIM and the build org. Ask for no more scope than the table says.
 
 ## Keeping it running
 
 - **Code changes** go to `apjs-hosted-sites/platform` (`npm test` there; Checks runs on every push). The public bot runs whatever is on platform `main` on its next event.
 - **The panel server redeploys itself.** Every hour the bot compares the live version (`/health` → `version`) with platform's `worker/` plus the `emu` settings, and runs **Panel server** when they differ. To deploy right away: Actions → *Panel server* → *Run workflow*.
 - **The website** takes its command list and hosting rules from the platform on every build, so it can't drift from the bot.
-- **Site repos** pick up changes to the deploy workflow with `/site-sync <name>`.
+- **Site repos** pick up changes to the deploy workflow with `/site-sync <name>`, which also re-copies the site to its build copy and redeploys it.
 - **Daily ops** (06:41 UTC, or `/ops`): deploy failures become an issue in the site repo, oversize and abandoned sites get locked, seats are counted.
 
 ## Seats
