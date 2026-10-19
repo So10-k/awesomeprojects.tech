@@ -136,18 +136,30 @@ Commands go at the **start** of a comment. A maintainer command from anyone else
 
 ## Maintainer rooms
 
-Two private organizations on the enterprise:
+Two private organizations on the enterprise. `/org-setup` (or any `/promote` / `/demote`) builds and re-checks them, and its last lines are an audit: owners, members, default access and whether Actions is off.
 
-- **apjs-maintainers** is for your everyday account. `handbook` is the instructions (read only). `lounge` is the discussion board; a link off our sites, GitHub, or the enterprise is locked. `queue` receives requests and reports. A command on a copied issue runs against the original.
-- **apjs-elevated** is the runbook. Organization owners can see it. A duty account can see it only while that account holds an elevation, and it is removed when the last one expires.
+- **apjs-maintainers** is for your everyday account. `handbook` is the instructions (read only). `lounge` is the discussion board. `queue` gets a copy of every request and report; a command on a copy runs against the original, and the reply is posted in both places. Members can comment and triage; nobody can push, create repositories or change settings.
+- **apjs-elevated** is the runbook. Owners can always see it. A duty account is a member only while it holds an active elevation; the bot adds it on approval and removes it when the last one ends. Anyone else found there is removed on the next sync.
+- **Actions is switched off** in both, so nothing in them can run a workflow.
+- **Links.** Only awesomeprojects.tech, github.com and our enterprise (`awesome-projects.ghe.com`). Other `*.ghe.com` enterprises count as outside. An outside link in a lounge thread hides the comment and locks the thread; in the queue the comment is hidden, and an issue opened with one is closed and locked. Edited comments are checked too.
+- **Who can run commands there.** The bot maps the enterprise login back to the maintainer's github.com login, and only runs commands for current maintainers and the owner. A duty account can only run `/access-list`, `/access-revoke` and `/help` (from the runbook); everything else comes from the everyday account.
+
+## Duty accounts
+
+- **Names.** `ops-` + your enterprise username. That prefix is reserved: nobody can get an everyday account named `ops-…`, the sign-in refuses one, and the bot never adopts an existing account unless its SCIM `externalId` is that person's (`gh-<id>` for everyday, `ops-gh-<id>` for duty). Without that check, a github.com user named `ops-<maintainer>` could have been handed that maintainer's duty account.
+- **Elevations** (`/access <name> <permission> [hours]`) are per repo, per permission and timed. `maintain` and `admin` wait for the owner; a request that isn't approved within 24 hours lapses, and the owner is pinged on Discord when one arrives (once `DISCORD_WEBHOOK` is set; it isn't yet). Expiry runs every hour.
+- **Demotion** removes the everyday account from apjs-maintainers, suspends the duty account, ends every grant it held and takes it out of apjs-elevated.
+- **Suspensions stick.** Nothing re-activates a suspended account as a side effect (a hosted request, a collaborator add, a site sync). Only `/emu-restore`.
+
+**One setting to change by hand** (GitHub has no API for it): Enterprise → **Policies → Repositories → Repository deletion and transfer → Disabled**. Then even an `admin` elevation can't delete or move a site's repository.
 
 ## Signing in as the duty account
 
 1. Open the enterprise SSO page (or **Sign in as ops-…** on the console's Elevate tab).
 2. Confirm it's you with your normal GitHub account.
-3. Choose **Everyday** or **Duty**. Duty is `ops-` plus your managed username.
+3. Choose **Everyday** or **Duty**. Only current maintainers and the owner see the choice.
 
-Elevations still apply to the duty account even if you never open a browser session as it. The picker is how you use that account in the GitHub UI.
+Use a separate browser profile or a private window for the duty account, so you never push as the wrong one. Elevations apply to the duty account even if you never open a browser session as it.
 
 ---
 
