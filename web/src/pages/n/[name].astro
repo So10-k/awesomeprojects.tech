@@ -1,0 +1,63 @@
+---
+import Base from '../../layouts/Base.astro';
+import { D, fqdn, recordRows } from '../../lib/data.js';
+
+export function getStaticPaths() {
+  return D.names.map((n) => ({ params: { name: n.name }, props: { n } }));
+}
+const { n } = Astro.props;
+const host = fqdn(n.name);
+const rows = recordRows(n.records);
+const parent = n.name.includes('.') ? n.name.split('.').slice(1).join('.') : null;
+const children = D.names.filter((x) => x.name.endsWith(`.${n.name}`));
+const serverRepo = n.repo && D.emuOrg && n.repo.toLowerCase().startsWith(`${D.emuOrg.toLowerCase()}/`);
+const repoUrl = n.repo ? (serverRepo ? `https://${D.emuHost}/${n.repo}` : `https://github.com/${n.repo}`) : null;
+const report = `https://github.com/${D.repo}/issues/new?${new URLSearchParams({ template: 'takedown.yml', title: `Takedown: ${host}`, subdomain: host })}`;
+const STATUS = { active: ['ok', '● live'], locked: ['warn', '▲ locked'], suspended: ['bad', '✕ suspended'], archived: ['', 'archived'] };
+const st = n.status ? STATUS[n.status] || ['', n.status] : null;
+---
+<Base title={host} description={n.description ? `${host}: ${n.description}` : `${host}, a free name on ${D.domain}, owned by @${n.owner}.`}>
+  <article class="whois">
+    <div>
+      <h1>{n.name}<span class="sfx">.{D.domain}</span></h1>
+      {n.description && <p class="desc">{n.description}</p>}
+      <div class="actions">
+        <a class="btn primary" href={`https://${host}`} rel="noopener">Visit {host} ↗</a>
+        <a class="btn" href={`/me/?name=${encodeURIComponent(n.name)}`}>It's mine: manage it</a>
+        <a class="btn quiet" href={report}>Report</a>
+      </div>
+      <table class="records" aria-label="Records">
+        <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Value</th></tr></thead>
+        <tbody>
+          {rows.map(([t, v]) => <tr><td class="n">{n.name}</td><td class="t">{t}</td><td class="v">{v}</td></tr>)}
+        </tbody>
+      </table>
+      {children.length > 0 && (
+        <section class="section">
+          <h2>Under this name</h2>
+          <table class="records"><tbody>
+            {children.map((c) => <tr><td class="n"><a href={`/n/${c.name}/`}>{c.name}</a></td><td class="t">{c.type}</td><td class="v">{c.target}</td></tr>)}
+          </tbody></table>
+        </section>
+      )}
+    </div>
+    <aside>
+      <dl class="facts">
+        <div><dt>Owner</dt><dd><a class="owner" href={`https://github.com/${n.owner}`}><img src={`https://github.com/${n.owner}.png?size=56`} alt="" width="28" height="28" loading="lazy">@{n.owner}</a></dd></div>
+        <div><dt>Host</dt><dd>{n.host}</dd></div>
+        {st && <div><dt>Site</dt><dd><span class={`pill ${st[0]}`}>{st[1]}</span></dd></div>}
+        {repoUrl && <div><dt>Repo</dt><dd><a href={repoUrl}>{n.repo}</a>{serverRepo && <span class="help"> (on our server)</span>}</dd></div>}
+        {parent && <div><dt>Under</dt><dd><a href={`/n/${parent}/`}>{fqdn(parent)}</a></dd></div>}
+        <div><dt>Record</dt><dd><a href={`https://github.com/${D.repo}/blob/main/domains/${n.name}.json`}>domains/{n.name}.json</a></dd></div>
+      </dl>
+      <div class="cmd">
+        <span class="label">Ask the bot</span>
+        <pre><i>/</i>whois {n.name}</pre>
+      </div>
+      <div class="cmd">
+        <span class="label">Or ask DNS</span>
+        <pre>dig +short {host}</pre>
+      </div>
+    </aside>
+  </article>
+</Base>

@@ -1,0 +1,53 @@
+---
+import Base from '../layouts/Base.astro';
+import { topNames, D } from '../lib/data.js';
+const hosts = [...new Set(topNames.map((n) => n.host))].sort();
+---
+<Base title="Directory" description={`Every name on ${D.domain}: who owns it and where it points.`}>
+  <header class="page-head">
+    <h1>Directory</h1>
+    <p class="lede">Every name on {D.domain}, who owns it and what it is. {topNames.length} so far.</p>
+  </header>
+  <div class="dir-tools">
+    <label class="visually-hidden" for="q">Filter names</label>
+    <input class="input" id="q" data-search type="search" placeholder="Filter by name, owner, host or description" autocomplete="off" spellcheck="false">
+    <div class="chips" role="group" aria-label="Filter by host">
+      <button class="chip" type="button" data-host="" aria-pressed="true">All</button>
+      {hosts.map((h) => <button class="chip" type="button" data-host={h} aria-pressed="false">{h}</button>)}
+    </div>
+    <span class="dir-count" id="count" aria-live="polite">{topNames.length} names</span>
+  </div>
+  <table class="records dir">
+    <thead><tr><th scope="col">Name</th><th scope="col">What it is</th><th scope="col" class="x">Owner</th><th scope="col" class="x">Host</th></tr></thead>
+    <tbody id="rows">
+      {topNames.map((n) => (
+        <tr data-text={[n.name, n.owner, n.host, n.target, n.description || ''].join(' ').toLowerCase()} data-host={n.host}>
+          <td class="n"><a href={`/n/${n.name}/`}>{n.name}</a></td>
+          <td class="desc">{n.description || <span class="help">—</span>}</td>
+          <td class="x own"><a href={`https://github.com/${n.owner}`}>@{n.owner}</a></td>
+          <td class="x">{n.host}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+  <p class="empty" id="none" hidden>Nothing matches. Maybe it's free? <a href="/">Look it up</a>.</p>
+  <script>
+    const q = document.querySelector('#q');
+    const rows = [...document.querySelectorAll('#rows tr')];
+    const chips = [...document.querySelectorAll('.chip')];
+    let host = '';
+    function apply() {
+      const needle = q.value.trim().toLowerCase();
+      let n = 0;
+      for (const r of rows) {
+        const show = (!needle || r.dataset.text.includes(needle)) && (!host || r.dataset.host === host);
+        r.hidden = !show;
+        if (show) n++;
+      }
+      document.querySelector('#count').textContent = `${n} name${n === 1 ? '' : 's'}`;
+      document.querySelector('#none').hidden = n > 0;
+    }
+    q.addEventListener('input', apply);
+    for (const c of chips) c.addEventListener('click', () => { host = c.dataset.host; for (const x of chips) x.setAttribute('aria-pressed', String(x === c)); apply(); });
+  </script>
+</Base>

@@ -1,0 +1,81 @@
+---
+import '@fontsource-variable/funnel-display';
+import '@fontsource-variable/funnel-sans';
+import '@fontsource-variable/martian-mono';
+import '../../../brand/tokens.css';
+import '../site.css';
+import { D } from '../lib/data.js';
+
+interface Props { title?: string; description?: string; wide?: boolean }
+const { title, description = 'Free subdomains for developers. Every name is a pull request, reviewed by a bot and people, and recorded in public.', wide = false } = Astro.props;
+const full = title ? `${title} · awesomeprojects.tech` : 'awesomeprojects.tech · free names for the things you build';
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+const nav = [
+  { href: '/directory/', label: 'Directory' },
+  { href: '/docs/', label: 'Docs' },
+  { href: '/stats/', label: 'Stats' },
+  { href: '/status/', label: 'Status' },
+  { href: '/maintainers/', label: 'Maintainers' },
+];
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{full}</title>
+  <meta name="description" content={description}>
+  <meta name="theme-color" content="#050505">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)}>
+  <meta property="og:title" content={full}>
+  <meta property="og:description" content={description}>
+  <meta property="og:type" content="website">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  {D.announcement && <div class="announce" role="status"><span class="dot live" aria-hidden="true"></span><span>{D.announcement}</span></div>}
+  <header class="nav">
+    <div class="nav-in">
+      <a class="wordmark" href="/" aria-label="awesomeprojects.tech, home">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="var(--signal)"/><rect x="17.6" y="8.5" width="3.4" height="15" rx="1.7" fill="var(--bg)"/></svg>
+        <span class="wm-text">awesomeprojects<span class="wm-dot">.</span><span class="wm-tld">tech</span></span>
+      </a>
+      <nav aria-label="Main">
+        <ul>
+          {nav.map((n) => <li><a href={n.href} aria-current={path.startsWith(n.href.replace(/\/$/, '')) ? 'page' : undefined}>{n.label}</a></li>)}
+        </ul>
+      </nav>
+      <a class="btn" href="/me/">My domains</a>
+    </div>
+  </header>
+  <main id="main" class:list={['main', { wide }]}>
+    <slot />
+  </main>
+  <footer class="foot">
+    <div class="foot-in">
+      <div class="foot-brand">
+        <p class="foot-line">Free names for the things you build.</p>
+        <p class="help">Every name is a pull request, reviewed in public. Run by volunteers. No ads, no upsells, no tracking.</p>
+      </div>
+      <ul class="foot-links">
+        <li><a href={`https://github.com/${D.repo}`}>Source &amp; requests</a></li>
+        <li><a href={`https://github.com/${D.repo}/issues/new?template=takedown.yml`}>Report a name</a></li>
+        <li><a href="/docs/hosting/">Hosting docs</a></li>
+        <li><a href={`https://github.com/${D.repo}/issues/new?template=maintainer-application.yml`}>Become a maintainer</a></li>
+      </ul>
+      <p class="foot-meta mono">zone built {new Date(D.generatedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
+    </div>
+  </footer>
+  <script>
+    // "/" jumps to the name search, wherever you are.
+    addEventListener('keydown', (e) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const box = document.querySelector<HTMLInputElement>('[data-search]');
+      if (box) { e.preventDefault(); box.focus(); box.select(); } else { location.href = '/?q='; }
+    });
+  </script>
+</body>
+</html>

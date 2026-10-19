@@ -1,0 +1,345 @@
+---
+import Base from '../layouts/Base.astro';
+import { D, topNames, shown } from '../lib/data.js';
+
+const owners = new Set(topNames.map((n) => n.owner)).size;
+const hosted = topNames.filter((n) => n.status).length;
+const zone = topNames.slice(0, 12);
+const userCmds = [];
+const seen = new Set();
+for (const c of D.commands) {
+  if (c.admin || seen.has(c.usage)) continue;
+  seen.add(c.usage);
+  userCmds.push(c);
+}
+const BLURB = {
+  hosted: 'A private repo with a starter site, live already. Just push.',
+  'github-pages': 'Your repo: Next.js, Vite, Astro, plain HTML…',
+  vercel: 'Full Next.js, server features included',
+  netlify: 'Static sites and functions',
+  'cloudflare-pages': 'Static sites on Cloudflare',
+  render: 'Web services and static sites',
+  railway: 'Apps and APIs',
+  fly: 'Apps close to your users',
+  cname: 'Any host that gives you a hostname',
+  server: 'A VPS or home server with a public IP',
+};
+const SHORT = { hosted: 'Host it for me', 'github-pages': 'GitHub repo', cname: 'Another host', server: 'Own server' };
+---
+<Base>
+  <section class="hero" aria-labelledby="hero-title">
+    <h1 id="hero-title">Free names for the things you build<span class="dot" aria-hidden="true"></span></h1>
+    <p class="lede">Get <code>yourname.{D.domain}</code> for a project, a portfolio or an API. It's a pull request: a bot checks it in seconds, a person approves it, and it's live about a minute later.</p>
+
+    <form class="address" id="bar" role="search" aria-label="Look up a name">
+      <label class="visually-hidden" for="name">Name to look up</label>
+      <span class="sizer" id="sizer" aria-hidden="true">yourname</span>
+      <input id="name" data-search name="q" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" placeholder="yourname" aria-describedby="answer">
+      <span class="suffix"><b>.</b>{D.domain}</span>
+    </form>
+    <p class="answer" id="answer" aria-live="polite"><span class="verdict idle">Type a name to see if it's free.</span></p>
+    <div class="hero-actions">
+      <button class="btn primary big" id="claimBtn" type="button" disabled>Claim this name</button>
+      <span class="counter"><b>{topNames.length}</b> names · <b>{owners}</b> builders · <b>{hosted}</b> hosted here</span>
+      <span class="help">Press <kbd>/</kbd> anywhere to search</span>
+    </div>
+
+    <section class="wizard" id="wizard" hidden aria-labelledby="wiz-title">
+      <h2 id="wiz-title">Where should <code id="wizName">yourname</code> point?</h2>
+      <div class="wiz-grid">
+        <div>
+          <fieldset class="hosts" id="hosts">
+            <legend>Pick a host</legend>
+            {D.providers.map((p) => (
+              <div class="host">
+                <input type="radio" name="host" id={`host-${p.id}`} value={p.id}>
+                <label for={`host-${p.id}`}><b>{SHORT[p.id] || p.label}</b><small>{BLURB[p.id] || ''}</small></label>
+              </div>
+            ))}
+          </fieldset>
+          <div class="details" id="details" hidden>
+            <div class="field" id="repoField" hidden>
+              <label for="repo">GitHub repository</label>
+              <input id="repo" placeholder="you/your-site" autocomplete="off" spellcheck="false">
+              <p class="help">Public repo. We build it with GitHub Pages: Next.js, Vite, Astro, plain HTML…</p>
+              <div class="repo-card" id="repoCard" hidden aria-live="polite"></div>
+            </div>
+            <div class="field" id="tplField" hidden>
+              <label for="tpl">Starter</label>
+              <select id="tpl">
+                {(D.templates || []).map((t) => <option value={t.id}>{t.label} · {t.blurb}</option>)}
+              </select>
+            </div>
+            <div class="field" id="targetField" hidden>
+              <label for="target" id="targetLabel">Hostname</label>
+              <input id="target" autocomplete="off" spellcheck="false">
+              <p class="help" id="targetHelp"></p>
+            </div>
+            <div class="field">
+              <label for="desc">What is it? <span class="help">(optional, shown in the directory)</span></label>
+              <input id="desc" maxlength="140" placeholder="My portfolio">
+            </div>
+          </div>
+        </div>
+        <aside class="preview" aria-label="The record you'll get">
+          <span class="label">Your record</span>
+          <pre class="record-line" id="record">yourname      ?      …</pre>
+          <p class="help" id="recordNote">Pick a host to see your record.</p>
+          <div class="send">
+            <a class="btn primary big" id="sendGh" aria-disabled="true" rel="noopener">Request on GitHub</a>
+            <a class="btn big" id="sendPanel" aria-disabled="true">Request privately</a>
+            <p class="help">On GitHub the request and its review are public. Privately, only you and the maintainers see it, in My domains.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </section>
+
+  <section class="section" aria-labelledby="how-title">
+    <h2 id="how-title">From request to live</h2>
+    <p class="lede">Nothing happens in a back office. Every step is a comment or a commit you can read.</p>
+    <ol class="steps">
+      <li><h3>You ask</h3><p>A pull request with one JSON file, or the form above. One label, your name, where it points.</p><span class="when">a minute</span></li>
+      <li><h3>The bot checks</h3><p>Format, ownership, account age, the target, reserved words. It answers on your request.</p><span class="when">seconds</span></li>
+      <li><h3>A person approves</h3><p>A maintainer gives it a final look and comments <code>/approve</code>.</p><span class="when">usually within a day</span></li>
+      <li><h3>It's live</h3><p>The bot merges it and deploys the zone. Your record answers worldwide.</p><span class="when">about a minute later</span></li>
+    </ol>
+    <div class="checks" aria-label="What the bot checks">
+      <div class="checks-head"><b>✓ Ready to go live</b><span class="pill ok">what a passing review looks like</span></div>
+      <ul>
+        <li><span class="ok">✓</span><span>Format &amp; records</span><span>valid</span></li>
+        <li><span class="ok">✓</span><span>Ownership</span><span>yours</span></li>
+        <li><span class="ok">✓</span><span>Account age</span><span>over 30 days</span></li>
+        <li><span class="ok">✓</span><span>Bot check</span><span>a real person</span></li>
+        <li><span class="ok">✓</span><span>Names you own</span><span>1 of {D.maxPerOwner}</span></li>
+        <li><span class="ok">✓</span><span>Name check</span><span>not reserved</span></li>
+        <li><span class="ok">✓</span><span>Target is live</span><span>resolves</span></li>
+        <li><span class="ok">✓</span><span>Consent</span><span>nothing needed</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section hosting" aria-labelledby="host-title">
+    <div>
+      <h2 id="host-title">No host? We'll host it.</h2>
+      <p class="lede">Pick a starter and get a private repo on our own GitHub server, already live. Push and it's rebuilt and deployed in about a minute. Every commit shows whether it went live.</p>
+      <a class="btn" href="/docs/hosting/">How hosting works</a>
+      <p class="flow"><b>push</b> <i>→</i> our server <i>→</i> built on GitHub's machines <i>→</i> Cloudflare <i>→</i> <b>live</b></p>
+    </div>
+    <ul class="tpl-list">
+      {(D.templates || []).map((t) => <li><b>{t.label}</b><span>{t.blurb}</span></li>)}
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="zone-title">
+    <h2 id="zone-title">The zone</h2>
+    <p class="lede">Every name, where it points, and who owns it. It's all public, like the requests.</p>
+    <table class="records">
+      <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Points to</th><th scope="col" class="x">About</th></tr></thead>
+      <tbody>
+        {zone.map((n) => (
+          <tr>
+            <td class="n"><a href={`/n/${n.name}/`}>{n.name}</a></td>
+            <td class="t">{n.type}</td>
+            <td class="v">{shown(n.target)}</td>
+            <td class="x">{n.description ? n.description : `@${n.owner}`}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    <p><a class="btn" href="/directory/">All {topNames.length} names →</a></p>
+  </section>
+
+  <section class="section" aria-labelledby="cmd-title">
+    <h2 id="cmd-title">Talk to the bot</h2>
+    <p class="lede">Comment any of these on an issue in the repo. The bot answers in seconds.</p>
+    <table class="records">
+      <tbody>
+        {userCmds.slice(0, 10).map((c) => <tr><td class="n">{c.usage}</td><td class="x">{c.does.replace(/`/g, '')}</td></tr>)}
+      </tbody>
+    </table>
+    <p><a class="btn" href="/docs/commands/">Every command →</a></p>
+  </section>
+
+  <script>
+    import { D } from '../lib/data.js';
+    const $ = (s) => document.querySelector(s);
+    const BASE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+    const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+    const REPO = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\/[\w.-]{1,100}$/i;
+    const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const input = $('#name');
+    const answer = $('#answer');
+    const claimBtn = $('#claimBtn');
+    let current = '';
+    let picked = null;
+    let lastKind = '';
+
+    const el = (tag, props = {}, kids = []) => { const n = Object.assign(document.createElement(tag), props); for (const k of [].concat(kids)) n.append(k); return n; };
+
+    function verdict(name) {
+      if (!name) return { kind: 'empty' };
+      if (name.includes('.')) return { kind: 'bad', why: 'one label only. Names under a name are added by its owner.' };
+      if (!BASE.test(name)) return { kind: 'bad', why: 'use a–z, 0–9 and dashes, with no dash at either end, up to 63 characters.' };
+      if (name.startsWith('xn--')) return { kind: 'bad', why: 'punycode names aren’t allowed.' };
+      if (D.reserved.includes(name)) return { kind: 'reserved' };
+      const hit = D.names.find((n) => n.name === name);
+      if (hit) return { kind: 'taken', hit };
+      return { kind: 'free' };
+    }
+
+    function size() {
+      $('#sizer').textContent = input.value || input.placeholder;
+      input.style.setProperty('--w', `${$('#sizer').getBoundingClientRect().width}px`);
+    }
+
+    function lookup() {
+      current = input.value.trim();
+      size();
+      const v = verdict(current);
+      const kids = [];
+      if (v.kind === 'empty') kids.push(el('span', { className: 'verdict idle', textContent: 'Type a name to see if it’s free.' }));
+      else if (v.kind === 'free') kids.push(el('span', { className: 'verdict free', textContent: '✓ Free' }), el('span', { className: 'detail' }, ['Nobody has ', el('code', { textContent: `${current}.${D.domain}` }), '. It’s yours to claim.']));
+      else if (v.kind === 'taken') kids.push(el('span', { className: 'verdict no', textContent: '✕ Taken' }), el('span', { className: 'detail' }, ['by ', el('a', { href: `/n/${v.hit.name}/`, textContent: `@${v.hit.owner}` }), ' → ', el('code', { textContent: String(v.hit.target).replace(/\.$/, '') })]));
+      else if (v.kind === 'reserved') kids.push(el('span', { className: 'verdict no', textContent: '✕ Reserved' }), el('span', { className: 'detail', textContent: 'This one is kept for the registry itself.' }));
+      else kids.push(el('span', { className: 'verdict no', textContent: '✕ Not a valid name' }), el('span', { className: 'detail', textContent: v.why }));
+      answer.replaceChildren(...kids);
+      if (v.kind !== lastKind && !reduce) { answer.classList.remove('resolving'); void answer.offsetWidth; answer.classList.add('resolving'); }
+      lastKind = v.kind;
+      claimBtn.disabled = v.kind !== 'free';
+      claimBtn.textContent = v.kind === 'free' ? `Claim ${current}.${D.domain}` : 'Claim this name';
+      $('#wizName').textContent = current || 'yourname';
+      updateRecord();
+      const url = new URL(location.href);
+      if (current) url.searchParams.set('q', current); else url.searchParams.delete('q');
+      history.replaceState(null, '', url);
+    }
+
+    $('#bar').addEventListener('click', () => input.focus());
+    $('#bar').addEventListener('submit', (e) => { e.preventDefault(); if (!claimBtn.disabled) claim(); });
+    input.addEventListener('input', () => {
+      const clean = input.value.toLowerCase().replace(/\s+/g, '-').replace(/\.awesomeprojects\.tech\.?$/, '');
+      if (clean !== input.value) input.value = clean;
+      lookup();
+    });
+    claimBtn.addEventListener('click', claim);
+
+    function claim() {
+      const w = $('#wizard');
+      w.hidden = false;
+      updateRecord();
+      w.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+      const first = w.querySelector('input[type=radio]:checked') || w.querySelector('input[type=radio]');
+      if (first) first.focus({ preventScroll: true });
+    }
+
+    for (const r of document.querySelectorAll('input[name=host]')) r.addEventListener('change', () => pick(D.providers.find((p) => p.id === r.value)));
+    function pick(p) {
+      picked = p;
+      $('#details').hidden = false;
+      $('#repoField').hidden = p.input !== 'repo';
+      $('#tplField').hidden = p.id !== 'hosted';
+      $('#targetField').hidden = !(p.input === 'target' || p.input === 'ips');
+      if (p.input === 'ips') {
+        $('#targetLabel').textContent = 'IP address(es)';
+        $('#target').placeholder = '203.0.113.7, 2001:db8::7';
+        $('#targetHelp').textContent = 'Public IPv4 or IPv6, separated by commas.';
+      } else if (p.input === 'target') {
+        $('#targetLabel').textContent = p.id === 'cname' ? 'Hostname' : `${p.label} address`;
+        $('#target').placeholder = p.suffix ? `my-site${p.suffix}` : 'something.example.com';
+        $('#targetHelp').textContent = p.suffix ? `Just the name is fine: we add ${p.suffix}.` : 'The hostname your host gave you.';
+      }
+      updateRecord();
+    }
+
+    function cleanRepo(s) {
+      const m = String(s || '').trim().replace(/^(https?:\/\/)?(www\.)?github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '').match(/^([^/\s]+)\/([^/\s#?]+)/);
+      return m && REPO.test(`${m[1]}/${m[2]}`) ? `${m[1]}/${m[2]}` : null;
+    }
+
+    function compute() {
+      if (!picked) return { ok: false, note: 'Pick a host to see your record.' };
+      const p = picked;
+      if (p.input === 'repo') {
+        const repo = cleanRepo($('#repo').value);
+        if (!repo) return { ok: false, note: 'Enter owner/repo.' };
+        return { ok: true, type: 'CNAME', value: `${repo.split('/')[0].toLowerCase()}.github.io.`, form: { repo } };
+      }
+      if (p.id === 'hosted') {
+        if (D.emuOrg) return { ok: true, type: 'CNAME', value: `ap-${(current || 'yourname').toLowerCase()}.pages.dev.`, form: { template: $('#tpl').value } };
+        if (!D.sitesOrg) return { ok: false, note: 'Hosting isn’t switched on yet.' };
+        return { ok: true, type: 'CNAME', value: `${D.sitesOrg.toLowerCase()}.github.io.`, form: { template: $('#tpl').value } };
+      }
+      if (p.id === 'vercel') return { ok: true, type: 'CNAME', value: 'cname.vercel-dns.com.', form: {} };
+      const raw = $('#target').value.trim().toLowerCase();
+      if (p.input === 'ips') {
+        const ips = raw.split(/[\s,]+/).filter(Boolean);
+        if (!ips.length) return { ok: false, note: 'Enter an IP address.' };
+        const bad = ips.find((ip) => !(IPV4.test(ip) || (ip.includes(':') && /^[0-9a-f:.]+$/.test(ip))));
+        if (bad) return { ok: false, note: `"${bad}" isn’t an IP address.` };
+        return { ok: true, multi: ips.map((ip) => [ip.includes(':') ? 'AAAA' : 'A', ip]), form: { target: ips.join(', ') } };
+      }
+      let host = raw.replace(/^https?:\/\//, '').replace(/[/?#].*$/, '').replace(/\.$/, '');
+      if (!host) return { ok: false, note: p.hint || 'Enter a hostname.' };
+      if (p.suffix && !host.includes('.')) host += p.suffix;
+      if (p.suffix && !host.endsWith(p.suffix)) return { ok: false, note: `A ${p.label} address ends in ${p.suffix}.` };
+      if (!host.split('.').every((l) => HOST_LABEL.test(l)) || host.split('.').length < 2) return { ok: false, note: `"${host}" isn’t a hostname.` };
+      if (host.endsWith(D.domain)) return { ok: false, note: `Point at your real host, not back into ${D.domain}.` };
+      return { ok: true, type: 'CNAME', value: `${host}.`, form: { target: host } };
+    }
+
+    function updateRecord() {
+      const r = compute();
+      const name = current || 'yourname';
+      const pad = (s, n) => (s + ' '.repeat(n)).slice(0, Math.max(n, s.length + 1));
+      const rec = $('#record');
+      rec.replaceChildren();
+      const line = (t, v) => { rec.append(pad(name, 14), el('span', { className: 't', textContent: pad(t, 7) }), `${v}\n`); };
+      if (!r.ok) line('?', '…');
+      else if (r.multi) for (const [t, v] of r.multi) line(t, v);
+      else line(r.type, r.value);
+      $('#recordNote').textContent = r.ok ? `${name}.${D.domain}` : r.note;
+      const ready = r.ok && verdict(current).kind === 'free';
+      const gh = $('#sendGh');
+      const panel = $('#sendPanel');
+      for (const b of [gh, panel]) b.setAttribute('aria-disabled', String(!ready));
+      if (!ready) { gh.removeAttribute('href'); panel.removeAttribute('href'); return; }
+      const desc = $('#desc').value.trim();
+      const { template: starter, ...rest } = r.form;
+      const q = new URLSearchParams({ title: `Request: ${current}`, subdomain: current, provider: picked.label, ...rest, ...(desc ? { description: desc } : {}) });
+      q.set('template', 'request.yml');
+      if (starter) q.set('starter', (D.templates.find((t) => t.id === starter) || {}).label || '');
+      gh.href = `https://github.com/${D.repo}/issues/new?${q}`;
+      panel.href = `/me/?${new URLSearchParams({ new: '', name: current, provider: picked.label, ...r.form, ...(desc ? { description: desc } : {}) })}`;
+    }
+    for (const id of ['#target', '#desc', '#tpl']) $(id).addEventListener('input', updateRecord);
+
+    let repoTimer;
+    $('#repo').addEventListener('input', () => { updateRecord(); clearTimeout(repoTimer); repoTimer = setTimeout(previewRepo, 450); });
+    async function previewRepo() {
+      const card = $('#repoCard');
+      const repo = cleanRepo($('#repo').value);
+      if (!repo) { card.hidden = true; return; }
+      card.hidden = false;
+      card.textContent = `Looking up ${repo}…`;
+      try {
+        const r = await fetch(`https://api.github.com/repos/${repo}`);
+        if (r.status === 404) { card.replaceChildren(el('span', { className: 'bad', textContent: `Can’t find ${repo}. Is it public and spelled right?` })); return; }
+        if (!r.ok) throw new Error(String(r.status));
+        const info = await r.json();
+        card.replaceChildren(el('b', { textContent: info.full_name }), el('span', { textContent: `★ ${info.stargazers_count}${info.language ? ` · ${info.language}` : ''}${info.description ? ` · ${info.description}` : ''}` }));
+        if (info.archived) card.append(el('span', { className: 'note', textContent: 'This repo is archived: unarchive it to deploy.' }));
+        const pkg = await fetch(`https://raw.githubusercontent.com/${info.full_name}/${encodeURIComponent(info.default_branch)}/package.json`).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+        const deps = pkg ? { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) } : {};
+        const fw = pkg ? D.frameworks.find((f) => deps[f.dep]) : null;
+        card.append(el('span', { className: 'note', textContent: `Builds as ${fw ? fw.label : pkg ? 'a Node project (npm run build)' : 'plain HTML'}${fw && fw.id === 'next' ? ' (static export; API routes and SSR need Vercel)' : ''}.` }));
+      } catch { card.textContent = 'Couldn’t check the repo right now. The bot checks it when you send the request.'; }
+    }
+
+    const start = new URLSearchParams(location.search).get('q') || new URLSearchParams(location.hash.slice(1)).get('name');
+    if (start) input.value = start.toLowerCase();
+    lookup();
+    if (start !== null && start !== '') input.focus();
+  </script>
+</Base>

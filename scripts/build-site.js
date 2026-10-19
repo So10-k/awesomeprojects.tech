@@ -11,7 +11,10 @@ const F = require('./frameworks');
 const C = require('./commands');
 
 const root = process.env.REPO_ROOT || path.join(__dirname, '..');
-const out = path.join(root, process.argv[2] || '_site');
+// `node scripts/build-site.js web` feeds the Astro site (web/): data for the pages, plus the pages that
+// aren't Astro yet (My domains, the old console) as static files. Any other argument: the old static site.
+const forWeb = process.argv[2] === 'web';
+const out = path.join(root, forWeb ? 'web/public' : (process.argv[2] || '_site'));
 const read = (f) => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
 
 const names = [];
@@ -61,12 +64,36 @@ const data = {
   signIn: live ? `https://${config.ghes.host}/login`
     : config.emu && config.emu.enterprise ? `https://${(config.emu.host || 'github.com')}/enterprises/${config.emu.enterprise}/sso` : '',
   announcement: config.announcement || '',
+  // The public roster (maintainers.json): ranks and rolesets, for the maintainers page.
+  roster: (() => {
+    try {
+      const m = read('maintainers.json');
+      return (m.people || []).filter((p) => (p.status || 'active') !== 'emeritus').map(({ github, rank, rolesets, status, since }) => ({ github, rank, rolesets: rolesets || [], status: status || 'active', since: since || null }));
+    } catch { return []; }
+  })(),
   templates: require('./sites').TEMPLATES,
   settings: Object.fromEntries(Object.entries(C.SETTINGS).map(([k, v]) => [k, { ...v, value: config[k] }])),
 };
 
-fs.rmSync(out, { recursive: true, force: true });
-fs.cpSync(path.join(root, 'site'), out, { recursive: true });
-fs.writeFileSync(path.join(out, 'data.json'), JSON.stringify(data));
-fs.writeFileSync(path.join(out, '.nojekyll'), '');
-console.log(`site → ${path.relative(root, out)}/ (${names.length} names)`);
+if (forWeb) {
+  // Astro reads src/generated/data.json at build time; the browser fetches public/data.json.
+  const gen = path.join(root, 'web/src/generated');
+  fs.mkdirSync(gen, { recursive: true });
+  fs.writeFileSync(path.join(gen, 'data.json'), JSON.stringify(data, null, 1));
+  fs.mkdirSync(out, { recursive: true });
+  for (const keep of ['me', 'admin', 'session.js', 'style.css', 'legacy-theme.css']) {
+    const from = path.join(root, 'site', keep);
+    if (fs.existsSync(from)) fs.cpSync(from, path.join(out, keep), { recursive: true });
+  }
+  fs.cpSync(path.join(root, 'brand'), path.join(out, 'brand'), { recursive: true });
+  fs.copyFileSync(path.join(root, 'brand/favicon.svg'), path.join(out, 'favicon.svg'));
+  fs.writeFileSync(path.join(out, 'data.json'), JSON.stringify(data));
+  fs.writeFileSync(path.join(out, '.nojekyll'), '');
+  console.log(`web data → web/src/generated/data.json + web/public/ (${names.length} names)`);
+} else {
+  fs.rmSync(out, { recursive: true, force: true });
+  fs.cpSync(path.join(root, 'site'), out, { recursive: true });
+  fs.writeFileSync(path.join(out, 'data.json'), JSON.stringify(data));
+  fs.writeFileSync(path.join(out, '.nojekyll'), '');
+  console.log(`site → ${path.relative(root, out)}/ (${names.length} names)`);
+}
