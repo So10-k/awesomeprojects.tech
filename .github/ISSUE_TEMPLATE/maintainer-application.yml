@@ -1,0 +1,48 @@
+name: 🙋 Become a maintainer
+description: Help review requests, handle reports and look after hosted sites.
+title: "Maintainer application: "
+labels: [application]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for wanting to help! Maintainers vote on applications and the owner decides, usually within a week.
+        If it's a yes you start as a **trainee** with a mentor: some actions need a second maintainer at first, and probation lasts 60 days.
+        Read [how maintaining works](https://github.com/So10-k/awesomeprojects.tech/blob/main/docs/MAINTAINERS.md) first.
+  - type: textarea
+    id: why
+    attributes:
+      label: Why do you want to help?
+    validations:
+      required: true
+  - type: textarea
+    id: experience
+    attributes:
+      label: What have you done that's like this?
+      description: Reviewing PRs, moderating a community, running DNS or hosting, open source work… Links welcome.
+    validations:
+      required: true
+  - type: checkboxes
+    id: areas
+    attributes:
+      label: Where would you like to start?
+      options:
+        - label: Reviewing name requests
+        - label: Reports and abuse
+        - label: Hosted sites
+        - label: Infrastructure (DNS, the bot)
+        - label: Docs and announcements
+  - type: input
+    id: time
+    attributes:
+      label: Your time zone and roughly how many hours a week
+      placeholder: UTC-5, about 3 hours a week
+    validations:
+      required: true
+  - type: checkboxes
+    id: agree
+    attributes:
+      label: Agreement
+      options:
+        - label: I'll follow the maintainer handbook, keep people's data private, and step back if I can't keep up.
+          required: true

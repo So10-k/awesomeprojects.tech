@@ -170,6 +170,54 @@ Owner-only: the roster (`/promote`, `/demote`, `/rank`, `/roleset`), `/config`, 
 
 If `maintainers.json` is ever invalid, the bot and the panel give maintainer powers to **the owner only** until it's fixed. They never fall back to more.
 
+## Joining
+
+1. Someone opens a **[🙋 Become a maintainer](../../../issues/new?template=maintainer-application.yml)** issue.
+2. The bot answers it and copies it to the queue for the owner.
+3. Maintainers vote there with `/vote yes|no [note]`.
+4. The owner says yes with `/promote @them [@mentor]` on the application.
+5. Then the bot:
+   - adds them to the roster as a **trainee** (`reviewer`), on 60-day probation
+   - emails a welcome, if they've turned email on
+   - opens an onboarding checklist in the queue for their mentor
+   - closes the application
+6. When probation ends, the owner and the mentor get a reminder: `/rank @them maintainer` when they're ready. Nothing changes on its own.
+
+**Going quiet.** No maintainer activity for 46 days brings a warning email. At 60 days the person is set to `away` (powers paused, duty grants ended, out of the rooms), and at 180 days to `emeritus`. Each change is a roster PR. Change the timers with `/config maintainerAwayDays <n>` and `/config maintainerEmeritusDays <n>` (0 turns them off). Set `"status": "active"` to bring someone back.
+
+## Duty
+
+| Command | |
+|---|---|
+| `/duty` | Who's on duty now, and next |
+| `/duty-take [hours]` | Go on duty now (8 hours by default, at most 24) |
+| `/duty-end` | End your shift |
+| `/duty-plan @a @b @c [weeks]` | **Leads:** weekly turns from next Monday 00:00 UTC. It replaces shifts that haven't started. |
+
+- **On duty**, you can elevate your duty account up to `write` by yourself, and new queue items come to you first.
+- **Off duty**, an elevation becomes a cosign that only a lead can confirm.
+- **With no rotation planned**, everyone counts as on duty (how it worked before).
+- **Emails:** each person gets one when their shift starts and one when it ends, with who's next.
+
+## The queue
+
+Every request, report, private request and application has a copy in `maintainers/queue` on our server, and each copy is a tracked item:
+
+- **Deadlines:** reports 12 hours, requests 48 hours, applications 7 days, failing deploys 3 days.
+- **Who gets it:** the bot assigns it right away, choosing whoever is on duty first, then someone with the right roleset (reviewer for requests, abuse for reports), then whoever has the fewest open items. Applications go to the owner.
+- **On the copy:** `/claim`, `/assign @user`, `/unassign` (hands it to the next person), `/triage <note>`. Any other command still runs against the original.
+- **Every hour:**
+  - Decided items close their copy.
+  - Overdue items get the `overdue` label and one email a day to whoever has them (or to whoever is on duty).
+
+## Email
+
+Email is opt-in. In [My domains](https://awesomeprojects.tech/me/), **Email me** signs you in to GitHub once more with permission to read your email addresses. We keep only your primary verified address, and GitHub's token is dropped. Turn it off there at any time.
+
+Maintainers get duty handoffs, assignments, overdue nudges, probation and onboarding mail. Messages wait in an outbox until there's an address to send to, and anything nobody can receive is dropped after two weeks.
+
+The bot sends through our mail server: secrets `SMTP_USER` and `SMTP_PASS`, plus optional repo variables `SMTP_HOST` (default `mail.ottens.org`) and `SMTP_FROM`. It refuses to log in unless the server offers STARTTLS.
+
 ## Maintainer rooms
 
 Two private organizations on our server, `maintainers` and `on-duty` (`config.json → ghes`). `/org-setup` (or any `/promote` / `/demote`) builds and re-checks them, and its last lines are an audit: owners, members, default access and whether Actions is off.

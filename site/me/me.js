@@ -15,6 +15,7 @@ const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k 
 let D = null; // ../data.json
 let snapshot = { sites: [] }; // the bot's latest look at hosted sites
 let ident = { enabled: false, identity: null }; // the managed enterprise account
+let contact = { email: null, turnOn: '' }; // email notifications (opt-in)
 let me = null;
 let requests = [];
 let pick = { kind: 'name', id: null }; // name | req | new
@@ -106,6 +107,20 @@ function identityBox() {
         : h('p', { textContent: 'This account is suspended. Contact a maintainer.' }));
   }
   return h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Enterprise account' })), body);
+}
+
+// ── Email (opt-in) ─────────────────────────────────────────────
+function emailBox() {
+  const body = h('div', { className: 'body' });
+  if (contact.email) {
+    const off = h('button', { className: 'btn', type: 'button', textContent: 'Turn email off' });
+    off.addEventListener('click', async () => { contact = await Panel.contactOff().catch(() => contact); toast('Email is off', 'We won\'t email you any more.'); render(); });
+    body.append(h('p', {}, 'We email ', h('b', { textContent: contact.email }), ' about your names (renewals, a failing deploy) and, for maintainers, duty and the queue.'), off);
+  } else {
+    const on = h('a', { className: 'btn primary', href: contact.turnOn || '#', textContent: 'Email me' });
+    body.append(h('p', { textContent: 'Get an email when a name needs renewing or a deploy fails (and, for maintainers, duty and queue mail). You sign in to GitHub once more so we can read your verified address. We keep only that address.' }), on);
+  }
+  return h('section', { className: 'card-box' }, h('header', {}, h('h2', { textContent: 'Email' })), body);
 }
 
 function renderSide() {
@@ -239,6 +254,7 @@ function renderName(n) {
 
   fill(pane,
     identityBox(),
+    emailBox(),
     h('div', { className: 'pane-head' },
       h('div', {}, h('h1', {}, h('a', { href: `https://${host}`, target: '_blank', rel: 'noopener', textContent: host })), facts),
       check),
@@ -455,7 +471,7 @@ function render() {
   if (pick.kind === 'req') return renderRequest(pick.id);
   const n = myTop().find((x) => x.name === pick.id) || myTop()[0];
   if (!n) {
-    fill($('#pane'), identityBox(), h('div', { className: 'empty-state' }, h('p', { textContent: 'You don\'t have a name yet.' }), h('button', { className: 'btn primary', type: 'button', textContent: 'Get one', onclick: () => { pick = { kind: 'new' }; render(); } })));
+    fill($('#pane'), identityBox(), emailBox(), h('div', { className: 'empty-state' }, h('p', { textContent: 'You don\'t have a name yet.' }), h('button', { className: 'btn primary', type: 'button', textContent: 'Get one', onclick: () => { pick = { kind: 'new' }; render(); } })));
     return;
   }
   pick = { kind: 'name', id: n.name };
@@ -494,6 +510,9 @@ fetch('../data.json', { cache: 'no-cache' }).then((r) => r.json()).then(async (d
       await loadRequests();
       snapshot = await Panel.sites().catch(() => ({ sites: [] }));
       ident = await Panel.identity().catch(() => ident);
+      contact = await Panel.contact().catch(() => contact);
+      if (Panel.emailResult === 'saved') toast('Email is on', `We'll email ${contact.email || 'you'}.`);
+      if (Panel.emailResult === 'none') toast('No address found', 'GitHub has no verified email for your account. Add one in GitHub settings, then try again.', 'err');
       if (D.announcement) document.body.prepend(h('div', { className: 'announce', role: 'status' }, '📣 ', D.announcement));
       if (new URLSearchParams(location.search).get('new') !== null || new URLSearchParams(location.search).get('name')) pick = { kind: 'new' };
       return render();
