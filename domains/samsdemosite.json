@@ -1,0 +1,16 @@
+{
+  "owner": {
+    "github": "So10-k"
+  },
+  "description": "uh not sure",
+  "records": {
+    "CNAME": "ap-samsdemosite.pages.dev"
+  },
+  "site": {
+    "provider": "hosted",
+    "platform": "cloudflare",
+    "repo": "sites/samsdemosite",
+    "status": "active",
+    "template": "html"
+  }
+}
