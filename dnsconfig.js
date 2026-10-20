@@ -11,12 +11,14 @@ var reserved = require("./reserved.json");
 // The website (this repo's GitHub Pages) lives at the root, and www redirects to it.
 var GITHUB_PAGES_A = ["185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153"];
 var GITHUB_PAGES_AAAA = ["2606:50c0:8000::153", "2606:50c0:8001::153", "2606:50c0:8002::153", "2606:50c0:8003::153"];
-var MANAGED_RESERVED = { www: true };
+var MANAGED_RESERVED = { www: true, admin: true };
 
 var records = [
   // Root: only the website's A/AAAA are managed here; mail, TXT etc. on the root stay hand-managed.
   IGNORE("@", "MX,TXT,CAA,SRV,NS"),
   CNAME("www", "so10-k.github.io.", CF_PROXY_OFF),
+  // The maintainers' console (Cloudflare Pages project ap-admin, deployed by .github/workflows/dashboard.yml).
+  CNAME("admin", "ap-admin.pages.dev.", CF_PROXY_ON),
 ];
 for (var g = 0; g < GITHUB_PAGES_A.length; g++) records.push(A("@", GITHUB_PAGES_A[g], CF_PROXY_OFF));
 for (var h = 0; h < GITHUB_PAGES_AAAA.length; h++) records.push(AAAA("@", GITHUB_PAGES_AAAA[h], CF_PROXY_OFF));
