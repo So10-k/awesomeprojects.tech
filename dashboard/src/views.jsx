@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import { call, ago, when, SITE } from './api.js';
-import { Act, Empty, Fail, Head, Mono, Pill, Skeleton, User, useCap, useLoad, useSession } from './ui.jsx';
+import { Act, Empty, Fail, Head, Mono, Pill, Skeleton, User, useCap, useLoad, useSession, useToast } from './ui.jsx';
+import { Lookup, Notes } from './ops.jsx';
 
 const lc = (s) => String(s || '').toLowerCase();
 const KIND = { request: 'Request', 'private-request': 'Private request', report: 'Report', application: 'Application', deploy: 'Failing deploy' };
@@ -105,7 +106,7 @@ export function Queue({ params }) {
       {q.error ? <Fail error={q.error} reload={q.reload} /> : !q.data ? <Skeleton rows={6} /> : shown.length === 0
         ? <Empty title={f === 'overdue' ? 'Nothing overdue' : f === 'mine' ? 'Nothing assigned to you' : 'The queue is clear'}>Requests, reports and applications show up here as soon as they’re filed, with a deadline and someone assigned.</Empty>
         : (
-          <table class="t">
+          <div class="scroll-x"><table class="t">
             <thead><tr><th>Item</th><th>Kind</th><th>State</th><th>Assignee</th><th>Due</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
             <tbody>{shown.map((i) => (
               <tr key={i.id} class={i.overdue ? 'is-late' : ''}>
@@ -124,7 +125,7 @@ export function Queue({ params }) {
                 )}</td>
               </tr>
             ))}</tbody>
-          </table>
+          </table></div>
         )}
     </div>
   );
@@ -226,6 +227,8 @@ function PrivRow({ r, reload }) {
 // ── Names ──────────────────────────────────────────────────────
 export function Names({ params }) {
   const { zone } = useSession();
+  const life = useLoad(() => call('/v2/lifecycle'));
+  const terms = useMemo(() => Object.fromEntries(((life.data && life.data.rows) || []).map((r) => [r.name, r])), [life.data]);
   const [q, setQ] = useState(params.get('q') || '');
   const names = useMemo(() => ((zone && zone.names) || []).filter((n) => !n.name.includes('.')).sort((a, b) => a.name.localeCompare(b.name)), [zone]);
   const needle = lc(q.trim());
@@ -236,24 +239,78 @@ export function Names({ params }) {
         <input class="input search" type="search" placeholder="Filter names, owners, targets" value={q} onInput={(e) => setQ(e.currentTarget.value)} data-autofocus aria-label="Filter names" />
       </Head>
       {!zone ? <Skeleton rows={8} /> : shown.length === 0 ? <Empty title="No name matches">It might be free: check it on the website.</Empty> : (
-        <table class="t">
-          <thead><tr><th>Name</th><th>Points to</th><th>Owner</th><th>Site</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
+        <div class="scroll-x"><table class="t">
+          <thead><tr><th>Name</th><th>Points to</th><th>Owner</th><th>Site</th><th>Renews</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
           <tbody>{shown.map((n) => (
             <tr key={n.name}>
-              <td><a href={`${SITE}/n/${n.name}/`} target="_blank" rel="noopener"><Mono>{n.name}</Mono></a>{n.description && <div class="sub dim">{n.description}</div>}</td>
-              <td class="dim"><Mono>{n.type} {String(n.target).replace(/\.$/, '')}</Mono></td>
+              <td><a href={`${SITE}/n/${n.name}/`} target="_blank" rel="noopener"><Mono>{n.name}</Mono></a>{n.description && <div class="sub dim clip-2" title={n.description}>{n.description}</div>}</td>
+              <td class="dim"><span class="clip" title={`${n.type} ${n.target}`}><Mono>{n.type} {String(n.target).replace(/\.$/, '')}</Mono></span></td>
               <td><User login={n.owner} /></td>
               <td>{n.status ? <Pill kind={n.status === 'active' ? 'ok' : n.status === 'locked' ? 'warn' : 'bad'}>{n.status}</Pill> : <span class="dim">{n.host}</span>}</td>
+              <td class="nowrap"><Term t={terms[n.name]} hold={n.hold} /></td>
               <td class="w-actions"><div class="row-actions">
+                {terms[n.name] && <Renew name={n.name} onDone={life.reload} />}
                 {n.status && <Act cap="site.sync" action="redeploy" args={{ name: n.name }} kind="quiet">Redeploy</Act>}
                 {n.status && <SiteStatus name={n.name} status={n.status} />}
                 <Act cap="abuse.takedown" action="takedown" args={() => { const r = window.prompt(`Take down ${n.name}? Reason (public):`); return r === null ? null : { name: n.name, reason: r }; }} kind="danger">Take down</Act>
               </div></td>
             </tr>
           ))}</tbody>
-        </table>
+        </table></div>
       )}
+      <CreateName />
     </div>
+  );
+}
+
+function Term({ t, hold }) {
+  if (hold || (t && t.state === 'hold')) return <Pill kind="bad">on hold</Pill>;
+  if (!t) return <span class="dim">—</span>;
+  const days = Math.ceil((Number(t.expires_at) - Date.now()) / 86400e3);
+  return <span class={days <= 30 ? 'warn-text' : 'dim'} title={`Term started ${when(t.term_start)}`}>{new Date(Number(t.expires_at)).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}{days <= 30 ? ` (${days} d)` : ''}</span>;
+}
+
+/** Renew a name for its owner (maintainers can; the owner does it in My domains). */
+function Renew({ name, onDone }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await call('/api/renew', { method: 'POST', body: { name } });
+      toast({ kind: 'ok', title: `Renewed ${name}`, body: `Good until ${new Date(r.expiresAt).toLocaleDateString()}.${r.wasOnHold ? ' The hold comes off in about a minute.' : ''}` });
+      onDone();
+    } catch (e) { toast({ kind: 'err', title: 'Couldn’t renew', body: e.message }); } finally { setBusy(false); }
+  };
+  return <button class="btn quiet" type="button" disabled={busy} onClick={go}>Renew</button>;
+}
+
+const HOSTS = [['cname', 'Any host (CNAME)'], ['server', 'A server (IP)'], ['github-pages', 'GitHub Pages'], ['vercel', 'Vercel'], ['netlify', 'Netlify'], ['cloudflare-pages', 'Cloudflare Pages'], ['render', 'Render'], ['railway', 'Railway'], ['fly', 'Fly.io'], ['hosted', 'Hosted by us']];
+/** Make a name for someone: the same checks as a request (force skips the ones that can be skipped). */
+export function CreateName() {
+  const v = useCap('name.create');
+  const [f, setF] = useState({ name: '', owner: '', provider: 'cname', target: '', repo: '', description: '', force: false });
+  if (v === 'deny') return null;
+  const set = (k) => (e) => setF({ ...f, [k]: e.currentTarget.type === 'checkbox' ? e.currentTarget.checked : e.currentTarget.value });
+  const needsRepo = ['github-pages', 'vercel', 'netlify', 'cloudflare-pages'].includes(f.provider);
+  const needsTarget = !needsRepo && f.provider !== 'hosted';
+  const ready = f.name.trim() && f.owner.trim() && (!needsTarget || f.target.trim());
+  return (
+    <section class="panel">
+      <Head title="Make a name for someone" />
+      <form class="create" onSubmit={(e) => e.preventDefault()}>
+        <label>Name<input class="input" value={f.name} onInput={set('name')} placeholder="alice" /></label>
+        <label>Owner<input class="input" value={f.owner} onInput={set('owner')} placeholder="@alice" /></label>
+        <label>Where it points<select value={f.provider} onChange={set('provider')}>{HOSTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+        {needsTarget && <label>{f.provider === 'server' ? 'IP address' : 'Target'}<input class="input" value={f.target} onInput={set('target')} placeholder={f.provider === 'server' ? '203.0.113.7' : 'alice.example.com'} /></label>}
+        {(needsRepo || f.provider === 'hosted') && <label>Repository<input class="input" value={f.repo} onInput={set('repo')} placeholder={f.provider === 'hosted' ? 'optional: a template or repo to start from' : 'alice/portfolio'} /></label>}
+        <label class="wide">Description<input class="input" value={f.description} onInput={set('description')} placeholder="What it is" /></label>
+        <label class="check"><input type="checkbox" checked={f.force} onChange={set('force')} /> Force past the checks that can be skipped</label>
+        <Act cap="name.create" action="create" kind="primary" disabled={!ready}
+          args={() => ({ name: f.name.trim(), owner: f.owner.trim().replace(/^@/, ''), provider: f.provider, target: f.target.trim(), repo: f.repo.trim(), description: f.description.trim(), force: f.force })}
+          onDone={(job) => { if (job.ok !== false) setF({ name: '', owner: '', provider: 'cname', target: '', repo: '', description: '', force: false }); }}>Create</Act>
+      </form>
+    </section>
   );
 }
 
@@ -279,6 +336,9 @@ export function People() {
   const { me } = useSession();
   const manage = useCap('roster.manage') === 'allow';
   const [add, setAdd] = useState('');
+  const [open, setOpen] = useState('');
+  const counts = useLoad(() => call('/v2/notes'));
+  const noteCount = Object.fromEntries(((counts.data && counts.data.people) || []).map((x) => [x.subject, x.n]));
   const sets = Object.keys((me && me.rolesets) || {});
   return (
     <div class="view">
@@ -289,9 +349,9 @@ export function People() {
         </form>}
       </Head>
       {r.error ? <Fail error={r.error} reload={r.reload} /> : !r.data ? <Skeleton rows={4} /> : (
-        <table class="t">
-          <thead><tr><th>Person</th><th>Rank</th><th>Rolesets</th><th>Accounts</th><th>Status</th>{manage && <th class="w-actions"><span class="visually-hidden">Actions</span></th>}</tr></thead>
-          <tbody>{r.data.people.map((p) => (
+        <div class="scroll-x"><table class="t">
+          <thead><tr><th>Person</th><th>Rank</th><th>Rolesets</th><th>Accounts</th><th>Status</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
+          <tbody>{r.data.people.flatMap((p) => [
             <tr key={p.github}>
               <td class="person-cell"><img src={`https://github.com/${p.github}.png?size=48`} alt="" width="24" height="24" /><User login={p.github} />{p.onDuty && <span class="dot live" title="On duty" />}</td>
               <td>{manage && p.rank !== 'owner'
@@ -305,11 +365,16 @@ export function People() {
               })}</div>}</td>
               <td class="dim"><Mono>{p.accounts && p.accounts.everyday ? p.accounts.everyday : '—'}</Mono>{p.accounts && p.accounts.duty && <div class="sub"><Mono>{p.accounts.duty}</Mono></div>}</td>
               <td>{p.status === 'active' ? <Pill kind="ok">active</Pill> : <Pill kind="warn">{p.status}</Pill>}</td>
-              {manage && <td class="w-actions">{p.rank !== 'owner' && <Act cap="roster.manage" action="demote" args={{ user: p.github }} kind="danger" confirm={`Remove @${p.github} from the roster? Their rooms access and duty grants end.`} onDone={r.reload}>Remove</Act>}</td>}
-            </tr>
-          ))}</tbody>
-        </table>
+              <td class="w-actions"><div class="row-actions">
+                <button class="btn quiet" type="button" aria-expanded={open === p.github} onClick={() => setOpen(open === p.github ? '' : p.github)}>Notes{noteCount[lc(p.github)] ? ` · ${noteCount[lc(p.github)]}` : ''}</button>
+                {manage && p.rank !== 'owner' && <Act cap="roster.manage" action="demote" args={{ user: p.github }} kind="danger" confirm={`Remove @${p.github} from the roster? Their rooms access and duty grants end.`} onDone={r.reload}>Remove</Act>}
+              </div></td>
+            </tr>,
+            open === p.github && <tr key={`${p.github}-notes`} class="drawer"><td colSpan={6}><Notes login={p.github} /></td></tr>,
+          ])}</tbody>
+        </table></div>
       )}
+      <Lookup />
     </div>
   );
 }
