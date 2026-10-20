@@ -1,0 +1,13 @@
+{
+  "owner": {
+    "github": "skykoderhere"
+  },
+  "description": "my projects landing page",
+  "records": {
+    "CNAME": "pawjects.github.io"
+  },
+  "site": {
+    "provider": "github-pages",
+    "repo": "pawjects/pawjects.github.io"
+  }
+}
