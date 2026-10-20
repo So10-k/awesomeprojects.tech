@@ -24,6 +24,16 @@
         "docs"
       ],
       "status": "active"
+    },
+    {
+      "github": "samo-tf",
+      "rank": "trainee",
+      "rolesets": [
+        "reviewer"
+      ],
+      "status": "active",
+      "since": "2026-10-20",
+      "probationUntil": "2026-12-19"
     }
   ]
 }
