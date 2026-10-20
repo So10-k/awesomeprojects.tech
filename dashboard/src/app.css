@@ -41,14 +41,15 @@ h1, h2, h3 { font-family: var(--sans); letter-spacing: -0.01em; }
 .banner { display: inline-flex; align-items: center; gap: var(--s2); color: var(--ink-2); font-size: var(--t-sm); margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .menu { display: none; }
 main { outline: none; }
-.view { padding: var(--s5) var(--s6) var(--s8); display: grid; gap: var(--s5); max-width: 1400px; }
+.view { padding: var(--s5) var(--s6) var(--s8); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); max-width: 1400px; }
+.scroll-x { overflow-x: auto; min-width: 0; }
 
 /* ── Building blocks ────────────────────────────────────────── */
 .head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
 .head h2 { font-size: var(--t-body); font-weight: 650; display: flex; align-items: center; gap: var(--s2); }
 .head-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .count { display: inline-block; min-width: 1.6em; padding: 0 6px; border-radius: var(--r-pill); background: var(--bg-high); color: var(--ink-2); font: 600 var(--t-xs) / 1.6 var(--sans); text-align: center; font-variant-numeric: tabular-nums; }
-.panel { display: grid; gap: var(--s3); padding: var(--s4); border: 1px solid var(--line); border-radius: var(--r-panel); background: oklch(0.13 0 0); min-width: 0; overflow-x: auto; }
+.panel { display: grid; align-content: start; gap: var(--s3); padding: var(--s4); border: 1px solid var(--line); border-radius: var(--r-panel); background: oklch(0.13 0 0); min-width: 0; overflow-x: auto; }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--s5); }
 .hello h1 { font: 700 var(--t-xl) / 1.2 var(--display); letter-spacing: -0.02em; }
 .hello p { margin: 4px 0 0; }
@@ -170,6 +171,31 @@ select:focus-visible, .input:focus-visible { outline: 2px solid var(--signal); o
 .signin-card p { margin: 0; }
 
 /* Small screens: the sidebar slides over */
+/* ─── Abuse, Sites, Infra, notes, create ─── */
+.tile b.small { font-size: var(--t-lg); }
+.health { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3); }
+.health-cell { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: var(--s2); align-items: center; padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r-panel); }
+.health-cell .dot { grid-row: span 2; }
+.health-cell.down { border-color: oklch(0.7 0.19 355 / 0.5); background: oklch(0.7 0.19 355 / 0.06); }
+.health-cell .dim { font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.dot.bad { background: var(--bad); }
+.dot.ok { background: var(--ok); }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s2) var(--s4); margin: 0; font-size: var(--t-sm); }
+.kv dt { color: var(--ink-3); }
+.kv dd { margin: 0; min-width: 0; }
+.notes { display: grid; gap: var(--s3); padding: var(--s2) 0; }
+.notes .list li { align-items: baseline; }
+.input.grow { flex: 1 1 22rem; }
+tr.drawer > td { background: oklch(0.13 0 0); }
+.lookup { display: grid; gap: var(--s2); }
+.lookup img { border-radius: 50%; vertical-align: middle; }
+.create { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s3); align-items: end; }
+.create label:not(.check) { display: grid; gap: var(--s1, 4px); font-size: var(--t-xs); color: var(--ink-3); }
+.create label.wide { grid-column: 1 / -1; }
+.create .input, .create select { width: 100%; }
+
+.clip { display: block; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip-2 { max-width: 34ch; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 @media (max-width: 860px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .side { position: fixed; z-index: var(--z-overlay); inset: 0 auto 0 0; width: 260px; transform: translateX(-100%); transition: transform 220ms var(--ease); }

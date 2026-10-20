@@ -7,15 +7,19 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { call, signIn, signOut, signedIn, zone as loadZone, SITE } from './api.js';
 import { Session, ToastHost, useSession } from './ui.jsx';
 import { Access, Audit, Duty, Names, Overview, People, Queue, Requests, Settings, setServerHost } from './views.jsx';
+import { Abuse, Infra, Sites } from './ops.jsx';
 
 const VIEWS = [
   { id: 'overview', label: 'Overview', key: 'o', view: Overview },
   { id: 'queue', label: 'Queue', key: 'q', view: Queue },
   { id: 'requests', label: 'Requests', key: 'r', view: Requests },
+  { id: 'abuse', label: 'Abuse', key: 'b', view: Abuse },
   { id: 'names', label: 'Names', key: 'n', view: Names },
+  { id: 'sites', label: 'Sites', key: 'h', view: Sites },
   { id: 'people', label: 'People', key: 'p', view: People },
   { id: 'duty', label: 'Duty', key: 'd', view: Duty },
   { id: 'access', label: 'Access & cosigns', key: 'a', view: Access },
+  { id: 'infra', label: 'Infra', key: 'i', view: Infra },
   { id: 'audit', label: 'Audit', key: 'l', view: Audit },
   { id: 'settings', label: 'Settings', key: 's', view: Settings },
 ];

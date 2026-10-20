@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "What to run: pr <number> | issue <number> | health | bot-check | ops"
+        description: "What to run: pr <number> | issue <number> | health | bot-check | ops | infra | digest"
         required: true
         default: health
 

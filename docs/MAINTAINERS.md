@@ -177,16 +177,23 @@ If `maintainers.json` is ever invalid, the bot and the panel give maintainer pow
 - **Overview:** what's assigned to you, what's overdue, cosigns waiting for you, who's on duty, and recent activity.
 - **Queue:** claim, assign, hand back, and vote on applications.
 - **Requests:** approve, hold or reject public and private requests, and take down or dismiss reports.
-- **Names:** redeploy, change a hosted site's status, or take a name down.
-- **People:** ranks, rolesets, adding and removing people (owner).
+- **Abuse:** open reports and the certificate watch, take a name down, ban or unban someone, and set one person's name limit.
+- **Names:** when each name renews (renew it for its owner), redeploy, change a hosted site's status, take a name down, and **make a name for someone**.
+- **Sites:** every hosted site's status, last deploy, size and last push; redeploy or re-sync one.
+- **People:** ranks, rolesets, adding and removing people (owner), and **private notes** about anyone (only maintainers see them, and they can't be edited or deleted: add a new one instead).
 - **Duty:** a two-week view, going on duty, and planning a rotation (leads).
 - **Access & cosigns:** confirm cosigns, elevate your duty account, and see or end grants.
+- **Infra:** whether the website, API, RDAP, WHOIS, the console and our GitHub server answer, the last run of each workflow, the platform version, email and the certificate watch. The bot refreshes it hourly.
 - **Audit:** every event.
 - **Settings:** bot settings (owner), plus one-click runs.
 
 Every button follows your rank and rolesets. If you can't do something, it isn't there. If it needs a second maintainer, it says **cosign**. The panel and the bot check everything again anyway. Keyboard: **⌘K** for anything, `g` then a letter to switch views (`g q` is the queue), and `/` to filter.
 
-The old console at [awesomeprojects.tech/admin](https://awesomeprojects.tech/admin/) stays for now, for creating names, bans, limits and request notes.
+**Every Monday** the bot emails each maintainer who turned email on a short digest: the queue, open reports, last week's names, renewals coming up, and their duty.
+
+**The platform's code** is mirrored hourly, read-only, to `maintainers/platform` on our GitHub server. Change it on ghe.com.
+
+The old console at [awesomeprojects.tech/admin](https://awesomeprojects.tech/admin/) still works, but everything it did is in the new one now.
 
 ## Joining
 
