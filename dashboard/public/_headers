@@ -1,0 +1,6 @@
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://github.com https://avatars.githubusercontent.com data:; font-src 'self'; connect-src 'self' https://api.awesomeprojects.tech https://awesomeprojects.tech; frame-ancestors 'none'; base-uri 'none'; form-action 'none'

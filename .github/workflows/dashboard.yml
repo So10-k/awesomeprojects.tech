@@ -1,0 +1,55 @@
+name: Console
+
+# The admin dashboard (dashboard/, Vite + Preact) on Cloudflare Pages at admin.awesomeprojects.tech.
+# It's a static app: everything it shows comes from the panel server, which checks every permission.
+on:
+  push:
+    branches: [main]
+    paths: ["dashboard/**", "brand/**", ".github/workflows/dashboard.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT: ap-admin
+      DOMAIN: admin.awesomeprojects.tech
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build
+        working-directory: dashboard
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Make sure the Pages project exists
+        run: |
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/$PROJECT")
+          if [ "$code" = 404 ]; then
+            curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+              --data "{\"name\":\"$PROJECT\",\"production_branch\":\"main\"}" "$api" >/dev/null && echo "created $PROJECT"
+          else
+            echo "$PROJECT exists ($code)"
+          fi
+      - name: Deploy
+        run: npx -y wrangler@4 pages deploy dashboard/dist --project-name "$PROJECT" --branch main --commit-dirty=true
+      - name: Attach admin.awesomeprojects.tech
+        run: |
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT/domains"
+          if curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api" | grep -q "\"name\":\"$DOMAIN\""; then
+            echo "$DOMAIN already attached"
+          else
+            curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data "{\"name\":\"$DOMAIN\"}" "$api" >/dev/null && echo "attached $DOMAIN"
+          fi
