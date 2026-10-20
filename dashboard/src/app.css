@@ -69,6 +69,8 @@ main { outline: none; }
 .t { width: 100%; border-collapse: collapse; }
 .t th { position: sticky; top: 52px; z-index: 1; background: var(--bg); text-align: left; font: 600 var(--t-xs) / 1 var(--sans); color: var(--ink-3); padding: var(--s3) var(--s3) var(--s2); border-bottom: 1px solid var(--line); white-space: nowrap; }
 .panel .t th { position: static; background: none; }
+/* Inside a scroll box, sticky would measure top: 52px from the box and cover the first row. */
+.scroll-x .t th { position: static; }
 .t td { padding: 9px var(--s3); border-bottom: 1px solid var(--line); vertical-align: middle; }
 .t tbody tr:last-child td { border-bottom: 0; }
 .t tbody tr { transition: background 120ms var(--ease); }
