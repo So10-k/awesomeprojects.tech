@@ -1,7 +1,7 @@
 // Abuse, Sites and Infra: the console's operational views.
 import { useState } from 'preact/hooks';
 import { call, ago, when, SITE } from './api.js';
-import { Act, Empty, Fail, Head, Mono, Pill, Skeleton, User, useCap, useLoad, useSession } from './ui.jsx';
+import { Act, Empty, Fail, Head, Mono, NameLink, Pill, Progress, QueueLink, Skeleton, User, useCap, useLoad, useSession } from './ui.jsx';
 
 const lc = (s) => String(s || '').toLowerCase();
 const ask = (q, fallback = '') => { const r = window.prompt(q, fallback); return r === null ? null : r; };
@@ -38,7 +38,7 @@ export function Abuse() {
               <thead><tr><th>Report</th><th>Assignee</th><th>Due</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
               <tbody>{reports.map((i) => (
                 <tr key={i.id} class={i.overdue ? 'is-late' : ''}>
-                  <td><a href={i.url} target="_blank" rel="noopener">{i.title}</a></td>
+                  <td><QueueLink q={i} /> <Progress p={i.progress} /></td>
                   <td><User login={i.assignee} /></td>
                   <td class={`nowrap ${i.overdue ? 'bad-text' : 'dim'}`}>{i.overdue ? `▲ ${ago(i.due_at)}` : ago(i.due_at)}</td>
                   <td class="w-actions">{i.copy && <Act cap="queue.work" action="queue" args={{ verb: 'claim', copy: i.copy }} onDone={q.reload}>Claim</Act>}</td>
@@ -110,7 +110,7 @@ export function Sites() {
             const d = x.deploy && (DEPLOY[x.deploy.conclusion] || ['', x.deploy.conclusion]);
             return (
               <tr key={x.name} class={x.deploy && x.deploy.conclusion === 'failure' ? 'is-late' : ''}>
-                <td><a href={`https://${x.name}.awesomeprojects.tech`} target="_blank" rel="noopener"><Mono>{x.name}</Mono></a><div class="sub dim"><Mono>{x.repo}</Mono></div>{x.error && <div class="sub bad-text">{x.error}</div>}</td>
+                <td><NameLink name={x.name} /><div class="sub dim"><Mono>{x.repo}</Mono></div>{x.error && <div class="sub bad-text">{x.error}</div>}</td>
                 <td><User login={x.owner} />{(x.collaborators || []).length > 1 && <div class="sub dim">+{x.collaborators.length - 1} collaborator{x.collaborators.length === 2 ? '' : 's'}</div>}</td>
                 <td><Pill kind={x.status === 'active' ? 'ok' : x.status === 'locked' ? 'warn' : 'bad'}>{x.status}</Pill>{x.https === false && <div class="sub warn-text nowrap">no HTTPS yet</div>}</td>
                 <td>{d ? <a href={x.deploy.url} target="_blank" rel="noopener"><Pill kind={d[0]}>{d[1]}</Pill></a> : <span class="dim">—</span>}{x.deploy && <div class="sub dim">{ago(Date.parse(x.deploy.at))}</div>}</td>
@@ -247,7 +247,7 @@ export function Lookup() {
       </form>
       {open && (
         <div class="lookup">
-          <p><img src={`https://github.com/${open}.png?size=48`} alt="" width="24" height="24" /> <User login={open} /> · <a href={`https://github.com/So10-k/awesomeprojects.tech/issues?q=involves%3A${encodeURIComponent(open)}`} target="_blank" rel="noopener">their issues and PRs</a></p>
+          <p><img src={`https://github.com/${open}.png?size=48`} alt="" width="24" height="24" /> <User login={open} /> · <a href={`#/u/${encodeURIComponent(open)}`}>open their page →</a></p>
           <Notes login={open} />
         </div>
       )}

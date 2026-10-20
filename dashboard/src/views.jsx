@@ -2,6 +2,7 @@ import { useMemo, useState } from 'preact/hooks';
 import { call, ago, when, SITE } from './api.js';
 import { Act, Empty, Fail, Head, Mono, Pill, Skeleton, User, useCap, useLoad, useSession, useToast } from './ui.jsx';
 import { Lookup, Notes } from './ops.jsx';
+import { IssueLink, NameLink, Progress, QueueLink } from './ui.jsx';
 
 const lc = (s) => String(s || '').toLowerCase();
 const KIND = { request: 'Request', 'private-request': 'Private request', report: 'Report', application: 'Application', deploy: 'Failing deploy' };
@@ -57,7 +58,7 @@ export function Overview() {
           <Head title="Your queue" count={mine.length}><a class="btn quiet" href="#/queue">All →</a></Head>
           {q.error ? <Fail error={q.error} reload={q.reload} /> : !q.data ? <Skeleton rows={3} /> : mine.length === 0
             ? <p class="dim">Nothing assigned to you. New items go to whoever is on duty first.</p>
-            : <ul class="list">{mine.slice(0, 6).map((i) => <li key={i.id}><Pill kind={i.overdue ? 'bad' : ''}>{KIND[i.kind] || i.kind}</Pill> <a href={copyUrl(me, i.copy) || i.url} target="_blank" rel="noopener">{i.title}</a> <span class="dim">due {ago(i.due_at)}</span></li>)}</ul>}
+            : <ul class="list">{mine.slice(0, 6).map((i) => <li key={i.id}><Pill kind={i.overdue ? 'bad' : ''}>{KIND[i.kind] || i.kind}</Pill> <QueueLink q={i} /> <Progress p={i.progress} /> <span class="dim">due {ago(i.due_at)}</span></li>)}</ul>}
         </section>
       </div>
       <section class="panel">
@@ -107,11 +108,12 @@ export function Queue({ params }) {
         ? <Empty title={f === 'overdue' ? 'Nothing overdue' : f === 'mine' ? 'Nothing assigned to you' : 'The queue is clear'}>Requests, reports and applications show up here as soon as they’re filed, with a deadline and someone assigned.</Empty>
         : (
           <div class="scroll-x"><table class="t">
-            <thead><tr><th>Item</th><th>Kind</th><th>State</th><th>Assignee</th><th>Due</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
+            <thead><tr><th>Item</th><th>Kind</th><th>Progress</th><th>State</th><th>Assignee</th><th>Due</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
             <tbody>{shown.map((i) => (
               <tr key={i.id} class={i.overdue ? 'is-late' : ''}>
-                <td><a href={copyUrl(me, i.copy) || i.url} target="_blank" rel="noopener">{i.title}</a>{i.note && <div class="sub dim">📝 {i.note}</div>}</td>
+                <td><QueueLink q={i} />{i.copy && <a class="sub-link dim" href={copyUrl(me, i.copy)} target="_blank" rel="noopener" title="The copy on our server">↗</a>}{i.note && <div class="sub dim">📝 {i.note}</div>}</td>
                 <td><Pill>{KIND[i.kind] || i.kind}</Pill></td>
+                <td class="nowrap"><Progress p={i.progress} />{i.progress && i.progress.next && <div class="sub dim">next: {i.progress.next.label.toLowerCase()}</div>}</td>
                 <td><Pill kind={(STATE_PILL[i.state] || [''])[0]}>{(STATE_PILL[i.state] || ['', i.state])[1]}</Pill></td>
                 <td><User login={i.assignee} /></td>
                 <td class={`nowrap ${i.overdue ? 'bad-text' : 'dim'}`}>{i.state === 'decided' ? ago(i.decided_at) : i.overdue ? `▲ ${ago(i.due_at)}` : ago(i.due_at)}</td>
@@ -167,7 +169,7 @@ export function Requests() {
               return (
                 <tr key={i.number}>
                   <td class="dim"><Mono>{i.number}</Mono></td>
-                  <td><a href={i.html_url} target="_blank" rel="noopener">{i.title}</a>{i.pull_request && <span class="dim"> · PR</span>}</td>
+                  <td><IssueLink number={i.number}>{i.title}</IssueLink>{i.pull_request && <span class="dim"> · PR</span>}</td>
                   <td><User login={i.user.login} /></td>
                   <td>{report ? <Pill kind="bad">report</Pill> : l ? <Pill kind={LP[l]}>{l}</Pill> : <Pill>checking</Pill>}</td>
                   <td class="dim nowrap">{ago(Date.parse(i.created_at))}</td>
@@ -243,7 +245,7 @@ export function Names({ params }) {
           <thead><tr><th>Name</th><th>Points to</th><th>Owner</th><th>Site</th><th>Renews</th><th class="w-actions"><span class="visually-hidden">Actions</span></th></tr></thead>
           <tbody>{shown.map((n) => (
             <tr key={n.name}>
-              <td><a href={`${SITE}/n/${n.name}/`} target="_blank" rel="noopener"><Mono>{n.name}</Mono></a>{n.description && <div class="sub dim clip-2" title={n.description}>{n.description}</div>}</td>
+              <td><NameLink name={n.name} />{n.description && <div class="sub dim clip-2" title={n.description}>{n.description}</div>}</td>
               <td class="dim"><span class="clip" title={`${n.type} ${n.target}`}><Mono>{n.type} {String(n.target).replace(/\.$/, '')}</Mono></span></td>
               <td><User login={n.owner} /></td>
               <td>{n.status ? <Pill kind={n.status === 'active' ? 'ok' : n.status === 'locked' ? 'warn' : 'bad'}>{n.status}</Pill> : <span class="dim">{n.host}</span>}</td>

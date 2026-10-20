@@ -5,7 +5,9 @@ import './app.css';
 import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { call, signIn, signOut, signedIn, zone as loadZone, SITE } from './api.js';
-import { Session, ToastHost, useSession } from './ui.jsx';
+import { JobsHost, JobsTray, Session, ToastHost, useSession } from './ui.jsx';
+import { IssueProfile, NameProfile, PersonProfile } from './profiles.jsx';
+import { RolesTeams } from './roles.jsx';
 import { Access, Audit, Duty, Names, Overview, People, Queue, Requests, Settings, setServerHost } from './views.jsx';
 import { Abuse, Infra, Sites } from './ops.jsx';
 
@@ -19,15 +21,21 @@ const VIEWS = [
   { id: 'people', label: 'People', key: 'p', view: People },
   { id: 'duty', label: 'Duty', key: 'd', view: Duty },
   { id: 'access', label: 'Access & cosigns', key: 'a', view: Access },
+  { id: 'roles', label: 'Roles & teams', key: 't', view: RolesTeams },
   { id: 'infra', label: 'Infra', key: 'i', view: Infra },
   { id: 'audit', label: 'Audit', key: 'l', view: Audit },
   { id: 'settings', label: 'Settings', key: 's', view: Settings },
 ];
 
+/** Pages for one thing, opened from anywhere: #/n/<name>, #/u/<login>, #/i/<issue>. */
+const PROFILES = { n: { view: NameProfile, label: 'Name', parent: 'names' }, u: { view: PersonProfile, label: 'Person', parent: 'people' }, i: { view: IssueProfile, label: 'Issue', parent: 'queue' } };
+
 function useRoute() {
   const parse = () => {
     const [path, qs] = location.hash.replace(/^#\/?/, '').split('?');
-    return { id: VIEWS.some((v) => v.id === path) ? path : 'overview', params: new URLSearchParams(qs || '') };
+    const [head, ...rest] = path.split('/');
+    if (PROFILES[head] && rest.length) return { id: head, profile: decodeURIComponent(rest.join('/')), params: new URLSearchParams(qs || '') };
+    return { id: VIEWS.some((v) => v.id === head) ? head : 'overview', params: new URLSearchParams(qs || '') };
   };
   const [r, setR] = useState(parse);
   useEffect(() => { const f = () => setR(parse()); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); }, []);
@@ -68,8 +76,10 @@ function Palette({ open, onClose }) {
     out.push({ label: 'Sign out', hint: '', run: signOut });
     const n = q.trim().toLowerCase().replace(/\.awesomeprojects\.tech$/, '');
     const names = ((zone && zone.names) || []).filter((x) => n && !x.name.includes('.') && x.name.includes(n)).slice(0, 6);
-    for (const x of names) out.unshift({ label: `Name: ${x.name}`, hint: `@${x.owner}`, run: () => go('names', `q=${encodeURIComponent(x.name)}`) });
-    return out.filter((x) => !n || x.label.toLowerCase().includes(n) || x.label.startsWith('Name:'));
+    for (const x of names) out.unshift({ label: `Name: ${x.name}`, hint: `@${x.owner}`, run: () => { location.hash = `#/n/${encodeURIComponent(x.name)}`; } });
+    if (/^@?[a-z\d-]{2,39}$/i.test(q.trim()) && q.trim().startsWith('@')) out.unshift({ label: `Person: ${q.trim()}`, hint: '', run: () => { location.hash = `#/u/${encodeURIComponent(q.trim().slice(1))}`; } });
+    if (/^#?\d+$/.test(q.trim())) out.unshift({ label: `Issue #${q.trim().replace('#', '')}`, hint: '', run: () => { location.hash = `#/i/${q.trim().replace('#', '')}`; } });
+    return out.filter((x) => !n || x.label.toLowerCase().includes(n) || /^(Name|Person|Issue)/.test(x.label));
   }, [q, me, zone]);
   if (!open) return null;
   const pick = (x) => { onClose(); x.run(); };
@@ -102,7 +112,9 @@ function Shell() {
   const { me, zone } = useSession();
   const [pal, setPal] = useState(false);
   const [nav, setNav] = useState(false);
-  const View = (VIEWS.find((v) => v.id === route.id) || VIEWS[0]).view;
+  const prof = PROFILES[route.id];
+  const View = prof ? prof.view : (VIEWS.find((v) => v.id === route.id) || VIEWS[0]).view;
+  const navId = prof ? prof.parent : route.id;
   useEffect(() => {
     let g = false;
     const onKey = (e) => {
@@ -118,7 +130,7 @@ function Shell() {
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
   }, []);
-  useEffect(() => { setNav(false); document.querySelector('#main') && document.querySelector('#main').focus({ preventScroll: true }); }, [route.id]);
+  useEffect(() => { setNav(false); window.scrollTo(0, 0); document.querySelector('#main') && document.querySelector('#main').focus({ preventScroll: true }); }, [route.id, route.profile]);
   const caps = me.capabilities || {};
   const hidden = { settings: false, people: false };
   return (
@@ -131,7 +143,7 @@ function Shell() {
         <button class="btn palette-btn" type="button" onClick={() => setPal(true)}><span>Jump to…</span><kbd>⌘K</kbd></button>
         <nav>
           {VIEWS.filter((v) => !hidden[v.id]).map((v) => (
-            <a key={v.id} href={`#/${v.id}`} aria-current={route.id === v.id ? 'page' : undefined}>
+            <a key={v.id} href={`#/${v.id}`} aria-current={navId === v.id ? 'page' : undefined}>
               <span>{v.label}</span><kbd class="nav-key">g {v.key}</kbd>
             </a>
           ))}
@@ -145,12 +157,13 @@ function Shell() {
       <div class="main-col">
         <header class="top">
           <button class="btn quiet menu" type="button" aria-label="Menu" aria-expanded={nav} onClick={() => setNav((v) => !v)}>☰</button>
-          <span class="crumb">{(VIEWS.find((v) => v.id === route.id) || {}).label}</span>
+          <span class="crumb">{prof ? <><a href={`#/${prof.parent}`}>{(VIEWS.find((v) => v.id === prof.parent) || {}).label}</a> / {route.profile}</> : (VIEWS.find((v) => v.id === route.id) || {}).label}</span>
+          <JobsTray />
           {zone && zone.announcement && <span class="banner"><span class="dot live" /> {zone.announcement}</span>}
           {caps['request.approve'] === 'cosign' && <span class="pill warn" title="Some actions need a second maintainer">trainee</span>}
         </header>
         <main id="main" tabIndex={-1}>
-          {me.person && me.person.status === 'active' ? <View key={route.id + route.params} params={route.params} /> : (
+          {me.person && me.person.status === 'active' ? <View key={route.id + (route.profile || '') + route.params} params={route.params} id={route.profile} /> : (
             <div class="view"><div class="empty"><b>You’re not an active maintainer</b><p>This console is for the people on <a href={`${SITE}/maintainers/`}>the roster</a>. Want to help? <a href={`https://github.com/So10-k/awesomeprojects.tech/issues/new?template=maintainer-application.yml`}>Apply</a>.</p></div></div>
           )}
         </main>
@@ -172,7 +185,7 @@ function App() {
   }, []);
   if (!signedIn()) return <SignIn />;
   if (!me) return err ? <SignIn error={err} /> : <div class="boot" aria-busy="true"><span class="dot live" /> Loading the console…</div>;
-  return <Session.Provider value={{ me, zone, refresh }}><ToastHost><Shell /></ToastHost></Session.Provider>;
+  return <Session.Provider value={{ me, zone, refresh }}><ToastHost><JobsHost><Shell /></JobsHost></ToastHost></Session.Provider>;
 }
 
 render(<App />, document.getElementById('app'));

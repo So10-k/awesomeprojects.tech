@@ -30,17 +30,35 @@ export async function call(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-/** Queue an action for the bot and wait for its answer. onUpdate gets { state, summary }. */
-export async function run(action, args = {}, onUpdate = () => {}) {
-  const { id, summary } = await call('/api/action', { method: 'POST', body: { action, args } });
-  onUpdate({ state: 'queued', summary });
+/**
+ * Start an action. Quick ones (queue, duty) are finished by the panel itself: { done: true, ok, message }.
+ * The rest go to the bot: { id, summary }, then wait(id).
+ */
+export async function start(action, args = {}) {
+  try {
+    return await call('/api/action', { method: 'POST', body: { action, args } });
+  } catch (e) {
+    // A refused fast action comes back as an error with a message: show it as a result, not a crash.
+    if (e instanceof ApiError) return { done: true, ok: false, summary: action, message: e.message };
+    throw e;
+  }
+}
+/** Wait for the bot to finish a job it was given. */
+export async function wait(id, summary = '') {
   const t0 = Date.now();
-  while (Date.now() - t0 < 240000) {
-    await new Promise((r) => setTimeout(r, Date.now() - t0 < 30000 ? 2500 : 6000));
+  while (Date.now() - t0 < 300000) {
+    await new Promise((r) => setTimeout(r, Date.now() - t0 < 20000 ? 1500 : Date.now() - t0 < 60000 ? 3000 : 6000));
     const job = await call(`/api/status/${id}`).catch(() => null);
     if (job && job.state !== 'queued') return job;
   }
-  return { state: 'error', summary, message: 'The bot hasn’t answered yet (GitHub may be slow). Check the activity log in a minute.' };
+  return { state: 'error', summary, message: 'The bot hasn’t answered yet (GitHub may be slow). It will still run: check the activity log in a minute.' };
+}
+/** Start and wait (for code that needs the result). */
+export async function run(action, args = {}, onUpdate = () => {}) {
+  const r = await start(action, args);
+  if (r.done) return { state: 'done', ...r };
+  onUpdate({ state: 'queued', summary: r.summary });
+  return wait(r.id, r.summary);
 }
 
 /** The public zone (names, settings, commands) from the website. */
