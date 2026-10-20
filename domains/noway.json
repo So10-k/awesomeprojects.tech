@@ -1,0 +1,16 @@
+{
+  "owner": {
+    "github": "samo-tf"
+  },
+  "description": "LOL",
+  "records": {
+    "CNAME": "ap-noway.pages.dev"
+  },
+  "site": {
+    "provider": "hosted",
+    "platform": "cloudflare",
+    "repo": "sites/noway",
+    "status": "active",
+    "template": "next"
+  }
+}
