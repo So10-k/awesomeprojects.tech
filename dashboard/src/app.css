@@ -198,6 +198,76 @@ tr.drawer > td { background: oklch(0.13 0 0); }
 
 .clip { display: block; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clip-2 { max-width: 34ch; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* ─── Profile pages (a name, a person, an issue) ─── */
+.profile .back { font-size: var(--t-sm); text-decoration: none; }
+.profile .back:hover { color: var(--ink); }
+.p-head { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: flex-end; justify-content: space-between; padding-bottom: var(--s4); border-bottom: 1px solid var(--line); }
+.p-title { display: grid; gap: var(--s2); min-width: 0; }
+.p-title h1 { margin: 0; font: 650 var(--t-2xl) / 1.15 var(--sans); letter-spacing: -0.02em; overflow-wrap: anywhere; display: flex; align-items: center; gap: var(--s3); }
+.p-kicker { color: var(--ink-3); font-size: var(--t-xs); }
+.p-facts { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; font-size: var(--t-sm); }
+.p-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.p-avatar { border-radius: 50%; }
+.p-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--s4); align-items: start; }
+.p-grid > .panel.wide { grid-column: 1 / -1; }
+.raw { margin: 0; max-height: 320px; overflow: auto; font: 400 var(--t-xs) / 1.6 var(--mono); color: var(--ink-2); white-space: pre; }
+.records-edit .w-type { width: 7rem; }
+.chip-row { display: inline-flex; align-items: center; gap: 2px; margin-right: var(--s2); }
+.sub-link { margin-left: var(--s2); text-decoration: none; font-size: var(--t-xs); }
+.danger-text { color: var(--bad) !important; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Markdown from GitHub (escaped by md()) */
+.md { font-size: var(--t-sm); line-height: 1.6; overflow-wrap: anywhere; }
+.md p { margin: 0 0 var(--s2); }
+.md table { border-collapse: collapse; margin: var(--s2) 0; }
+.md td { border: 1px solid var(--line); padding: 2px var(--s2); }
+.md code { font-family: var(--mono); font-size: 0.92em; }
+.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.thread li { padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r-control); }
+.thread li.bot { background: oklch(0.15 0 0); }
+.thread-head { display: flex; gap: var(--s2); align-items: baseline; margin-bottom: var(--s2); font-size: var(--t-sm); }
+
+/* Workflow steps */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; }
+.steps li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: var(--s3); align-items: center; padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.steps li:last-child { border-bottom: 0; }
+.step-mark { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line-strong, var(--line)); display: grid; place-items: center; font-size: 11px; color: var(--bg); }
+.steps li.done .step-mark { background: var(--ok); border-color: var(--ok); }
+.steps li.next .step-mark { border-color: var(--signal); box-shadow: 0 0 0 3px oklch(0.72 0.19 41 / 0.18); }
+.step-body { display: grid; gap: 2px; font-size: var(--t-sm); }
+.step-body .dim { font-size: var(--t-xs); }
+.steps li.done .step-body b { color: var(--ink-2); font-weight: 500; }
+.progress { display: inline-block; width: 64px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; }
+.progress > span { display: block; height: 100%; background: var(--ok); border-radius: 3px; }
+
+/* Access */
+.access-top { display: grid; gap: var(--s2); font-size: var(--t-sm); }
+.access-top > div { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.access-top .dim { min-width: 7.5rem; }
+.access-matrix tr.area td { padding-top: var(--s4); font: 600 var(--t-xs) / 1 var(--sans); color: var(--ink-3); border-bottom: 1px solid var(--line); }
+
+/* Jobs tray (actions the bot is still doing) */
+.jobs { display: inline-flex; align-items: center; gap: var(--s2); padding: 2px var(--s3); border: 1px solid var(--line); border-radius: var(--r-pill, 999px); font-size: var(--t-xs); max-width: 40ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* Roles & teams */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--s3); }
+.card { display: grid; gap: var(--s2); align-content: start; padding: var(--s4); border: 1px solid var(--line); border-radius: var(--r-panel); }
+.card header { display: flex; gap: var(--s2); align-items: baseline; justify-content: space-between; }
+.card p { margin: 0; font-size: var(--t-sm); }
+.editor { border-color: var(--signal); }
+.cap-matrix { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: var(--s4); }
+.cap-matrix fieldset { border: 1px solid var(--line); border-radius: var(--r-control); padding: var(--s3); margin: 0; display: grid; gap: var(--s2); }
+.cap-matrix legend { padding: 0 var(--s2); font: 600 var(--t-xs) / 1 var(--sans); color: var(--ink-3); }
+.cap-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s3); align-items: center; }
+.cap-row > span { display: grid; gap: 2px; min-width: 0; }
+.cap-row small { font-size: var(--t-xs); }
+.cap-row.locked { opacity: 0.5; }
+.gate-row { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: var(--s3); align-items: start; padding: var(--s2) 0; font-size: var(--t-sm); }
+.team-edit { display: grid; gap: var(--s3); }
+.team-edit label { display: grid; gap: var(--s1); max-width: 18rem; font-size: var(--t-xs); color: var(--ink-3); }
+.team-edit .dim { display: block; margin-bottom: var(--s2); font-size: var(--t-xs); }
+
 @media (max-width: 860px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .side { position: fixed; z-index: var(--z-overlay); inset: 0 auto 0 0; width: 260px; transform: translateX(-100%); transition: transform 220ms var(--ease); }

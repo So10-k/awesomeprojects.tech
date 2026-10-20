@@ -1,6 +1,6 @@
 import { createContext } from 'preact';
 import { useCallback, useContext, useEffect, useRef, useState } from 'preact/hooks';
-import { run, md } from './api.js';
+import { start, wait, md } from './api.js';
 
 /** Who's signed in and what they may do (GET /v2/me), plus the public zone. */
 export const Session = createContext({ me: null, zone: null, refresh: () => {} });
@@ -63,13 +63,35 @@ export function ToastHost({ children }) {
   );
 }
 
+// ── Background jobs (actions the bot is still doing) ───────────
+const Jobs = createContext({ list: [], add: () => {}, done: () => {} });
+export const useJobs = () => useContext(Jobs);
+export function JobsHost({ children }) {
+  const [list, setList] = useState([]);
+  const add = useCallback((id, summary) => setList((l) => [...l, { id, summary, at: Date.now() }]), []);
+  const done = useCallback((id) => setList((l) => l.filter((x) => x.id !== id)), []);
+  return <Jobs.Provider value={{ list, add, done }}>{children}</Jobs.Provider>;
+}
+/** The top bar's "2 working…" with what they are. */
+export function JobsTray() {
+  const { list } = useJobs();
+  if (!list.length) return null;
+  return (
+    <span class="jobs" title={list.map((j) => j.summary).join('\n')} aria-live="polite">
+      <span class="spin" aria-hidden="true" /> {list.length} working · <span class="dim">{list[list.length - 1].summary}</span>
+    </span>
+  );
+}
+
 /**
- * A button that runs a bot action, gated by a capability:
- * deny → not shown (or shown disabled with why, if `explain`), cosign → runs and says it needs a second maintainer.
+ * A button that runs an action, gated by a capability. It never makes you wait: quick actions finish at once,
+ * the rest show in the "working" tray and a toast when the bot is done (onDone runs then, to refresh).
+ * deny → not shown (or disabled with why, if `explain`); cosign → runs and says it needs a second maintainer.
  */
 export function Act({ cap, action, args, children, kind = '', confirm, onDone, explain = false, title, disabled = false }) {
   const v = useCap(cap);
   const toast = useToast();
+  const jobs = useJobs();
   const [busy, setBusy] = useState(false);
   if (cap && v === 'deny' && !explain) return null;
   const go = async () => {
@@ -77,15 +99,22 @@ export function Act({ cap, action, args, children, kind = '', confirm, onDone, e
     const a = typeof args === 'function' ? args() : args;
     if (a === null) return;
     setBusy(true);
-    const t = toast({ kind: 'busy', title: 'Sent to the bot…', body: '' });
-    try {
-      const job = await run(action, a, (u) => t.update({ title: u.summary || 'Working…' }));
+    let first;
+    try { first = await start(action, a); } catch (e) { toast({ kind: 'err', title: 'That didn’t work', body: e.message }); setBusy(false); return; }
+    setBusy(false);
+    if (first.done) {
+      toast({ kind: first.ok === false ? 'err' : 'ok', title: first.ok === false ? 'Not done' : first.summary || 'Done', body: first.message || '' });
+      if (onDone) onDone(first);
+      return;
+    }
+    jobs.add(first.id, first.summary);
+    const t = toast({ kind: 'busy', title: first.summary || 'Sent to the bot', body: 'The bot is on it (usually under a minute). Keep working.' });
+    wait(first.id, first.summary).then((job) => {
+      jobs.done(first.id);
       const ok = job.state === 'done' && job.ok !== false;
       t.update({ kind: ok ? 'ok' : 'err', title: job.summary || (ok ? 'Done' : 'That didn’t work'), body: job.message || '', link: job.link });
       if (onDone) onDone(job);
-    } catch (e) {
-      t.update({ kind: 'err', title: 'That didn’t work', body: e.message });
-    } finally { setBusy(false); }
+    });
   };
   return (
     <button class={`btn ${kind}`} type="button" onClick={go} disabled={busy || disabled || (cap && v === 'deny')}
@@ -115,4 +144,17 @@ export function Head({ title, count, children }) {
   );
 }
 export const Mono = ({ children }) => <span class="mono">{children}</span>;
-export const User = ({ login }) => (login ? <a class="user" href={`https://github.com/${login}`} target="_blank" rel="noopener">@{login}</a> : <span class="dim">—</span>);
+/** A person: opens their page in the console. */
+export const User = ({ login }) => (login ? <a class="user" href={`#/u/${encodeURIComponent(login)}`}>@{login}</a> : <span class="dim">—</span>);
+/** A name: opens its page in the console. */
+export const NameLink = ({ name }) => <a href={`#/n/${encodeURIComponent(name)}`}><Mono>{name}</Mono></a>;
+/** A public issue or PR: opens its page in the console. */
+export const IssueLink = ({ number, children }) => <a href={`#/i/${number}`}>{children || `#${number}`}</a>;
+
+/** A small progress bar for a workflow. */
+export const Progress = ({ p }) => (p && p.total ? <span class="progress" title={`${p.done} of ${p.total}${p.next ? ` · next: ${p.next.label}` : ''}`}><span style={{ width: `${p.pct}%` }} /></span> : null);
+/** A queue item: its public issue's page when it has one. */
+export const QueueLink = ({ q }) => {
+  const n = (/#(\d+)$/.exec(String(q.source || '')) || [])[1];
+  return n && !String(q.source).startsWith('panel:') ? <IssueLink number={n}>{q.title}</IssueLink> : <span>{q.title}</span>;
+};
