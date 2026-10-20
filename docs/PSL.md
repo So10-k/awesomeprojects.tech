@@ -15,7 +15,7 @@ This page is the maintainers' checklist and the draft of the pull request. Only 
 | ✅ | Abuse monitoring | Certificate Transparency watch, every 6 hours |
 | ⬜ | **The domain is registered for at least 2 more years** | It expires **2027-08-25**: extend it at the registrar to 2029 or later before filing |
 | ⬜ | **DNSSEC on the domain itself** (not required, strongly expected) | Turn it on in Cloudflare (DNS → Settings → DNSSEC), then add the DS it shows at the registrar |
-| ⬜ | The `_psl` TXT record | Paste the PR's URL into `PSL_PULL_REQUEST` in `dnsconfig.js` and merge. It goes live with the next DNS deploy |
+| ✅ | The `_psl` TXT record | Points at [publicsuffix/list#3439](https://github.com/publicsuffix/list/pull/3439). Keep it for as long as we're on the list |
 
 Check the record once it's live:
 

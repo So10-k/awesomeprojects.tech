@@ -14,7 +14,7 @@ var GITHUB_PAGES_AAAA = ["2606:50c0:8000::153", "2606:50c0:8001::153", "2606:50c
 var MANAGED_RESERVED = { www: true, admin: true, whois: true };
 // Public Suffix List: the PSL checks for _psl.<domain> TXT = the URL of our pull request to publicsuffix/list.
 // Paste the PR's URL here once it's filed (docs/PSL.md), and keep the record for as long as we're on the list.
-var PSL_PULL_REQUEST = "";
+var PSL_PULL_REQUEST = "https://github.com/publicsuffix/list/pull/3439";
 
 var records = [
   // Root: only the website's A/AAAA are managed here; mail, TXT etc. on the root stay hand-managed.
