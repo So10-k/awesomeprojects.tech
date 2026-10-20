@@ -24,18 +24,6 @@
         "docs"
       ],
       "status": "active"
-    },
-    {
-      "github": "samo-tf",
-      "rank": "trainee",
-      "rolesets": [
-        "reviewer",
-        "abuse",
-        "docs"
-      ],
-      "status": "active",
-      "since": "2026-10-19",
-      "mentor": "so10-k"
     }
   ]
 }
