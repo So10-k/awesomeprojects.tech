@@ -29,7 +29,9 @@
       "github": "samo-tf",
       "rank": "trainee",
       "rolesets": [
-        "reviewer"
+        "reviewer",
+        "abuse",
+        "docs"
       ],
       "status": "active",
       "since": "2026-10-19",
