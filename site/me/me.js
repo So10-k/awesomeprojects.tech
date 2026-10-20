@@ -16,6 +16,8 @@ let D = null; // ../data.json
 let snapshot = { sites: [] }; // the bot's latest look at hosted sites
 let ident = { enabled: false, identity: null }; // the managed enterprise account
 let contact = { email: null, turnOn: '' }; // email notifications (opt-in)
+let terms = {}; // name → { expires_at, state } (yearly terms)
+const renewWanted = new URLSearchParams(location.search).get('renew'); // from a reminder email
 let me = null;
 let requests = [];
 let pick = { kind: 'name', id: null }; // name | req | new
@@ -161,6 +163,26 @@ function renderName(n) {
     n.description ? h('span', { className: 'fact', textContent: n.description }) : null);
   const check = h('button', { className: 'btn', type: 'button', textContent: 'Check it' });
   check.addEventListener('click', () => run(result, 'verify', { name: n.name }, 'Checking DNS and HTTPS…'));
+  // The yearly term: when it renews, and the one-click renew (any change or push renews it too).
+  const term = terms[n.name];
+  if (term) {
+    const days = Math.ceil((Number(term.expires_at) - Date.now()) / 86400e3);
+    const soon = term.state === 'hold' || days <= 30;
+    const renew = h('button', { className: `btn ${soon ? 'primary' : ''}`, type: 'button', textContent: term.state === 'hold' ? 'Renew and bring it back' : 'Renew' });
+    renew.addEventListener('click', async () => {
+      renew.disabled = true;
+      try {
+        const r = await Panel.renew(n.name);
+        terms[n.name] = { ...term, expires_at: r.expiresAt, state: 'active' };
+        toast('Renewed', `${host} is good until ${new Date(r.expiresAt).toLocaleDateString()}.${r.wasOnHold ? ' Its DNS comes back in about a minute.' : ''}`);
+        render();
+      } catch (e) { toast('Couldn\'t renew', e.message, 'err'); renew.disabled = false; }
+    });
+    facts.append(
+      h('span', { className: `fact ${soon ? 'warn' : ''}`, textContent: term.state === 'hold' ? '▲ on hold: not renewed' : `renews by ${new Date(Number(term.expires_at)).toLocaleDateString()}${days <= 30 ? ` (${days} d)` : ''}` }),
+      renew);
+    if (renewWanted === n.name) setTimeout(() => renew.focus(), 0);
+  }
 
   // Records table
   const table = h('table', { className: 'records' }, h('thead', {}, h('tr', {}, ...['Type', 'Name', 'Content', ''].map((t) => h('th', { textContent: t })))));
@@ -511,6 +533,8 @@ fetch('../data.json', { cache: 'no-cache' }).then((r) => r.json()).then(async (d
       snapshot = await Panel.sites().catch(() => ({ sites: [] }));
       ident = await Panel.identity().catch(() => ident);
       contact = await Panel.contact().catch(() => contact);
+      terms = Object.fromEntries((((await Panel.lifecycle().catch(() => null)) || {}).rows || []).map((r) => [r.name, r]));
+      if (renewWanted) pick = { kind: 'name', id: renewWanted };
       if (Panel.emailResult === 'saved') toast('Email is on', `We'll email ${contact.email || 'you'}.`);
       if (Panel.emailResult === 'none') toast('No address found', 'GitHub has no verified email for your account. Add one in GitHub settings, then try again.', 'err');
       if (D.announcement) document.body.prepend(h('div', { className: 'announce', role: 'status' }, '📣 ', D.announcement));

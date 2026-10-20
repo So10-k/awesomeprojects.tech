@@ -11,6 +11,8 @@ const byType = tally(D.names, (n) => n.type);
 const max = (rows) => Math.max(1, ...rows.map((r) => r[1]));
 const perOwner = tally(topNames, (n) => n.owner).map(([, c]) => c);
 const avg = owners.size ? (topNames.length / owners.size).toFixed(1) : '0';
+const T = D.transparency;
+const monthName = (m, month = 'long') => new Date(`${m}-01T12:00:00Z`).toLocaleDateString('en', { month, year: 'numeric', timeZone: 'UTC' });
 ---
 <Base title="Stats" description={`Numbers for ${D.domain}: names, builders, hosts and records.`}>
   <header class="page-head">
@@ -44,6 +46,20 @@ const avg = owners.size ? (topNames.length / owners.size).toFixed(1) : '0';
     <h2 id="fair-title">Fair share</h2>
     <p class="lede">Each builder can have {D.maxPerOwner} names. On average they have {avg}, and the most anyone holds is {perOwner.length ? Math.max(...perOwner) : 0} (maintainers have no limit).</p>
   </section>
+
+  {T && (
+  <section class="section" aria-labelledby="ledger-title">
+    <h2 id="ledger-title">Transparency</h2>
+    <p class="lede">What happened to names each month since {monthName(T.since)}, counted from the zone's git history. New means registered; removed means its owner removed it; taken down means abuse; a name not renewed goes on hold for 30 days, then is released. {D.onHold ? `${D.onHold} ${D.onHold === 1 ? 'name is' : 'names are'} on hold right now.` : 'No names are on hold right now.'}</p>
+    <div class="scroll-x" tabindex="0" role="region" aria-labelledby="ledger-title"><table class="records ledger">
+      <thead><tr><th scope="col">Month</th><th scope="col" class="n">New</th><th scope="col" class="n">Removed</th><th scope="col" class="n">Taken down</th><th scope="col" class="n">Held</th><th scope="col" class="n">Released</th></tr></thead>
+      <tbody>
+        {T.months.map((r) => <tr><th scope="row">{monthName(r.month, 'short')}</th><td class="n">{r.registered}</td><td class="n">{r.removed}</td><td class="n">{r.takedowns}</td><td class="n">{r.held}</td><td class="n">{r.released}</td></tr>)}
+      </tbody>
+      {T.months.length > 1 && <tfoot><tr><th scope="row">All time</th><td class="n">{T.total.registered}</td><td class="n">{T.total.removed}</td><td class="n">{T.total.takedowns}</td><td class="n">{T.total.held}</td><td class="n">{T.total.released}</td></tr></tfoot>}
+    </table></div>
+  </section>
+  )}
 
   <section class="section" aria-labelledby="open-title">
     <h2 id="open-title">Out in the open</h2>

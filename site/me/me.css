@@ -76,3 +76,6 @@
 .sub-h { font: 600 0.8rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0.6rem 0 0; }
 .inline { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .inline input { font: 400 0.92rem var(--mono); color: var(--text); background: oklch(0.155 0 0 / 0.8); border: 1px solid var(--line); border-radius: 9px; padding: 0.5rem 0.7rem; flex: 1 1 180px; }
+
+.fact.warn { color: oklch(0.84 0.14 85); border-color: oklch(0.84 0.14 85 / 0.45); }
+.facts .btn { padding: 0.2rem 0.8rem; font-size: 0.8rem; }

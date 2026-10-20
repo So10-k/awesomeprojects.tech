@@ -63,6 +63,9 @@ const Panel = (() => {
     identity: (q = {}) => call(`/api/identity?${new URLSearchParams(q)}`),
     /** Email: { email: 's***@x.com' | null, turnOn: url }. turnOn is a sign-in that asks GitHub for your verified address. */
     contact: () => call('/api/contact'),
+    /** Your names' terms ({ rows: [{ name, expires_at, state }] }), and renewing one. */
+    lifecycle: () => call('/api/lifecycle'),
+    renew: (name) => call('/api/renew', { method: 'POST', body: { name } }),
     contactOff: () => call('/api/contact', { method: 'POST', body: { off: true } }),
     emailResult,
     requests: (q = {}) => call(`/api/requests?${new URLSearchParams(q)}`),

@@ -65,14 +65,26 @@ const CATALOG = [
   { cmd: '/config', who: 'owner', where: 'issues', usage: '/config <setting> <value>', does: 'Change a bot setting (limits, holds, auto-merge…) (owner only)', admin: true, owner: true },
   { cmd: '/org-setup', who: 'owner', where: 'issues', usage: '/org-setup', does: 'Apply the org\'s safe defaults, rulesets, Actions policy and maintainers team (owner only)', admin: true, owner: true },
   { cmd: '/bot-check', who: 'owner', where: 'issues', usage: '/bot-check', does: 'Check the bot account\'s token and org role (owner only)', admin: true, owner: true },
-  { cmd: '/promote', who: 'owner', where: 'issues', usage: '/promote @user', does: 'Make someone a maintainer (owner only)', admin: true, owner: true },
+  { cmd: '/promote', who: 'owner', where: 'issues', usage: '/promote @user [@mentor]', does: 'Add someone as a trainee maintainer, on probation (owner only)', admin: true, owner: true },
   { cmd: '/demote', who: 'owner', where: 'issues', usage: '/demote @user', does: 'Remove a maintainer (owner only)', admin: true, owner: true },
   { cmd: '/health', who: 'maintainer', where: 'any', usage: '/health', does: 'Run the dangling-name check now', admin: true },
+  { cmd: '/cosign', who: 'maintainer', where: 'any', usage: '/cosign <id>', does: 'Confirm a trainee\'s action (two-person rule). The bot posts the id.', admin: true },
+  { cmd: '/duty', who: 'maintainer', where: 'any', usage: '/duty', does: 'Who is on duty now and next', admin: true },
+  { cmd: '/duty-take', who: 'maintainer', where: 'any', usage: '/duty-take [hours]', does: 'Go on duty now (8 hours, at most 24). On duty you can elevate up to write by yourself, and new queue items come to you first.', admin: true },
+  { cmd: '/duty-end', who: 'maintainer', where: 'any', usage: '/duty-end', does: 'End your duty shift now', admin: true },
+  { cmd: '/duty-plan', who: 'lead', where: 'any', usage: '/duty-plan @a @b @c [weeks]', does: 'Plan a weekly rotation from next Monday (lead)', admin: true },
+  { cmd: '/claim', who: 'maintainer', where: 'queue', usage: '/claim', does: 'Take this queue item', admin: true },
+  { cmd: '/assign', who: 'maintainer', where: 'queue', usage: '/assign @user', does: 'Give this queue item to someone', admin: true },
+  { cmd: '/unassign', who: 'maintainer', where: 'queue', usage: '/unassign', does: 'Hand this queue item back; it goes to someone else', admin: true },
+  { cmd: '/triage', who: 'maintainer', where: 'queue', usage: '/triage <note>', does: 'Mark this queue item looked at, with a note', admin: true },
+  { cmd: '/vote', who: 'maintainer', where: 'queue', usage: '/vote yes|no [note]', does: 'Vote on a maintainer application', admin: true },
+  { cmd: '/rank', who: 'owner', where: 'issues', usage: '/rank @user <trainee|maintainer|lead>', does: 'Change a maintainer\'s rank (owner only)', admin: true, owner: true },
+  { cmd: '/roleset', who: 'owner', where: 'issues', usage: '/roleset @user +abuse -docs', does: 'Change a maintainer\'s areas: reviewer, abuse, hosting, infra, docs (owner only)', admin: true, owner: true },
 ];
 
 const KNOWN = new Set(CATALOG.map((c) => c.cmd));
-const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats', '/create', '/make-repo', '/emu-create', '/emu-suspend', '/emu-restore', '/ops-account', '/access-approve', '/access-deny']);
-const OWNER_ONLY = new Set(['/promote', '/demote', '/org-setup', '/bot-check', '/config', '/access-approve', '/access-deny']);
+const ADMIN_ONLY = new Set(['/reject', '/hold', '/unhold', '/dismiss', '/ban', '/unban', '/limit', '/reserve', '/unreserve', '/lock', '/unlock', '/deploy', '/health', '/promote', '/demote', '/site', '/site-sync', '/repo-access', '/org-setup', '/bot-check', '/config', '/suspend-user', '/announce', '/ops', '/seats', '/create', '/make-repo', '/emu-create', '/emu-suspend', '/emu-restore', '/ops-account', '/access-approve', '/access-deny', '/cosign', '/rank', '/roleset']);
+const OWNER_ONLY = new Set(['/promote', '/demote', '/rank', '/roleset', '/org-setup', '/bot-check', '/config', '/access-approve', '/access-deny']);
 
 /** Settings /config may change, and how to read the value. */
 const SETTINGS = {
@@ -95,6 +107,10 @@ const SETTINGS = {
   inactivityLockDays: { type: 'int', min: 0, max: 3650, help: 'lock sites after this many days without a push (0 = never)' },
   maxCollaboratorsPerSite: { type: 'int', min: 0, max: 50, help: 'extra people an owner may add to their hosted repo' },
   staleRequestDays: { type: 'int', min: 1, max: 365, help: 'close private requests that need changes after this many quiet days' },
+  termDays: { type: 'int', min: 0, max: 3650, help: 'how long a name lasts before it needs renewing (0 = names never expire); any change or push renews it' },
+  holdDays: { type: 'int', min: 7, max: 365, help: 'how long an unrenewed name stays on hold (DNS off, nothing deleted) before it is released' },
+  maintainerAwayDays: { type: 'int', min: 0, max: 3650, help: 'mark a maintainer away after this many days without activity (0 = never)' },
+  maintainerEmeritusDays: { type: 'int', min: 0, max: 3650, help: 'mark an away maintainer emeritus after this many days (0 = never)' },
 };
 const READ_ONLY = new Set(['/help', '/available', '/whois', '/mine', '/verify', '/stats']);
 
@@ -127,14 +143,14 @@ function helpTable({ admin = true } = {}) {
 
 const fmtRecords = (r = {}) => Object.entries(r).map(([t, v]) => {
   const list = Array.isArray(v) ? v : [v];
-  return list.map((x) => `\`${t} ${typeof x === 'object' ? `${x.priority ?? 10} ${x.host}` : x}\``).join(' ');
+  return list.map((x) => `\`${t} ${typeof x !== 'object' ? x : t === 'DS' ? `${x.keyTag} ${x.algorithm} ${x.digestType} ${String(x.digest).slice(0, 12)}…` : `${x.priority ?? 10} ${x.host}`}\``).join(' ');
 }).join(' ');
 
 const PROVIDER_NAMES = {
   'github-pages': 'GitHub Pages', vercel: 'Vercel', netlify: 'Netlify', 'cloudflare-pages': 'Cloudflare Pages',
   render: 'Render', railway: 'Railway', fly: 'Fly.io', cname: 'CNAME', server: 'Own server', hosted: 'Hosted by us',
 };
-const hostOf = (d) => (d && d.site && PROVIDER_NAMES[d.site.provider]) || (d && d.records && Object.keys(d.records)[0]) || '?';
+const hostOf = (d) => (d && d.site && PROVIDER_NAMES[d.site.provider]) || (d && d.records && d.records.NS ? (d.records.DS ? 'Own nameservers (DNSSEC)' : 'Own nameservers') : null) || (d && d.records && Object.keys(d.records)[0]) || '?';
 
 /** /available */
 function availability(rawName, entries, reserved, { repoUrl } = {}) {

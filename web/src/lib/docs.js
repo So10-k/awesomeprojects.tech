@@ -13,6 +13,9 @@ function fixLinks(html) {
   return html
     .replace(/href="(?:\.\.\/)*docs\/HOSTING\.md(#[^"]*)?"/g, (_, h = '') => `href="/docs/hosting/${h}"`)
     .replace(/href="(?:\.\.\/)*docs\/MAINTAINERS\.md(#[^"]*)?"/g, (_, h = '') => `href="/docs/maintaining/${h}"`)
+    .replace(/href="(?:\.\.\/)*docs\/POLICY\.md(#[^"]*)?"/g, (_, h = '') => `href="/docs/policy/${h}"`)
+    .replace(/href="(?:\.\.\/)*docs\/DNS\.md(#[^"]*)?"/g, (_, h = '') => `href="/docs/own-dns/${h}"`)
+    .replace(/href="(POLICY|DNS)\.md(#[^"]*)?"/g, (_, f, h = '') => `href="/docs/${f === 'DNS' ? 'own-dns' : 'policy'}/${h}"`)
     .replace(/href="(?:\.\.\/)*(HOSTING|MAINTAINERS)\.md(#[^"]*)?"/g, (_, f, h = '') => `href="/docs/${f === 'HOSTING' ? 'hosting' : 'maintaining'}/${h}"`)
     .replace(/href="(?:\.\.\/)+(issues|pulls)([^"]*)"/g, (_, a, b) => `href="https://github.com/${D.repo}/${a}${b}"`)
     .replace(/href="(?!https?:|#|\/|mailto:)([^"]+)"/g, (_, p) => `href="https://github.com/${D.repo}/blob/main/${p.replace(/^(\.\/|\.\.\/)+/, '')}"`)
@@ -39,6 +42,8 @@ export const DOCS = [
   { slug: 'get-a-name', title: 'Get a name', blurb: 'Request one, change it, transfer it, give it up. The rules.', html: () => md(pick(['get your subdomain', 'how a request flows', 'change, transfer', 'rules', 'faq'])) },
   { slug: 'hosting', title: 'Hosting', blurb: 'Point a name at your repo, or let us host the site for you.', html: () => md(read('docs/HOSTING.md').replace(/^# .*\n/, '')) },
   { slug: 'commands', title: 'Bot commands', blurb: 'Everything you can ask the bot in a comment.', html: () => null },
+  { slug: 'own-dns', title: 'Your own DNS', blurb: 'Delegate your name to your own nameservers, and sign it with DNSSEC.', html: () => md(read('docs/DNS.md').replace(/^# .*\n/, '')) },
+  { slug: 'policy', title: 'Policy', blurb: 'Who can have a name, how long it lasts, abuse, privacy, RDAP.', html: () => md(read('docs/POLICY.md').replace(/^# .*\n/, '')) },
   { slug: 'maintaining', title: 'Maintaining', blurb: 'How the registry is run: ranks, duty, the queue, takedowns.', html: () => md(read('docs/MAINTAINERS.md').replace(/^# .*\n/, '')) },
 ];
 export const docTitle = (s) => (DOCS.find((d) => d.slug === s) || {}).title;

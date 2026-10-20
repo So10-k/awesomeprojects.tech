@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the stats page's transparency counts come from the zone's history
       - uses: actions/setup-node@v4
         with:
           node-version: 22
