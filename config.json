@@ -45,7 +45,7 @@
   "closeNeedsChangesAfterDays": 14,
   "consentTimeoutDays": 30,
   "locked": false,
-  "announcement": "",
+  "announcement": "Hello. Welcome, all!",
   "maxSeats": 50,
   "hostedPerOwner": 2,
   "hostedMinAccountAgeDays": 30,
