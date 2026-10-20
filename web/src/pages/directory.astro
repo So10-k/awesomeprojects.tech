@@ -1,7 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
-import { topNames, D } from '../lib/data.js';
-const hosts = [...new Set(topNames.map((n) => n.host))].sort();
+import { topNames, D, hostName } from '../lib/data.js';
+const hosts = [...new Set(topNames.map(hostName))].sort();
 ---
 <Base title="Directory" description={`Every name on ${D.domain}: who owns it and where it points.`}>
   <header class="page-head">
@@ -21,11 +21,11 @@ const hosts = [...new Set(topNames.map((n) => n.host))].sort();
     <thead><tr><th scope="col">Name</th><th scope="col">What it is</th><th scope="col" class="x">Owner</th><th scope="col" class="x">Host</th></tr></thead>
     <tbody id="rows">
       {topNames.map((n) => (
-        <tr data-text={[n.name, n.owner, n.host, n.target, n.description || ''].join(' ').toLowerCase()} data-host={n.host}>
+        <tr data-text={[n.name, n.owner, hostName(n), n.target, n.description || ''].join(' ').toLowerCase()} data-host={hostName(n)}>
           <td class="n"><a href={`/n/${n.name}/`}>{n.name}</a></td>
           <td class="desc">{n.description || <span class="help">—</span>}</td>
           <td class="x own"><a href={`https://github.com/${n.owner}`}>@{n.owner}</a></td>
-          <td class="x">{n.host}</td>
+          <td class="x host">{hostName(n)}</td>
         </tr>
       ))}
     </tbody>

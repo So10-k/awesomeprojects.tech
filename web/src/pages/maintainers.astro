@@ -1,0 +1,46 @@
+---
+import Base from '../layouts/Base.astro';
+import { D } from '../lib/data.js';
+const people = (D.roster || []).filter((p) => p.status !== 'emeritus');
+const RANK = { owner: ['signal', 'Owner'], lead: ['info', 'Lead'], maintainer: ['ok', 'Maintainer'], trainee: ['warn', 'Trainee'] };
+const ROLE = { reviewer: 'requests', abuse: 'abuse', hosting: 'hosting', infra: 'infra', docs: 'docs' };
+---
+<Base title="Maintainers" description={`The people who run ${D.domain}, and how to join them.`}>
+  <header class="page-head">
+    <h1>Maintainers</h1>
+    <p class="lede">Volunteers who review requests, handle reports and look after hosted sites. Every action they take is public, and the sensitive ones need two people.</p>
+  </header>
+  <ul class="people">
+    {people.map((p) => (
+      <li class="person">
+        <img src={`https://github.com/${p.github}.png?size=96`} alt="" width="48" height="48">
+        <b><a href={`https://github.com/${p.github}`}>@{p.github}</a></b>
+        <span class="meta">
+          <span class={`pill ${(RANK[p.rank] || ['', p.rank])[0]}`}>{(RANK[p.rank] || ['', p.rank])[1]}</span>
+          {p.status === 'away' && <span class="pill">away</span>}
+          {p.rank !== 'owner' && p.rank !== 'lead' && (p.rolesets || []).map((r) => <span class="pill">{ROLE[r] || r}</span>)}
+        </span>
+      </li>
+    ))}
+  </ul>
+
+  <section class="section" aria-labelledby="ladder-title">
+    <h2 id="ladder-title">How it's run</h2>
+    <p class="lede">Everyone starts as a trainee with a mentor. Rank decides how much you can do alone, and rolesets decide which areas you work in.</p>
+    <ol class="ladder">
+      <li><b>Trainee</b><p>Reviews and holds requests. Approvals, rejections and takedowns need a second maintainer to confirm.</p></li>
+      <li><b>Maintainer</b><p>Acts alone in their areas: requests, abuse, hosting, infra or docs.</p></li>
+      <li><b>Lead</b><p>Covers every area, plans the duty rotation, and confirms elevations outside duty hours.</p></li>
+      <li><b>Owner</b><p>Runs the roster and the settings, and approves the highest-risk access.</p></li>
+    </ol>
+  </section>
+
+  <section class="section" aria-labelledby="join-title">
+    <h2 id="join-title">Want to help?</h2>
+    <p class="lede">Tell us a bit about yourself. Maintainers vote and the owner decides, usually within a week.</p>
+    <p class="hero-actions">
+      <a class="btn primary big" href={`https://github.com/${D.repo}/issues/new?template=maintainer-application.yml`}>Apply to be a maintainer</a>
+      <a class="btn big" href="/docs/maintaining/">How maintaining works</a>
+    </p>
+  </section>
+</Base>

@@ -141,7 +141,7 @@ const SHORT = { hosted: 'Host it for me', 'github-pages': 'GitHub repo', cname: 
           <tr>
             <td class="n"><a href={`/n/${n.name}/`}>{n.name}</a></td>
             <td class="t">{n.type}</td>
-            <td class="v">{shown(n.target)}</td>
+            <td class="v">{shown(n.target).split('.').map((part, i, a) => <>{part}{i < a.length - 1 && <>.<wbr /></>}</>)}</td>
             <td class="x">{n.description ? n.description : `@${n.owner}`}</td>
           </tr>
         ))}
@@ -340,6 +340,8 @@ const SHORT = { hosted: 'Host it for me', 'github-pages': 'GitHub repo', cname: 
     const start = new URLSearchParams(location.search).get('q') || new URLSearchParams(location.hash.slice(1)).get('name');
     if (start) input.value = start.toLowerCase();
     lookup();
+    // The field is measured in the display font: measure again once it has loaded.
+    document.fonts.ready.then(size);
     if (start !== null && start !== '') input.focus();
   </script>
 </Base>

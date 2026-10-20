@@ -1,6 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro';
-import { D, fqdn, recordRows } from '../../lib/data.js';
+import { D, fqdn, recordRows, hostName } from '../../lib/data.js';
 
 export function getStaticPaths() {
   return D.names.map((n) => ({ params: { name: n.name }, props: { n } }));
@@ -19,7 +19,7 @@ const st = n.status ? STATUS[n.status] || ['', n.status] : null;
 <Base title={host} description={n.description ? `${host}: ${n.description}` : `${host}, a free name on ${D.domain}, owned by @${n.owner}.`}>
   <article class="whois">
     <div>
-      <h1>{n.name}<span class="sfx">.{D.domain}</span></h1>
+      <h1>{n.name}<wbr /><span class="sfx">.{D.domain.split('.').map((p, i) => <>{i > 0 && <>.<wbr /></>}{p}</>)}</span></h1>
       {n.description && <p class="desc">{n.description}</p>}
       <div class="actions">
         <a class="btn primary" href={`https://${host}`} rel="noopener">Visit {host} ↗</a>
@@ -43,8 +43,8 @@ const st = n.status ? STATUS[n.status] || ['', n.status] : null;
     </div>
     <aside>
       <dl class="facts">
-        <div><dt>Owner</dt><dd><a class="owner" href={`https://github.com/${n.owner}`}><img src={`https://github.com/${n.owner}.png?size=56`} alt="" width="28" height="28" loading="lazy">@{n.owner}</a></dd></div>
-        <div><dt>Host</dt><dd>{n.host}</dd></div>
+        <div><dt>Owner</dt><dd><a class="owner" href={`https://github.com/${n.owner}`}><img src={`https://github.com/${n.owner}.png?size=56`} alt="" width="28" height="28">@{n.owner}</a></dd></div>
+        <div><dt>Host</dt><dd>{hostName(n)}</dd></div>
         {st && <div><dt>Site</dt><dd><span class={`pill ${st[0]}`}>{st[1]}</span></dd></div>}
         {repoUrl && <div><dt>Repo</dt><dd><a href={repoUrl}>{n.repo}</a>{serverRepo && <span class="help"> (on our server)</span>}</dd></div>}
         {parent && <div><dt>Under</dt><dd><a href={`/n/${parent}/`}>{fqdn(parent)}</a></dd></div>}

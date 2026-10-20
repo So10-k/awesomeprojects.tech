@@ -18,5 +18,8 @@ export function recordRows(records = {}) {
   }
   return rows;
 }
+/** The host in plain words: the bot names known hosts; a bare record type means "somewhere else". */
+const BY_TYPE = { A: 'Own server', AAAA: 'Own server', CNAME: 'Other host', TXT: 'Records only', MX: 'Email only' };
+export const hostName = (n) => BY_TYPE[n.host] || n.host;
 export const HOST_LABEL = { hosted: 'Hosted by us', 'github-pages': 'GitHub Pages', vercel: 'Vercel', netlify: 'Netlify', 'cloudflare-pages': 'Cloudflare Pages', render: 'Render', railway: 'Railway', fly: 'Fly.io', cname: 'Other host', server: 'Own server', email: 'Email only', other: 'Other' };
 export const hostLabel = (h) => HOST_LABEL[h] || h;
