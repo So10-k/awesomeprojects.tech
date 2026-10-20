@@ -301,3 +301,13 @@
 .ledger tbody th, .ledger tfoot th { font: 500 var(--t-ui) / 1.4 var(--sans); color: var(--ink); padding: var(--s3) var(--s4) var(--s3) 0; border-bottom: 1px solid var(--line); }
 .ledger tfoot th, .ledger tfoot td { border-top: 1px solid var(--line); color: var(--ink-2); }
 @media (max-width: 640px) { .ledger { font-size: var(--t-sm); } .ledger th, .ledger td { padding-inline: var(--s2); } }
+
+/* ─── Changelog ─── */
+.changelog h2 { font-size: var(--t-lg); }
+.log { list-style: none; margin: var(--s3) 0 0; padding: 0; border-top: 1px solid var(--line); }
+.log li { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto; gap: var(--s4); align-items: baseline; padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
+.log time { color: var(--ink-3); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.log span { text-wrap: pretty; }
+.log a.mono { font-size: var(--t-sm); color: var(--ink-3); }
+.log a.mono:hover { color: var(--ink); }
+@media (max-width: 640px) { .log li { grid-template-columns: 1fr auto; } .log time { grid-column: 1 / -1; } }

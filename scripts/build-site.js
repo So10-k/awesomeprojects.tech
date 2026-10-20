@@ -67,6 +67,31 @@ function transparency() {
   return { since: rows[rows.length - 1].month, total, months: rows.slice(0, 12) };
 }
 
+// The changelog: changes to how the registry works, from main's history. Commits that only change data
+// (names, the roster, settings, reserved words: the bot makes those all day) are left out.
+function changelog(limit = 120) {
+  let log;
+  try {
+    log = require('node:child_process').execFileSync('git', ['log', '--first-parent', '--format=@@%h\t%ct\t%s', '--name-only', '-n', '600', 'HEAD'],
+      { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch { return []; }
+  const DATA = /^(domains\/|maintainers\.json$|config\.json$|reserved\.json$)/;
+  const out = [];
+  let cur = null;
+  const flush = () => { if (cur && cur.files.some((f) => !DATA.test(f))) out.push({ sha: cur.sha, at: cur.at, title: cur.title.replace(/\s*\(#\d+\)$/, ''), pr: cur.pr }); };
+  for (const line of log.split('\n')) {
+    if (line.startsWith('@@')) {
+      flush();
+      const [sha, ct, ...rest] = line.slice(2).split('\t');
+      const title = rest.join('\t');
+      const m = /\(#(\d+)\)$/.exec(title);
+      cur = { sha, at: Number(ct) * 1000, title, pr: m ? Number(m[1]) : null, files: [] };
+    } else if (line.trim() && cur) cur.files.push(line.trim());
+  }
+  flush();
+  return out.filter((c) => !/^Merge (branch|pull request)/.test(c.title)).slice(0, limit);
+}
+
 const config = read('config.json');
 const live = !!(config.ghes && config.ghes.live && config.ghes.host);
 const data = {
@@ -102,6 +127,7 @@ const data = {
   })(),
   templates: require('./sites').TEMPLATES,
   transparency: transparency(),
+  changelog: changelog(),
   onHold: names.filter((n) => n.hold).length,
   settings: Object.fromEntries(Object.entries(C.SETTINGS).map(([k, v]) => [k, { ...v, value: config[k] }])),
 };
