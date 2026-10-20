@@ -1,0 +1,35 @@
+---
+import Base from '../layouts/Base.astro';
+import { D } from '../lib/data.js';
+
+// Changes to how the registry works, newest first, grouped by month. New and removed names live on the stats page.
+const rows = D.changelog || [];
+const month = (at) => new Date(at).toLocaleDateString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const day = (at) => new Date(at).toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const groups = [];
+for (const r of rows) {
+  const m = month(r.at);
+  if (!groups.length || groups[groups.length - 1].m !== m) groups.push({ m, rows: [] });
+  groups[groups.length - 1].rows.push(r);
+}
+---
+<Base title="Changelog" description={`What changed in how ${D.domain} works: the bot, the website, the policy.`}>
+  <header class="page-head">
+    <h1>Changelog</h1>
+    <p class="lede">Every change to how the registry works, straight from the repository. New and removed names aren't listed here: they're on the <a href="/stats/">stats page</a>.</p>
+  </header>
+  {groups.length === 0 ? <p class="help">Nothing yet.</p> : groups.map((g) => (
+    <section class="section changelog" aria-label={g.m}>
+      <h2>{g.m}</h2>
+      <ol class="log">
+        {g.rows.map((r) => (
+          <li>
+            <time datetime={new Date(r.at).toISOString()}>{day(r.at)}</time>
+            <span>{r.title}</span>
+            <a class="mono" href={r.pr ? `https://github.com/${D.repo}/pull/${r.pr}` : `https://github.com/${D.repo}/commit/${r.sha}`}>{r.pr ? `#${r.pr}` : r.sha}</a>
+          </li>
+        ))}
+      </ol>
+    </section>
+  ))}
+</Base>
