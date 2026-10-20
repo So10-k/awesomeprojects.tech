@@ -170,6 +170,24 @@ Owner-only: the roster (`/promote`, `/demote`, `/rank`, `/roleset`), `/config`, 
 
 If `maintainers.json` is ever invalid, the bot and the panel give maintainer powers to **the owner only** until it's fixed. They never fall back to more.
 
+## The console
+
+**[admin.awesomeprojects.tech](https://admin.awesomeprojects.tech/)** is where maintainers work. Sign in with GitHub.
+
+- **Overview:** what's assigned to you, what's overdue, cosigns waiting for you, who's on duty, and recent activity.
+- **Queue:** claim, assign, hand back, and vote on applications.
+- **Requests:** approve, hold or reject public and private requests, and take down or dismiss reports.
+- **Names:** redeploy, change a hosted site's status, or take a name down.
+- **People:** ranks, rolesets, adding and removing people (owner).
+- **Duty:** a two-week view, going on duty, and planning a rotation (leads).
+- **Access & cosigns:** confirm cosigns, elevate your duty account, and see or end grants.
+- **Audit:** every event.
+- **Settings:** bot settings (owner), plus one-click runs.
+
+Every button follows your rank and rolesets. If you can't do something, it isn't there. If it needs a second maintainer, it says **cosign**. The panel and the bot check everything again anyway. Keyboard: **⌘K** for anything, `g` then a letter to switch views (`g q` is the queue), and `/` to filter.
+
+The old console at [awesomeprojects.tech/admin](https://awesomeprojects.tech/admin/) stays for now, for creating names, bans, limits and request notes.
+
 ## Joining
 
 1. Someone opens a **[🙋 Become a maintainer](../../../issues/new?template=maintainer-application.yml)** issue.
