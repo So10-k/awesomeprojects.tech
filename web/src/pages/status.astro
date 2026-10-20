@@ -1,0 +1,44 @@
+---
+import Base from '../layouts/Base.astro';
+import { D } from '../lib/data.js';
+const sample = (D.names.find((n) => !n.name.includes('.') && n.type === 'CNAME') || { name: 'www' }).name;
+---
+<Base title="Status" description={`Is ${D.domain} working right now? Live checks, run in your browser.`}>
+  <header class="page-head">
+    <h1>Status</h1>
+    <p class="lede">These checks run in your browser, right now, against the real thing. Nothing is cached.</p>
+  </header>
+  <p class="overall" id="overall" aria-live="polite"><span class="dot live" aria-hidden="true"></span><span>Checking…</span></p>
+  <ul class="status-list" id="checks">
+    <li data-check="dns"><b>DNS</b><small>Our zone answers through Cloudflare (we ask for <code>{sample}.{D.domain}</code>)</small><span class="pill">checking</span></li>
+    <li data-check="panel"><b>Panel server</b><small>Sign-in, My domains and the console (<code>api.{D.domain}</code>)</small><span class="pill">checking</span></li>
+    <li data-check="forge"><b>Our GitHub server</b><small>Where hosted sites and maintainers work ({D.emuHost || 'not set up'})</small><span class="pill">checking</span></li>
+    <li data-check="github"><b>GitHub</b><small>Requests, the bot and the builds run on GitHub</small><span class="pill">checking</span></li>
+    <li data-check="cloudflare"><b>Cloudflare</b><small>DNS and hosted sites are served by Cloudflare</small><span class="pill">checking</span></li>
+  </ul>
+  <p class="help" style="margin-top: var(--s5)">Something broken that isn't shown here? <a href={`https://github.com/${D.repo}/issues/new`}>Open an issue</a>.</p>
+  <script define:vars={{ sample: `${sample}.${D.domain}`, panel: D.panelApi, forge: D.emuHost }}>
+    const set = (key, state, text) => {
+      const li = document.querySelector(`[data-check="${key}"] .pill`);
+      li.className = `pill ${state}`;
+      li.textContent = text;
+    };
+    const t = (ms) => AbortSignal.timeout(ms);
+    const statusPage = (url) => fetch(url, { signal: t(8000) }).then((r) => r.json()).then((d) => (d.status && d.status.indicator === 'none' ? ['ok', '✓ operational'] : ['warn', `▲ ${d.status ? d.status.description.toLowerCase() : 'degraded'}`]));
+    const checks = {
+      dns: () => fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(sample)}&type=CNAME`, { headers: { accept: 'application/dns-json' }, signal: t(8000) })
+        .then((r) => r.json()).then((d) => (d.Status === 0 && (d.Answer || []).length ? ['ok', '✓ answering'] : ['bad', '✕ no answer'])),
+      panel: () => fetch(`${panel}/health`, { signal: t(8000) }).then((r) => (r.ok ? ['ok', '✓ up'] : ['bad', `✕ ${r.status}`])),
+      forge: () => (forge ? fetch(`https://${forge}/status`, { mode: 'no-cors', signal: t(8000) }).then(() => ['ok', '✓ reachable']) : Promise.resolve(['', 'not used'])),
+      github: () => statusPage('https://www.githubstatus.com/api/v2/status.json'),
+      cloudflare: () => statusPage('https://www.cloudflarestatus.com/api/v2/status.json'),
+    };
+    Promise.all(Object.entries(checks).map(([k, f]) => f().catch(() => ['bad', '✕ unreachable']).then(([s, txt]) => { set(k, s, txt); return s; }))).then((states) => {
+      const o = document.querySelector('#overall span:last-child');
+      const bad = states.filter((s) => s === 'bad').length;
+      const warn = states.filter((s) => s === 'warn').length;
+      o.textContent = bad ? `${bad} thing${bad === 1 ? ' is' : 's are'} down` : warn ? 'Mostly fine, with a hiccup upstream' : 'Everything is working';
+      document.querySelector('#overall .dot').style.background = bad ? 'var(--bad)' : warn ? 'var(--warn)' : 'var(--ok)';
+    });
+  </script>
+</Base>

@@ -1,0 +1,13 @@
+---
+import Base from '../../layouts/Base.astro';
+import { DOCS } from '../../lib/docs.js';
+---
+<Base title="Docs" description="How to get a name, host a site, talk to the bot, and how the registry is run.">
+  <header class="page-head">
+    <h1>Docs</h1>
+    <p class="lede">Everything here also lives in the repo, so a change to the docs is a pull request too.</p>
+  </header>
+  <ul class="doc-cards">
+    {DOCS.map((d) => <li><a href={`/docs/${d.slug}/`}><b>{d.title}</b><span>{d.blurb}</span><i aria-hidden="true">→</i></a></li>)}
+  </ul>
+</Base>

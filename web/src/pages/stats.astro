@@ -1,0 +1,57 @@
+---
+import Base from '../layouts/Base.astro';
+import { D, topNames, hostName } from '../lib/data.js';
+
+const owners = new Set(topNames.map((n) => n.owner));
+const hosted = topNames.filter((n) => n.status);
+const sub = D.names.filter((n) => n.name.includes('.'));
+const tally = (arr, key) => Object.entries(arr.reduce((m, x) => ((m[key(x)] = (m[key(x)] || 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
+const byHost = tally(topNames, hostName);
+const byType = tally(D.names, (n) => n.type);
+const max = (rows) => Math.max(1, ...rows.map((r) => r[1]));
+const perOwner = tally(topNames, (n) => n.owner).map(([, c]) => c);
+const avg = owners.size ? (topNames.length / owners.size).toFixed(1) : '0';
+---
+<Base title="Stats" description={`Numbers for ${D.domain}: names, builders, hosts and records.`}>
+  <header class="page-head">
+    <h1>Stats</h1>
+    <p class="lede">Straight from the zone, rebuilt on every change. Nothing here is sampled or estimated.</p>
+  </header>
+  <dl class="totals">
+    <div><dt>Names</dt><dd>{topNames.length}</dd></div>
+    <div><dt>Builders</dt><dd>{owners.size}</dd></div>
+    <div><dt>Hosted by us</dt><dd>{hosted.length}</dd></div>
+    <div><dt>Records under names</dt><dd>{sub.length}</dd></div>
+  </dl>
+
+  <section class="section" aria-labelledby="hosts-title">
+    <h2 id="hosts-title">Where names point</h2>
+    <p class="lede">The host behind each top-level name.</p>
+    <ul class="bars">
+      {byHost.map(([h, c]) => <li><span>{h}</span><span class="track" aria-hidden="true"><span class="fill" style={`width:${(c / max(byHost)) * 100}%`}></span></span><span class="n">{c}</span></li>)}
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="types-title">
+    <h2 id="types-title">Record types</h2>
+    <p class="lede">Every record in the zone, names under names included.</p>
+    <ul class="bars">
+      {byType.map(([t, c]) => <li><span class="mono">{t}</span><span class="track" aria-hidden="true"><span class="fill" style={`width:${(c / max(byType)) * 100}%`}></span></span><span class="n">{c}</span></li>)}
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="fair-title">
+    <h2 id="fair-title">Fair share</h2>
+    <p class="lede">Each builder can have {D.maxPerOwner} names. On average they have {avg}, and the most anyone holds is {perOwner.length ? Math.max(...perOwner) : 0} (maintainers have no limit).</p>
+  </section>
+
+  <section class="section" aria-labelledby="open-title">
+    <h2 id="open-title">Out in the open</h2>
+    <p class="lede">Every request, review, approval and takedown is a public issue or pull request in the repo. Browse them yourself:</p>
+    <p class="hero-actions">
+      <a class="btn" href={`https://github.com/${D.repo}/pulls?q=is%3Apr+is%3Amerged`}>Merged requests</a>
+      <a class="btn" href={`https://github.com/${D.repo}/issues?q=label%3Atakedown`}>Takedowns</a>
+      <a class="btn quiet" href={`https://github.com/${D.repo}/commits/main/domains`}>Every change to the zone</a>
+    </p>
+  </section>
+</Base>

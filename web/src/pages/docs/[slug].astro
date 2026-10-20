@@ -1,0 +1,43 @@
+---
+import Base from '../../layouts/Base.astro';
+import { DOCS } from '../../lib/docs.js';
+import { D } from '../../lib/data.js';
+
+export function getStaticPaths() {
+  return DOCS.map((d) => ({ params: { slug: d.slug }, props: { doc: d } }));
+}
+const { doc } = Astro.props;
+const html = doc.html();
+// The command list comes from the bot itself (scripts/commands.js), so it can't drift.
+const seen = new Set();
+const cmds = D.commands.filter((c) => { const k = `${c.admin}${c.usage}`; if (seen.has(k)) return false; seen.add(k); return true; });
+const groups = [
+  ['Everyone', cmds.filter((c) => !c.admin)],
+  ['Maintainers', cmds.filter((c) => c.admin && !c.owner)],
+  ['The owner', cmds.filter((c) => c.owner)],
+];
+---
+<Base title={doc.title} description={doc.blurb}>
+  <div class="docs">
+    <nav class="docs-nav" aria-label="Docs">
+      {DOCS.map((d) => <a href={`/docs/${d.slug}/`} aria-current={d.slug === doc.slug ? 'page' : undefined}>{d.title}</a>)}
+    </nav>
+    <article class="prose">
+      <h1>{doc.title}</h1>
+      {html ? <Fragment set:html={html} /> : (
+        <>
+          <p>Comment a command at the start of a comment on any issue or pull request in the <a href={`https://github.com/${D.repo}`}>repo</a>. The bot answers in seconds. Maintainer commands also work in the maintainer rooms on our server.</p>
+          {groups.map(([title, list]) => list.length > 0 && (
+            <>
+              <h2>{title}</h2>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+                <tbody>{list.map((c) => <tr><td><code>{c.usage}</code></td><td>{c.does.replace(/`/g, '')}</td></tr>)}</tbody>
+              </table></div>
+            </>
+          ))}
+        </>
+      )}
+    </article>
+  </div>
+</Base>

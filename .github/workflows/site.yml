@@ -1,10 +1,11 @@
 name: Website
 
-# Builds awesomeprojects.tech (site/ + data.json from domains/) and publishes it on GitHub Pages.
+# Builds awesomeprojects.tech (the Astro site in web/, fed by scripts/build-site.js from domains/, config and
+# the roster; My domains and the old console from site/) and publishes it on GitHub Pages.
 on:
   push:
     branches: [main]
-    paths: ["site/**", "domains/**", "reserved.json", "config.json", "scripts/**", ".github/workflows/site.yml"]
+    paths: ["web/**", "brand/**", "site/**", "docs/**", "README.md", "domains/**", "reserved.json", "config.json", "maintainers.json", "scripts/**", ".github/workflows/site.yml"]
   workflow_dispatch:
 
 permissions:
@@ -35,10 +36,14 @@ jobs:
           git clone -q --depth 1 "https://x-access-token:${BOT_PAT}@awesome-projects.ghe.com/apjs-hosted-sites/platform.git" "$RUNNER_TEMP/platform"
           cp "$RUNNER_TEMP/platform/scripts/"{commands,sites,providers,rules,requests,frameworks}.js scripts/
           echo "Using platform $(git -C "$RUNNER_TEMP/platform" rev-parse --short HEAD)"
-      - run: node scripts/build-site.js
+      - name: Build the site
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: web/dist
   deploy:
     needs: build
     runs-on: ubuntu-latest
