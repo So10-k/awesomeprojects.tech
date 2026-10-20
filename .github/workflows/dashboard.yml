@@ -48,8 +48,8 @@ jobs:
       - name: Attach admin.awesomeprojects.tech
         run: |
           api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT/domains"
-          if curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api" | grep -q "\"name\":\"$DOMAIN\""; then
-            echo "$DOMAIN already attached"
-          else
-            curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data "{\"name\":\"$DOMAIN\"}" "$api" >/dev/null && echo "attached $DOMAIN"
-          fi
+          # Attaching twice is fine: Cloudflare answers 400 "already added", which counts as done.
+          resp=$(curl -sS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data "{\"name\":\"$DOMAIN\"}" "$api")
+          if echo "$resp" | grep -q '"success":true'; then echo "attached $DOMAIN"
+          elif echo "$resp" | grep -qi 'already'; then echo "$DOMAIN already attached"
+          else echo "$resp" | head -c 600; echo; exit 1; fi
