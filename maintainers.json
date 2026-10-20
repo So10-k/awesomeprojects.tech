@@ -28,7 +28,9 @@
     {
       "github": "samo-tf",
       "rank": "trainee",
-      "rolesets": [],
+      "rolesets": [
+        "abuse"
+      ],
       "status": "active",
       "since": "2026-10-19",
       "mentor": "so10-k"
