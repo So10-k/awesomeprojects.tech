@@ -45,6 +45,7 @@ We take down phishing, malware, scams, impersonation, and anything illegal where
 ## Looking a name up
 
 - **RDAP**, the modern WHOIS: `https://rdap.awesomeprojects.tech/domain/<name>.awesomeprojects.tech`
+- **WHOIS**: `whois -h whois.awesomeprojects.tech <name>`
 - On the site: `https://awesomeprojects.tech/n/<name>/`
 - From the bot: comment `/whois <name>` on any issue.
 

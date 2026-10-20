@@ -11,7 +11,7 @@ var reserved = require("./reserved.json");
 // The website (this repo's GitHub Pages) lives at the root, and www redirects to it.
 var GITHUB_PAGES_A = ["185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153"];
 var GITHUB_PAGES_AAAA = ["2606:50c0:8000::153", "2606:50c0:8001::153", "2606:50c0:8002::153", "2606:50c0:8003::153"];
-var MANAGED_RESERVED = { www: true, admin: true };
+var MANAGED_RESERVED = { www: true, admin: true, whois: true };
 // Public Suffix List: the PSL checks for _psl.<domain> TXT = the URL of our pull request to publicsuffix/list.
 // Paste the PR's URL here once it's filed (docs/PSL.md), and keep the record for as long as we're on the list.
 var PSL_PULL_REQUEST = "";
@@ -22,6 +22,8 @@ var records = [
   CNAME("www", "so10-k.github.io.", CF_PROXY_OFF),
   // The maintainers' console (Cloudflare Pages project ap-admin, deployed by .github/workflows/dashboard.yml).
   CNAME("admin", "ap-admin.pages.dev.", CF_PROXY_ON),
+  // WHOIS on port 43 (ops/whois in the platform; it only reads RDAP). Not proxied: Cloudflare doesn't carry port 43.
+  A("whois", "65.108.46.86", CF_PROXY_OFF),
 ];
 if (PSL_PULL_REQUEST) records.push(TXT("_psl", PSL_PULL_REQUEST));
 for (var g = 0; g < GITHUB_PAGES_A.length; g++) records.push(A("@", GITHUB_PAGES_A[g], CF_PROXY_OFF));
