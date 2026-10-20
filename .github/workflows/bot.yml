@@ -78,6 +78,13 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           EMU_ADMIN_TOKEN: ${{ secrets.EMU_ADMIN_TOKEN }}
           GHES_BOT_TOKEN: ${{ secrets.GHES_BOT_TOKEN }}
+          # The awesomeprojects GitHub App (platform docs/APP.md); the tokens above are the fallback until these are set.
+          APP_GITHUB_ID: ${{ secrets.APP_GITHUB_ID }}
+          APP_GITHUB_KEY: ${{ secrets.APP_GITHUB_KEY }}
+          APP_GHES_ID: ${{ secrets.APP_GHES_ID }}
+          APP_GHES_KEY: ${{ secrets.APP_GHES_KEY }}
+          APP_GHECOM_ID: ${{ secrets.APP_GHECOM_ID }}
+          APP_GHECOM_KEY: ${{ secrets.APP_GHECOM_KEY }}
           GHES_SCIM_TOKEN: ${{ secrets.GHES_SCIM_TOKEN }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
