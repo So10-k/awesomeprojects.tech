@@ -49,3 +49,10 @@ jobs:
           PANEL_BOT_SECRET: ${{ secrets.PANEL_BOT_SECRET }}
           BOT_PAT: ${{ secrets.BOT_PAT }}
           GHES_BOT_TOKEN: ${{ secrets.GHES_BOT_TOKEN }}
+          # The awesomeprojects GitHub App (platform docs/APP.md); the tokens above are the fallback until these are set.
+          APP_GITHUB_ID: ${{ secrets.APP_GITHUB_ID }}
+          APP_GITHUB_KEY: ${{ secrets.APP_GITHUB_KEY }}
+          APP_GHES_ID: ${{ secrets.APP_GHES_ID }}
+          APP_GHES_KEY: ${{ secrets.APP_GHES_KEY }}
+          APP_GHECOM_ID: ${{ secrets.APP_GHECOM_ID }}
+          APP_GHECOM_KEY: ${{ secrets.APP_GHECOM_KEY }}
