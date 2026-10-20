@@ -27,11 +27,10 @@
     },
     {
       "github": "samo-tf",
-      "rank": "trainee",
+      "rank": "maintainer",
       "rolesets": [],
       "status": "active",
       "since": "2026-10-19",
-      "probationUntil": "2026-12-18",
       "mentor": "so10-k"
     }
   ]
