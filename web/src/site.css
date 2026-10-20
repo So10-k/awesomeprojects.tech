@@ -288,3 +288,16 @@
 
 /* Long literals (names, hosts) wrap instead of pushing the page sideways. */
 .lede code, .answer code, .prose code, .help code, .status-list code { overflow-wrap: anywhere; }
+
+/* ─── Stats: the transparency ledger ─── */
+.scroll-x { overflow-x: auto; margin-top: var(--s5); }
+.scroll-x:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.ledger { min-width: 30rem; }
+.ledger tbody th { white-space: nowrap; }
+.ledger .n { text-align: right; font-variant-numeric: tabular-nums; }
+.ledger th.n { padding-right: 0; padding-left: var(--s4); font: 600 var(--t-xs) / 1 var(--sans); letter-spacing: 0; }
+.ledger tbody tr:last-child th { border-bottom: 0; }
+.ledger td.n { padding-right: 0; padding-left: var(--s4); }
+.ledger tbody th, .ledger tfoot th { font: 500 var(--t-ui) / 1.4 var(--sans); color: var(--ink); padding: var(--s3) var(--s4) var(--s3) 0; border-bottom: 1px solid var(--line); }
+.ledger tfoot th, .ledger tfoot td { border-top: 1px solid var(--line); color: var(--ink-2); }
+@media (max-width: 640px) { .ledger { font-size: var(--t-sm); } .ledger th, .ledger td { padding-inline: var(--s2); } }

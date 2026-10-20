@@ -82,5 +82,12 @@
   "_acme-challenge",
   "_mta-sts",
   "mta-sts",
-  "administration"
+  "administration",
+  "rdap",
+  "whois",
+  "nic",
+  "registry",
+  "hold",
+  "psl",
+  "console"
 ]

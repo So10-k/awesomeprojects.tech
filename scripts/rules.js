@@ -6,8 +6,13 @@ const net = require('node:net');
 const DOMAIN = 'awesomeprojects.tech';
 const MAX_PER_OWNER = 3; // top-level names per GitHub account (maintainers exempt)
 const MAX_DEPTH = 4; // labels in a name, e.g. selector._domainkey.alice = 3
-const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'MX'];
-const TOP_KEYS = ['$schema', 'owner', 'description', 'repo', 'records', 'site', 'forced'];
+const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'DS'];
+// DNSSEC algorithms and digest types we accept in DS records (RFC 8624: the ones resolvers must support).
+const DS_ALGORITHMS = [8, 10, 13, 14, 15, 16];
+const DS_DIGESTS = { 2: 64, 4: 96 }; // SHA-256, SHA-384 → hex length
+const TOP_KEYS = ['$schema', 'owner', 'description', 'repo', 'records', 'site', 'forced', 'hold'];
+// A name on hold publishes no DNS (renew it to bring it back). Set by the bot only.
+const HOLD_REASONS = ['expired'];
 const PROVIDERS = ['hosted', 'github-pages', 'vercel', 'netlify', 'cloudflare-pages', 'render', 'railway', 'fly', 'cname', 'server'];
 const SITE_STATUSES = ['active', 'locked', 'suspended', 'archived'];
 const REPO = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}\/[\w.-]{1,100}$/i;
@@ -123,6 +128,32 @@ function checkRecords(records, name) {
   if (!types.length) errors.push('"records" is empty');
   for (const t of types) if (!RECORD_TYPES.includes(t)) errors.push(`record type "${t}" is not allowed (allowed: ${RECORD_TYPES.join(', ')})`);
   if (records.CNAME !== undefined && types.length > 1) errors.push('a CNAME cannot be combined with other records');
+  // Delegation: your own nameservers answer for the name, so nothing else may live here (DS goes with NS).
+  if (records.NS !== undefined) {
+    if (types.some((t) => t !== 'NS' && t !== 'DS')) errors.push('NS (delegation) cannot be combined with other records, except DS');
+    if (name && name.includes('.')) errors.push('only a top-level name can be delegated (alice, not blog.alice)');
+    if (!Array.isArray(records.NS) || records.NS.length < 2 || records.NS.length > 6) errors.push('NS must be a list of 2-6 nameservers');
+    else {
+      if (new Set(records.NS.map((h) => lc(String(h)).replace(/\.$/, ''))).size !== records.NS.length) errors.push('NS has duplicates');
+      for (const h of records.NS) errors.push(...checkTarget(h, name).map((e) => `NS ${e}`));
+    }
+  }
+  if (records.DS !== undefined) {
+    if (records.NS === undefined) errors.push('DS only makes sense with NS (it signs your delegated zone)');
+    if (!Array.isArray(records.DS) || !records.DS.length || records.DS.length > 4) errors.push('DS must be a list of 1-4 records');
+    else {
+      for (const ds of records.DS) {
+        if (!ds || typeof ds !== 'object') { errors.push('each DS is { "keyTag", "algorithm", "digestType", "digest" }'); continue; }
+        const extra = Object.keys(ds).filter((k) => !['keyTag', 'algorithm', 'digestType', 'digest'].includes(k));
+        if (extra.length) errors.push(`DS has unknown field "${extra[0]}"`);
+        if (!Number.isInteger(ds.keyTag) || ds.keyTag < 0 || ds.keyTag > 65535) errors.push('DS keyTag must be 0-65535');
+        if (!DS_ALGORITHMS.includes(ds.algorithm)) errors.push(`DS algorithm must be one of ${DS_ALGORITHMS.join(', ')} (e.g. 13 = ECDSA P-256)`);
+        const len = DS_DIGESTS[ds.digestType];
+        if (!len) errors.push('DS digestType must be 2 (SHA-256) or 4 (SHA-384)');
+        else if (typeof ds.digest !== 'string' || !new RegExp(`^[0-9a-fA-F]{${len}}$`).test(ds.digest)) errors.push(`DS digest must be ${len} hex characters for digestType ${ds.digestType}`);
+      }
+    }
+  }
 
   const ips = (t, ok, label) => {
     const v = records[t];
@@ -183,6 +214,7 @@ function checkEntry(name, data) {
     errors.push('"repo" must be an https:// URL');
   }
   if (data.forced !== undefined && (typeof data.forced !== 'string' || !GITHUB_USER.test(data.forced))) errors.push('"forced" must be the maintainer who forced it');
+  if (data.hold !== undefined && !HOLD_REASONS.includes(data.hold)) errors.push(`"hold" must be one of: ${HOLD_REASONS.join(', ')} (the bot sets it)`);
   if (data.site !== undefined) errors.push(...checkSite(data.site, data.records, name));
   errors.push(...checkRecords(data.records, name));
   return errors;
@@ -235,6 +267,7 @@ function checkTree(entries, { reserved = [], maintainers = [], maxPerOwner = MAX
     const base = baseOf(name);
     if (base !== name) {
       if (!entries[base]) add(name, [`"${name}" needs "${base}.json" to exist`]);
+      else if (entries[base] && entries[base].records && entries[base].records.NS) add(name, [`"${base}" is delegated to its own nameservers, so "${name}" belongs in that zone, not here`]);
     } else if (ownerOf(data) && !forced) {
       (perOwner[ownerOf(data)] ||= []).push(name);
     }
@@ -266,6 +299,7 @@ function family(entries, name) {
 }
 
 module.exports = {
+  DS_ALGORITHMS, HOLD_REASONS,
   DOMAIN, MAX_PER_OWNER, RECORD_TYPES, PROVIDERS, SITE_STATUSES, REPO,
   nameFromFile, baseOf, ownerOf, namesOwnedBy, family, limitFor,
   checkName, checkEntry, checkRecords, checkTarget, checkTree, checkSite,

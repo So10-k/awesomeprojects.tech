@@ -24,7 +24,7 @@ for (const f of fs.readdirSync(path.join(root, 'domains')).sort()) {
   let d;
   try { d = read(`domains/${f}`); } catch { continue; }
   const r = d.records || {};
-  const [type, value] = r.CNAME ? ['CNAME', r.CNAME] : r.A ? ['A', r.A.join(', ')] : r.AAAA ? ['AAAA', r.AAAA.join(', ')] : r.MX ? ['MX', 'mail'] : ['TXT', '…'];
+  const [type, value] = r.NS ? ['NS', r.NS.join(', ')] : r.CNAME ? ['CNAME', r.CNAME] : r.A ? ['A', r.A.join(', ')] : r.AAAA ? ['AAAA', r.AAAA.join(', ')] : r.MX ? ['MX', 'mail'] : ['TXT', '…'];
   names.push({
     name,
     owner: R.ownerOf(d),
@@ -34,8 +34,37 @@ for (const f of fs.readdirSync(path.join(root, 'domains')).sort()) {
     description: d.description || undefined,
     repo: d.site && d.site.repo,
     status: d.site && d.site.provider === 'hosted' ? d.site.status || 'active' : undefined,
+    hold: d.hold || undefined,
     records: d.records,
   });
+}
+
+// Transparency: what happened to names each month, read from the zone's git history (commit titles say
+// which kind of removal it was: "Remove", "Take down" or "Release"; holds are "Hold <name>: not renewed").
+function transparency() {
+  let log;
+  try {
+    log = require('node:child_process').execFileSync('git', ['log', '--format=@@%ct\t%s', '--name-status', '--', 'domains/'],
+      { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch { return null; }
+  const months = {};
+  const bump = (t, k) => { const m = new Date(t * 1000).toISOString().slice(0, 7); (months[m] ||= { month: m, registered: 0, removed: 0, takedowns: 0, held: 0, released: 0 })[k]++; };
+  let t = 0, subject = '';
+  for (const line of log.split('\n')) {
+    if (line.startsWith('@@')) {
+      [t, subject] = line.slice(2).split('\t'); t = Number(t);
+      if (/^Hold [^\s:]+: not renewed/.test(subject)) bump(t, 'held');
+      continue;
+    }
+    const m = /^([AD])\tdomains\/([^/]+)\.json$/.exec(line);
+    if (!m || m[2].includes('.')) continue; // top-level names only
+    if (m[1] === 'A') bump(t, 'registered');
+    else bump(t, /^Take down /.test(subject) ? 'takedowns' : /^Release /.test(subject) ? 'released' : 'removed');
+  }
+  const rows = Object.values(months).sort((x, y) => y.month.localeCompare(x.month));
+  if (!rows.length) return null;
+  const total = rows.reduce((o, r) => { for (const k of Object.keys(r)) if (k !== 'month') o[k] = (o[k] || 0) + r[k]; return o; }, {});
+  return { since: rows[rows.length - 1].month, total, months: rows.slice(0, 12) };
 }
 
 const config = read('config.json');
@@ -72,6 +101,8 @@ const data = {
     } catch { return []; }
   })(),
   templates: require('./sites').TEMPLATES,
+  transparency: transparency(),
+  onHold: names.filter((n) => n.hold).length,
   settings: Object.fromEntries(Object.entries(C.SETTINGS).map(([k, v]) => [k, { ...v, value: config[k] }])),
 };
 

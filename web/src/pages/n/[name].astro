@@ -48,6 +48,10 @@ const st = n.status ? STATUS[n.status] || ['', n.status] : null;
         {st && <div><dt>Site</dt><dd><span class={`pill ${st[0]}`}>{st[1]}</span></dd></div>}
         {repoUrl && <div><dt>Repo</dt><dd><a href={repoUrl}>{n.repo}</a>{serverRepo && <span class="help"> (on our server)</span>}</dd></div>}
         {parent && <div><dt>Under</dt><dd><a href={`/n/${parent}/`}>{fqdn(parent)}</a></dd></div>}
+        {n.records && n.records.NS && <div><dt>DNS</dt><dd>Own nameservers{n.records.DS ? <> · <span class="pill ok">DNSSEC</span></> : ''}</dd></div>}
+        {n.hold && <div><dt>Status</dt><dd><span class="pill warn">▲ on hold: not renewed</span></dd></div>}
+        {!parent && <div><dt>Registered</dt><dd data-rdap="registration">…</dd></div>}
+        {!parent && <div><dt>Renews by</dt><dd data-rdap="expiration">…</dd></div>}
         <div><dt>Record</dt><dd><a href={`https://github.com/${D.repo}/blob/main/domains/${n.name}.json`}>domains/{n.name}.json</a></dd></div>
       </dl>
       <div class="cmd">
@@ -55,9 +59,23 @@ const st = n.status ? STATUS[n.status] || ['', n.status] : null;
         <pre><i>/</i>whois {n.name}</pre>
       </div>
       <div class="cmd">
+        <span class="label">RDAP (the modern WHOIS)</span>
+        <pre><a href={`https://rdap.${D.domain}/domain/${host}`}>rdap.{D.domain}/domain/{host}</a></pre>
+      </div>
+      <div class="cmd">
         <span class="label">Or ask DNS</span>
         <pre>dig +short {host}</pre>
       </div>
     </aside>
   </article>
+  <script define:vars={{ api: D.panelApi, host }}>
+    // Terms live in the registry (RDAP), not in the zone file, so they're read live.
+    const fmt = (s) => new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    fetch(`${api}/rdap/domain/${host}`, { headers: { accept: 'application/rdap+json' } }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      for (const el of document.querySelectorAll('[data-rdap]')) {
+        const ev = d && (d.events || []).find((e) => e.eventAction === el.dataset.rdap);
+        el.textContent = ev ? fmt(ev.eventDate) : '—';
+      }
+    }).catch(() => { for (const el of document.querySelectorAll('[data-rdap]')) el.textContent = '—'; });
+  </script>
 </Base>

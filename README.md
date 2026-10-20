@@ -64,7 +64,7 @@ Once a maintainer approves it, the bot writes your record, DNS goes live in abou
 }
 ```
 
-`site` is optional (it's what the website and `/whois` show). Record types: `CNAME` (alone), `A`, `AAAA`, `TXT`, `MX`; public IPs only, no `NS`, no wildcards. The bot reviews PRs exactly like requests.
+`site` is optional (it's what the website and `/whois` show). Record types: `CNAME` (alone), `A`, `AAAA`, `TXT`, `MX`; public IPs only, no wildcards. Want to run the zone yourself? [Delegate it to your own nameservers](docs/DNS.md) (`NS`, optionally signed with `DS` for DNSSEC). The bot reviews PRs exactly like requests.
 
 </details>
 
@@ -153,6 +153,8 @@ flowchart LR
 | **Add a verification record** | `/txt <name> <label> <value>` on any issue |
 | **Give it to someone** | `/transfer <name> @them`, or [open a transfer](../../issues/new?template=transfer.yml). They reply `/accept`. |
 | **Get a name someone else has** | [Open a transfer](../../issues/new?template=transfer.yml). The owner replies `/approve` (a maintainer can step in after 30 days of silence). |
+| **Renew it** | Once a year: [My domains](https://awesomeprojects.tech/me/) → *Renew*. Any approved change, or a push to a site we host, renews it too. We remind you 30 and 7 days before. |
+| **Run its DNS myself** | [Delegate it to your own nameservers](docs/DNS.md), with DNSSEC if you like |
 | **Remove mine** | [My domains](https://awesomeprojects.tech/me/) → *Remove*, or `/remove <name>` |
 | **Report abuse** | [Open a report](../../issues/new?template=takedown.yml), or [privately](../../security/advisories/new) |
 
@@ -186,8 +188,12 @@ Comment <code>/txt &lt;name&gt; &lt;label&gt; &lt;value&gt;</code>, e.g. <code>/
 Nothing's wrong; a person needs to look. The bot's comment says who it's waiting for and why.
 </details>
 
+<details><summary><b>How long does my name last?</b></summary>
+A year at a time, free. Renew it in <a href="https://awesomeprojects.tech/me/">My domains</a>; any approved change, or a push to a site we host, renews it too, so a name in use never runs out. If one isn't renewed, it's on hold for 30 days (DNS off, nothing deleted), then released. The <a href="docs/POLICY.md">policy</a> has the details.
+</details>
+
 <details><summary><b>Wildcards, NS records, Cloudflare proxy?</b></summary>
-No: they'd hand a whole branch of the domain to one server. Records are DNS-only; your host handles HTTPS.
+Not in our zone: records here are DNS-only, and your host handles HTTPS. For wildcards or anything else, <a href="docs/DNS.md">delegate your name to your own nameservers</a> and do it there.
 </details>
 
 ---

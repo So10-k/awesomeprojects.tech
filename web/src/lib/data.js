@@ -12,6 +12,7 @@ export function recordRows(records = {}) {
   for (const [type, v] of Object.entries(records)) {
     if (type === 'MX' && Array.isArray(v)) for (const mx of v) rows.push([type, typeof mx === 'object' ? `${mx.priority ?? ''} ${shown(mx.target ?? mx.host ?? '')}`.trim() : shown(mx)]);
     else if (type === 'TXT') for (const t of [].concat(v)) rows.push([type, typeof t === 'object' ? `${t.name ? `${t.name} ` : ''}"${t.value ?? ''}"` : `"${t}"`]);
+    else if (type === 'DS') for (const d of [].concat(v)) rows.push([type, `${d.keyTag} ${d.algorithm} ${d.digestType} ${String(d.digest).toUpperCase()}`]);
     else if (Array.isArray(v)) for (const x of v) rows.push([type, shown(x)]);
     else if (v && typeof v === 'object') rows.push([type, JSON.stringify(v)]);
     else rows.push([type, shown(v)]);

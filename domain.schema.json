@@ -3,37 +3,163 @@
   "title": "awesomeprojects.tech subdomain",
   "type": "object",
   "additionalProperties": false,
-  "required": ["owner", "records"],
+  "required": [
+    "owner",
+    "records"
+  ],
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": {
+      "type": "string"
+    },
     "owner": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["github"],
+      "required": [
+        "github"
+      ],
       "properties": {
-        "github": { "type": "string", "description": "Your GitHub username. Must match the PR author." },
-        "email": { "type": "string", "format": "email", "description": "Optional. This repo is public." },
-        "discord": { "type": "string", "description": "Optional contact." }
+        "github": {
+          "type": "string",
+          "description": "Your GitHub username. Must match the PR author."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Optional. This repo is public."
+        },
+        "discord": {
+          "type": "string",
+          "description": "Optional contact."
+        }
       }
     },
-    "description": { "type": "string", "maxLength": 200 },
-    "repo": { "type": "string", "format": "uri" },
+    "description": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "repo": {
+      "type": "string",
+      "format": "uri"
+    },
     "records": {
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
-        "A": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 8 },
-        "AAAA": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 8 },
-        "CNAME": { "type": "string" },
-        "TXT": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" }, "maxItems": 10 }] },
+        "A": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "AAAA": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "CNAME": {
+          "type": "string"
+        },
+        "TXT": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 10
+            }
+          ]
+        },
         "MX": {
-          "type": "array", "maxItems": 5,
-          "items": { "oneOf": [
-            { "type": "string" },
-            { "type": "object", "required": ["host"], "additionalProperties": false,
-              "properties": { "host": { "type": "string" }, "priority": { "type": "integer", "minimum": 0, "maximum": 65535 } } }
-          ] }
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "host"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 65535
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "NS": {
+          "type": "array",
+          "description": "Delegate the name to your own nameservers (2-6). Nothing else may live at a delegated name, except DS.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "maxItems": 6
+        },
+        "DS": {
+          "type": "array",
+          "description": "DNSSEC: the DS records of your delegated zone. Only with NS.",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "keyTag",
+              "algorithm",
+              "digestType",
+              "digest"
+            ],
+            "properties": {
+              "keyTag": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              },
+              "algorithm": {
+                "type": "integer",
+                "enum": [
+                  8,
+                  10,
+                  13,
+                  14,
+                  15,
+                  16
+                ]
+              },
+              "digestType": {
+                "type": "integer",
+                "enum": [
+                  2,
+                  4
+                ]
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}([0-9a-fA-F]{32})?$"
+              }
+            }
+          }
         }
       }
     }
