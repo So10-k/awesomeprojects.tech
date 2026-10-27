@@ -1,0 +1,15 @@
+{
+  "owner": {
+    "github": "HassanAli66"
+  },
+  "records": {
+    "CNAME": "ap-plazma.pages.dev"
+  },
+  "site": {
+    "provider": "hosted",
+    "platform": "cloudflare",
+    "repo": "sites/plazma",
+    "status": "active",
+    "template": "html"
+  }
+}
